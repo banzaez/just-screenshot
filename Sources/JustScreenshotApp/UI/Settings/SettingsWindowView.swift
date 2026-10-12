@@ -54,7 +54,8 @@ public struct SettingsWindowView: View {
                 .padding(24)
             }
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 540)
+        .frame(minHeight: 520, maxHeight: 720)
     }
     
     // 1. Основные настройки
@@ -100,6 +101,13 @@ public struct SettingsWindowView: View {
         }
     }
     
+    enum HotkeyTarget: String, Identifiable {
+        case area, window, recording, history
+        var id: String { rawValue }
+    }
+    
+    @State private var recordingTarget: HotkeyTarget?
+    
     // 2. Горячие клавиши
     private var hotkeysSettingsView: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -107,7 +115,7 @@ public struct SettingsWindowView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Глобальные сочетания клавиш")
                         .font(.headline)
-                    Text("Срабатывают в любой программе даже когда окно приложения закрыто")
+                    Text("Нажмите на сочетание клавиш для изменения или назначьте новые")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -132,35 +140,39 @@ public struct SettingsWindowView: View {
             
             VStack(spacing: 8) {
                 hotkeyCard(
+                    target: .area,
                     icon: "crop",
                     iconColor: .blue,
                     title: "Снимок произвольной области",
                     subtitle: "Выделение рамкой любого фрагмента экрана",
-                    shortcut: settings.shortcutArea
+                    shortcutBinding: $settings.shortcutArea
                 )
                 
                 hotkeyCard(
+                    target: .window,
                     icon: "macwindow",
                     iconColor: .teal,
                     title: "Снимок окна приложения",
                     subtitle: "Интерактивный выбор открытого окна кликом",
-                    shortcut: settings.shortcutWindow
+                    shortcutBinding: $settings.shortcutWindow
                 )
                 
                 hotkeyCard(
+                    target: .recording,
                     icon: "record.circle.fill",
                     iconColor: .red,
                     title: "Запись экрана в видео",
                     subtitle: "Захват выбранной области в MP4 с плавающим пультом",
-                    shortcut: settings.shortcutRecording
+                    shortcutBinding: $settings.shortcutRecording
                 )
                 
                 hotkeyCard(
+                    target: .history,
                     icon: "clock.arrow.circlepath",
                     iconColor: .orange,
                     title: "История снимков",
                     subtitle: "Галерея всех ранее сделанных скриншотов",
-                    shortcut: settings.shortcutHistory
+                    shortcutBinding: $settings.shortcutHistory
                 )
             }
             
@@ -168,7 +180,7 @@ public struct SettingsWindowView: View {
                 Image(systemName: "info.circle")
                     .foregroundColor(.secondary)
                     .font(.caption)
-                Text("Используется нативный системный Carbon Events API без задержек.")
+                Text("Кликните по клавишам, чтобы задать новое сочетание (ESC для отмены).")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -177,13 +189,16 @@ public struct SettingsWindowView: View {
     }
     
     private func hotkeyCard(
+        target: HotkeyTarget,
         icon: String,
         iconColor: Color,
         title: String,
         subtitle: String,
-        shortcut: ShortcutKey
+        shortcutBinding: Binding<ShortcutKey>
     ) -> some View {
-        HStack(spacing: 12) {
+        let isRecordingThis = recordingTarget == target
+        
+        return HStack(spacing: 12) {
             // Иконка действия
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
@@ -206,32 +221,75 @@ public struct SettingsWindowView: View {
             
             Spacer()
             
-            // Клавиатурные кейкапы (Keycaps)
-            HStack(spacing: 4) {
-                ForEach(shortcut.keySymbols, id: \.self) { sym in
-                    Text(sym)
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .foregroundColor(.primary)
-                        .frame(minWidth: 26, minHeight: 24)
-                        .padding(.horizontal, 4)
-                        .background(
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color(NSColor.controlBackgroundColor))
-                                .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(Color.white.opacity(0.18), lineWidth: 1)
-                        )
+            // Режим записи или отображение кейкапов
+            if isRecordingThis {
+                HStack(spacing: 8) {
+                    Text("Нажмите клавиши…")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.blue)
+                    
+                    Button("Отмена") {
+                        recordingTarget = nil
+                    }
+                    .font(.system(size: 10))
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(4)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.blue, lineWidth: 1.5)
+                )
+                .background(
+                    ShortcutRecorderView(shortcut: Binding(
+                        get: { shortcutBinding.wrappedValue },
+                        set: { newKey in
+                            shortcutBinding.wrappedValue = newKey
+                            AppWindowManager.shared.reloadGlobalHotkeys()
+                        }
+                    )) {
+                        recordingTarget = nil
+                    }
+                    .frame(width: 1, height: 1)
+                    .opacity(0.01)
+                )
+            } else {
+                Button {
+                    recordingTarget = target
+                } label: {
+                    HStack(spacing: 4) {
+                        ForEach(shortcutBinding.wrappedValue.keySymbols, id: \.self) { sym in
+                            Text(sym)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(.primary)
+                                .frame(minWidth: 26, minHeight: 24)
+                                .padding(.horizontal, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .fill(Color(NSColor.controlBackgroundColor))
+                                        .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
+                                )
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 5)
+                                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                .help("Нажмите, чтобы изменить сочетание клавиш")
             }
         }
         .padding(10)
-        .background(Color.white.opacity(0.04))
+        .background(isRecordingThis ? Color.blue.opacity(0.08) : Color.white.opacity(0.04))
         .cornerRadius(10)
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                .stroke(isRecordingThis ? Color.blue.opacity(0.5) : Color.white.opacity(0.07), lineWidth: 1)
         )
     }
     
