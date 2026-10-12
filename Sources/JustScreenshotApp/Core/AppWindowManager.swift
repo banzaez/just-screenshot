@@ -188,12 +188,18 @@ public final class AppWindowManager: ObservableObject {
         }
         
         let id = item.id
+        let model = AnnotationEditorModel(capturedItem: item)
         let view = AnnotationEditorWindowView(
-            capturedItem: item,
+            model: model,
             onSave: { [weak self] finalImage in
                 if ImageExporter.saveImageWithDialog(finalImage, defaultName: "Annotated") {
                     self?.history.add(finalImage)
+                    model.markSaved()
                 }
+            },
+            onSaveToHistory: { [weak self] finalImage in
+                self?.history.add(finalImage)
+                model.markSaved()
             },
             onClose: { [weak self] in self?.closeEditor(id: id) }
         )
@@ -216,13 +222,48 @@ public final class AppWindowManager: ObservableObject {
         let managed = ManagedWindow(window: window) { [weak self] closed in
             self?.editors = self?.editors.filter { $0.value !== closed } ?? [:]
         }
+        
+        managed.shouldClose = { [weak self, weak window] _ in
+            guard let self, let window else { return true }
+            return self.confirmCloseIfNeeded(model: model, window: window)
+        }
+        
         editors[id] = managed
         managed.bringToFront()
     }
     
+    private func confirmCloseIfNeeded(model: AnnotationEditorModel, window: NSWindow) -> Bool {
+        guard model.hasUnsavedChanges else { return true }
+        
+        let alert = NSAlert()
+        alert.messageText = "Сохранить изменения в историю перед закрытием?"
+        alert.informativeText = "В редакторе есть несохранённые аннотации или изменения оформления."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Сохранить")      // NSApplication.ModalResponse.alertFirstButtonReturn
+        alert.addButton(withTitle: "Не сохранять")   // NSApplication.ModalResponse.alertSecondButtonReturn
+        alert.addButton(withTitle: "Отмена")         // NSApplication.ModalResponse.alertThirdButtonReturn
+        
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            let finalImage = model.renderFinalImage()
+            self.history.add(finalImage)
+            model.markSaved()
+            return true
+        case .alertSecondButtonReturn:
+            return true
+        default:
+            return false
+        }
+    }
+    
     private func closeEditor(id: UUID) {
-        guard let managed = editors.removeValue(forKey: id) else { return }
-        managed.closeSilently()
+        guard let managed = editors[id] else { return }
+        // Эмулируем стандартный запрос закрытия окна, вызывающий windowShouldClose
+        if managed.windowShouldClose(managed.window) {
+            editors.removeValue(forKey: id)
+            managed.closeSilently()
+        }
     }
     
     // MARK: - История

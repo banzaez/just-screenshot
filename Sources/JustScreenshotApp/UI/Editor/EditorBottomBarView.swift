@@ -10,7 +10,10 @@ public struct EditorBottomBarView: View {
     
     public let onClose: () -> Void
     public let onCopy: () -> Void
+    public let onSaveToHistory: () -> Void
     public let onSave: () -> Void
+    
+    @State private var justSavedToHistory: Bool = false
     
     public init(
         showBackdrop: Binding<Bool>,
@@ -19,6 +22,7 @@ public struct EditorBottomBarView: View {
         addShadow: Binding<Bool>,
         onClose: @escaping () -> Void,
         onCopy: @escaping () -> Void,
+        onSaveToHistory: @escaping () -> Void,
         onSave: @escaping () -> Void
     ) {
         self._showBackdrop = showBackdrop
@@ -27,6 +31,7 @@ public struct EditorBottomBarView: View {
         self._addShadow = addShadow
         self.onClose = onClose
         self.onCopy = onCopy
+        self.onSaveToHistory = onSaveToHistory
         self.onSave = onSave
     }
     
@@ -78,12 +83,31 @@ public struct EditorBottomBarView: View {
             .controlSize(.large)
             .keyboardShortcut("c", modifiers: [.command, .shift])
             
-            Button(action: onSave) {
-                Label("Сохранить", systemImage: "square.and.arrow.down")
+            Button {
+                onSaveToHistory()
+                withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
+                }
+            } label: {
+                Label(
+                    justSavedToHistory ? "Сохранено ✓" : "Сохранить",
+                    systemImage: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down"
+                )
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .tint(justSavedToHistory ? .green : nil)
             .keyboardShortcut("s", modifiers: [.command])
+            .help("Сохранить снимок с аннотациями в историю приложения (⌘S)")
+            
+            Button(action: onSave) {
+                Label("Экспорт…", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+            .keyboardShortcut("e", modifiers: [.command])
+            .help("Экспортировать в файл через диалог сохранения (⌘E)")
         }
     }
 }

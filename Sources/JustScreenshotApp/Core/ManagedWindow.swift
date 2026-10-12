@@ -5,6 +5,7 @@ import AppKit
 final class ManagedWindow: NSObject, NSWindowDelegate {
     let window: NSWindow
     private let onClose: (ManagedWindow) -> Void
+    var shouldClose: ((ManagedWindow) -> Bool)?
     
     init(window: NSWindow, onClose: @escaping (ManagedWindow) -> Void) {
         self.window = window
@@ -12,6 +13,13 @@ final class ManagedWindow: NSObject, NSWindowDelegate {
         super.init()
         window.isReleasedWhenClosed = false
         window.delegate = self
+    }
+    
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if let check = shouldClose {
+            return check(self)
+        }
+        return true
     }
     
     func windowWillClose(_ notification: Notification) {

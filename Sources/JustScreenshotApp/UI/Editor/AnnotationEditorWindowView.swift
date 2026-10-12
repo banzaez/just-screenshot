@@ -3,11 +3,11 @@ import AppKit
 
 /// Главное окно редактора аннотаций: адаптивное вписывание, undo/redo, красивый фон
 public struct AnnotationEditorWindowView: View {
-    public let capturedItem: CapturedItem
+    @ObservedObject public var model: AnnotationEditorModel
     public let onSave: (NSImage) -> Void
+    public let onSaveToHistory: ((NSImage) -> Void)?
     public let onClose: () -> Void
     
-    @State private var items: [AnnotationItem] = []
     @State private var undoStack: [[AnnotationItem]] = []
     @State private var redoStack: [[AnnotationItem]] = []
     @State private var isRestoring = false
@@ -19,29 +19,31 @@ public struct AnnotationEditorWindowView: View {
     @State private var lineWidth: CGFloat = 4.0
     @State private var textInputString: String = "Текст заметки"
     
-    @State private var showBackdrop: Bool = true
-    @State private var backdropPreset: BackdropPreset = .aurora
-    @State private var backdropPadding: CGFloat = 48
-    @State private var addShadow: Bool = true
-    
     @State private var fitMode: Bool = true
     @State private var manualZoom: CGFloat = 1.0
     @State private var fitScale: CGFloat = 1.0
     @State private var blurredImage: NSImage?
     
-    public init(capturedItem: CapturedItem, onSave: @escaping (NSImage) -> Void, onClose: @escaping () -> Void) {
-        self.capturedItem = capturedItem
+    public init(
+        model: AnnotationEditorModel,
+        onSave: @escaping (NSImage) -> Void,
+        onSaveToHistory: ((NSImage) -> Void)? = nil,
+        onClose: @escaping () -> Void
+    ) {
+        self.model = model
         self.onSave = onSave
+        self.onSaveToHistory = onSaveToHistory
         self.onClose = onClose
     }
     
+    private var capturedItem: CapturedItem { model.capturedItem }
     private var zoom: CGFloat { fitMode ? fitScale : manualZoom }
     private var imgSize: CGSize { capturedItem.image.size }
-    private var extraPad: CGFloat { showBackdrop ? backdropPadding : 0 }
+    private var extraPad: CGFloat { model.showBackdrop ? model.backdropPadding : 0 }
     
     private var selectedItemIndex: Int? {
         guard let id = selectedItemID else { return nil }
-        return items.firstIndex(where: { $0.id == id })
+        return model.items.firstIndex(where: { $0.id == id })
     }
     
     private func computeFit(for size: CGSize) -> CGFloat {
@@ -63,8 +65,9 @@ public struct AnnotationEditorWindowView: View {
     private func undo() {
         guard let prev = undoStack.popLast() else { return }
         isRestoring = true
-        redoStack.append(items)
-        items = prev
+        redoStack.append(model.items)
+        model.items = prev
+        model.markModified()
         selectedItemID = nil
         DispatchQueue.main.async { isRestoring = false }
     }
@@ -72,25 +75,20 @@ public struct AnnotationEditorWindowView: View {
     private func redo() {
         guard let next = redoStack.popLast() else { return }
         isRestoring = true
-        undoStack.append(items)
-        items = next
+        undoStack.append(model.items)
+        model.items = next
+        model.markModified()
         selectedItemID = nil
         DispatchQueue.main.async { isRestoring = false }
     }
     
     private func finalImage() -> NSImage {
-        AnnotationRenderer.render(
-            baseImage: capturedItem.image,
-            items: items,
-            backdrop: showBackdrop ? backdropPreset : nil,
-            padding: backdropPadding,
-            shadow: addShadow
-        )
+        model.renderFinalImage()
     }
     
     private func duplicateSelected() {
         guard let idx = selectedItemIndex else { return }
-        let o = items[idx]
+        let o = model.items[idx]
         let copy = AnnotationItem(
             tool: o.tool,
             startPoint: CGPoint(x: o.startPoint.x + 24, y: o.startPoint.y + 24),
@@ -99,13 +97,15 @@ public struct AnnotationEditorWindowView: View {
             counterNumber: o.counterNumber + 1, fontSize: o.fontSize,
             rotationAngle: o.rotationAngle, scaleFactor: o.scaleFactor
         )
-        items.append(copy)
+        model.items.append(copy)
+        model.markModified()
         selectedItemID = copy.id
     }
     
     private func deleteSelected() {
         guard let idx = selectedItemIndex else { return }
-        items.remove(at: idx)
+        model.items.remove(at: idx)
+        model.markModified()
         selectedItemID = nil
     }
     
@@ -135,21 +135,20 @@ public struct AnnotationEditorWindowView: View {
             
             Divider()
             
-            if let idx = selectedItemIndex {
-                EditorSelectedItemBar(
-                    item: items[idx],
-                    onTextChange: { items[idx].text = $0 },
-                    onFontSizeChange: { items[idx].fontSize = $0 },
-                    onLineWidthChange: { items[idx].lineWidth = $0 },
-                    onCounterChange: { items[idx].counterNumber = $0 },
-                    onSetAngle: { items[idx].setAngle($0) },
-                    onColorChange: { items[idx].color = $0 },
-                    onDuplicate: duplicateSelected,
-                    onDelete: deleteSelected,
-                    onDeselect: { selectedItemID = nil }
-                )
-                Divider()
-            }
+            EditorSelectedItemBar(
+                item: selectedItemIndex.map { model.items[$0] },
+                onTextChange: { val in if let idx = selectedItemIndex { model.items[idx].text = val; model.markModified() } },
+                onFontSizeChange: { val in if let idx = selectedItemIndex { model.items[idx].fontSize = val; model.markModified() } },
+                onLineWidthChange: { val in if let idx = selectedItemIndex { model.items[idx].lineWidth = val; model.markModified() } },
+                onCounterChange: { val in if let idx = selectedItemIndex { model.items[idx].counterNumber = val; model.markModified() } },
+                onSetAngle: { val in if let idx = selectedItemIndex { model.items[idx].setAngle(val); model.markModified() } },
+                onColorChange: { val in if let idx = selectedItemIndex { model.items[idx].color = val; model.markModified() } },
+                onDuplicate: duplicateSelected,
+                onDelete: deleteSelected,
+                onDeselect: { selectedItemID = nil }
+            )
+            
+            Divider()
             
             GeometryReader { geo in
                 let z = zoom
@@ -159,15 +158,15 @@ public struct AnnotationEditorWindowView: View {
                 
                 ScrollView([.horizontal, .vertical]) {
                     ZStack {
-                        if showBackdrop {
-                            Rectangle().fill(backdropPreset.gradient)
+                        if model.showBackdrop {
+                            Rectangle().fill(model.backdropPreset.gradient)
                         }
                         ZStack {
                             Image(nsImage: capturedItem.image)
                                 .resizable()
                                 .frame(width: displayW, height: displayH)
                             AnnotationCanvasView(
-                                items: $items,
+                                items: $model.items,
                                 selectedItemID: $selectedItemID,
                                 currentTool: selectedTool,
                                 currentColor: selectedColor,
@@ -178,8 +177,8 @@ public struct AnnotationEditorWindowView: View {
                             )
                             .frame(width: displayW, height: displayH)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: showBackdrop ? 10 * z : 0))
-                        .shadow(color: .black.opacity(showBackdrop && addShadow ? 0.4 : 0), radius: 24 * z, x: 0, y: 10 * z)
+                        .clipShape(RoundedRectangle(cornerRadius: model.showBackdrop ? 10 * z : 0))
+                        .shadow(color: .black.opacity(model.showBackdrop && model.addShadow ? 0.4 : 0), radius: 24 * z, x: 0, y: 10 * z)
                     }
                     .frame(width: displayW + pad * 2, height: displayH + pad * 2)
                     .frame(
@@ -191,21 +190,32 @@ public struct AnnotationEditorWindowView: View {
                 .onChange(of: geo.size, initial: true) { _, newSize in
                     fitScale = computeFit(for: newSize)
                 }
-                .onChange(of: showBackdrop) { _, _ in fitScale = computeFit(for: geo.size) }
-                .onChange(of: backdropPadding) { _, _ in fitScale = computeFit(for: geo.size) }
+                .onChange(of: model.showBackdrop) { _, _ in fitScale = computeFit(for: geo.size) }
+                .onChange(of: model.backdropPadding) { _, _ in fitScale = computeFit(for: geo.size) }
             }
             
             Divider()
             
             ScrollView(.horizontal, showsIndicators: false) {
                 EditorBottomBarView(
-                    showBackdrop: $showBackdrop,
-                    backdropPreset: $backdropPreset,
-                    backdropPadding: $backdropPadding,
-                    addShadow: $addShadow,
+                    showBackdrop: $model.showBackdrop,
+                    backdropPreset: $model.backdropPreset,
+                    backdropPadding: $model.backdropPadding,
+                    addShadow: $model.addShadow,
                     onClose: onClose,
                     onCopy: { ImageExporter.copyToClipboard(finalImage()) },
-                    onSave: { onSave(finalImage()) }
+                    onSaveToHistory: {
+                        let img = finalImage()
+                        if let custom = onSaveToHistory {
+                            custom(img)
+                        } else {
+                            HistoryStore.shared.add(img)
+                        }
+                        model.markSaved()
+                    },
+                    onSave: {
+                        onSave(finalImage())
+                    }
                 )
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -217,9 +227,11 @@ public struct AnnotationEditorWindowView: View {
         .task {
             await Task.yield()
             blurredImage = BlurFilter.makeBlurred(capturedItem.image)
+            model.finishInitialLoading()
         }
-        .onChange(of: items) { old, _ in
+        .onChange(of: model.items) { old, _ in
             guard !isRestoring else { return }
+            model.markModified()
             // Склеиваем быстрые изменения (перетаскивание, набор текста) в один шаг отмены
             if Date().timeIntervalSince(lastPushTime) > 0.5 {
                 undoStack.append(old)
@@ -228,6 +240,10 @@ public struct AnnotationEditorWindowView: View {
             lastPushTime = Date()
             redoStack.removeAll()
         }
+        .onChange(of: model.showBackdrop) { _, _ in model.markModified() }
+        .onChange(of: model.backdropPreset) { _, _ in model.markModified() }
+        .onChange(of: model.backdropPadding) { _, _ in model.markModified() }
+        .onChange(of: model.addShadow) { _, _ in model.markModified() }
         .background(shortcuts)
     }
     
