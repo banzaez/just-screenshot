@@ -15,7 +15,7 @@ final class AreaSelectionNSView: NSView {
     private var hoveredWindow: SCWindow?
     private var trackingArea: NSTrackingArea?
     
-    private let sampler: ScreenPixelSampler
+    private var sampler: ScreenPixelSampler
     
     init(
         frame: NSRect,
@@ -34,6 +34,16 @@ final class AreaSelectionNSView: NSView {
         self.onCancel = onCancel
         super.init(frame: frame)
         self.wantsLayer = true
+        
+        // Сразу берем текущее положение курсора, чтобы прицел не ждал первого движения мыши
+        let mouseLoc = NSEvent.mouseLocation
+        let windowPoint = NSPoint(x: mouseLoc.x - frame.origin.x, y: mouseLoc.y - frame.origin.y)
+        self.currentPoint = windowPoint
+    }
+    
+    func updateBackgroundImage(_ image: CGImage) {
+        self.sampler = ScreenPixelSampler(image: image)
+        needsDisplay = true
     }
     
     required init?(coder: NSCoder) {
@@ -48,6 +58,11 @@ final class AreaSelectionNSView: NSView {
         let options: NSTrackingArea.Options = [.activeAlways, .mouseMoved, .mouseEnteredAndExited]
         trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
         addTrackingArea(trackingArea!)
+    }
+    
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .crosshair)
     }
     
     override var acceptsFirstResponder: Bool { true }

@@ -50,21 +50,27 @@ extension AppWindowManager {
             
             self.closeAllOverlays()
             guard let screen = NSScreen.main else { return }
-            self.overlayToken = UUID()
-            let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen)
+            let token = UUID()
+            self.overlayToken = token
             
-            self.presentOverlay(
-                AreaOverlayWindow(
-                    screen: screen, mode: .areaOnly, visibleWindows: [],
-                    backgroundImage: bgImage,
-                    onCompleteRect: { [weak self] rect in
-                        self?.closeAllOverlays()
-                        Task { [weak self] in await self?.captureRectAndShowHUD(rect: rect) }
-                    },
-                    onCompleteWindow: { _ in },
-                    onCancel: { [weak self] in self?.closeAllOverlays() }
-                )
+            let overlay = AreaOverlayWindow(
+                screen: screen, mode: .areaOnly, visibleWindows: [],
+                backgroundImage: nil,
+                onCompleteRect: { [weak self] rect in
+                    self?.closeAllOverlays()
+                    Task { [weak self] in await self?.captureRectAndShowHUD(rect: rect) }
+                },
+                onCompleteWindow: { _ in },
+                onCancel: { [weak self] in self?.closeAllOverlays() }
             )
+            self.presentOverlay(overlay)
+            
+            // Фоновый захват экрана для лупы/пипетки без задержки отображения оверлея
+            Task { [weak self, weak overlay] in
+                let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen)
+                guard let self, self.overlayToken == token, let bgImage, let overlay else { return }
+                overlay.updateBackgroundImage(bgImage)
+            }
         }
     }
     
