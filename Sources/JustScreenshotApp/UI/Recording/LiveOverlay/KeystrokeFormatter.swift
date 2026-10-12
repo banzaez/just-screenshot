@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 
 /// Преобразование событий NSEvent в текстовые обозначения нажатых клавиш (например, "⌘ ⇧ S", "Esc")
 @MainActor
@@ -13,15 +14,15 @@ enum KeystrokeFormatter {
         
         if let chars = event.charactersIgnoringModifiers, !chars.isEmpty {
             let first = chars.uppercased()
-            switch event.keyCode {
-            case 49: symbols.append("Space")
-            case 36: symbols.append("Return")
-            case 53: symbols.append("Esc")
-            case 51: symbols.append("⌫")
-            case 123: symbols.append("←")
-            case 124: symbols.append("→")
-            case 125: symbols.append("↓")
-            case 126: symbols.append("↑")
+            switch Int(event.keyCode) {
+            case kVK_Space: symbols.append("Space")
+            case kVK_Return: symbols.append("Return")
+            case kVK_Escape: symbols.append("Esc")
+            case kVK_Delete: symbols.append("⌫")
+            case kVK_LeftArrow: symbols.append("←")
+            case kVK_RightArrow: symbols.append("→")
+            case kVK_DownArrow: symbols.append("↓")
+            case kVK_UpArrow: symbols.append("↑")
             default:
                 if !symbols.isEmpty || chars.count == 1 {
                     symbols.append(first)

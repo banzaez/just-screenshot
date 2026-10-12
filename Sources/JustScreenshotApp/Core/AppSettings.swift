@@ -93,6 +93,17 @@ public final class AppSettings: ObservableObject {
         didSet { saveOptionalShortcut(shortcutHistoryAlt, key: Keys.shortcutHistoryAlt) }
     }
     
+    public struct DefaultShortcuts {
+        public static let defaultMod = UInt32(cmdKey | shiftKey)
+        public static let repeatMod = UInt32(cmdKey | optionKey)
+        
+        public static let area = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: defaultMod)
+        public static let window = ShortcutKey(keyCode: UInt32(kVK_ANSI_4), keyChar: "4", modifiers: defaultMod)
+        public static let recording = ShortcutKey(keyCode: UInt32(kVK_ANSI_3), keyChar: "3", modifiers: defaultMod)
+        public static let repeatCapture = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: repeatMod)
+        public static let history = ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: defaultMod)
+    }
+    
     private init() {
         let defaults = UserDefaults.standard
         
@@ -105,21 +116,19 @@ public final class AppSettings: ObservableObject {
         self.showFloatingBarDuringRecording = defaults.object(forKey: Keys.showFloatingBar) as? Bool ?? true
         self.showKeystrokesDuringRecording = defaults.object(forKey: Keys.showKeystrokes) as? Bool ?? true
         
-        let defaultMod = UInt32(cmdKey | shiftKey)
-        self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: defaultMod)
+        self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? DefaultShortcuts.area
         self.shortcutAreaAlt = AppSettings.loadShortcut(key: Keys.shortcutAreaAlt)
         
-        self.shortcutWindow = AppSettings.loadShortcut(key: Keys.shortcutWindow) ?? ShortcutKey(keyCode: UInt32(kVK_ANSI_4), keyChar: "4", modifiers: defaultMod)
+        self.shortcutWindow = AppSettings.loadShortcut(key: Keys.shortcutWindow) ?? DefaultShortcuts.window
         self.shortcutWindowAlt = AppSettings.loadShortcut(key: Keys.shortcutWindowAlt)
         
-        self.shortcutRecording = AppSettings.loadShortcut(key: Keys.shortcutRecording) ?? ShortcutKey(keyCode: UInt32(kVK_ANSI_3), keyChar: "3", modifiers: defaultMod)
+        self.shortcutRecording = AppSettings.loadShortcut(key: Keys.shortcutRecording) ?? DefaultShortcuts.recording
         self.shortcutRecordingAlt = AppSettings.loadShortcut(key: Keys.shortcutRecordingAlt)
         
-        let repeatMod = UInt32(cmdKey | optionKey)
-        self.shortcutRepeat = AppSettings.loadShortcut(key: Keys.shortcutRepeat) ?? ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: repeatMod)
+        self.shortcutRepeat = AppSettings.loadShortcut(key: Keys.shortcutRepeat) ?? DefaultShortcuts.repeatCapture
         self.shortcutRepeatAlt = AppSettings.loadShortcut(key: Keys.shortcutRepeatAlt)
         
-        self.shortcutHistory = AppSettings.loadShortcut(key: Keys.shortcutHistory) ?? ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: defaultMod)
+        self.shortcutHistory = AppSettings.loadShortcut(key: Keys.shortcutHistory) ?? DefaultShortcuts.history
         self.shortcutHistoryAlt = AppSettings.loadShortcut(key: Keys.shortcutHistoryAlt)
     }
     
@@ -146,17 +155,15 @@ public final class AppSettings: ObservableObject {
     }
     
     public func resetHotkeysToDefaults() {
-        let defaultMod = UInt32(cmdKey | shiftKey)
-        let repeatMod = UInt32(cmdKey | optionKey)
-        shortcutArea = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: defaultMod)
+        shortcutArea = DefaultShortcuts.area
         shortcutAreaAlt = nil
-        shortcutWindow = ShortcutKey(keyCode: UInt32(kVK_ANSI_4), keyChar: "4", modifiers: defaultMod)
+        shortcutWindow = DefaultShortcuts.window
         shortcutWindowAlt = nil
-        shortcutRecording = ShortcutKey(keyCode: UInt32(kVK_ANSI_3), keyChar: "3", modifiers: defaultMod)
+        shortcutRecording = DefaultShortcuts.recording
         shortcutRecordingAlt = nil
-        shortcutRepeat = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: repeatMod)
+        shortcutRepeat = DefaultShortcuts.repeatCapture
         shortcutRepeatAlt = nil
-        shortcutHistory = ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: defaultMod)
+        shortcutHistory = DefaultShortcuts.history
         shortcutHistoryAlt = nil
     }
 }

@@ -31,11 +31,11 @@ public final class GIFExportService: @unchecked Sendable {
         generator.requestedTimeToleranceAfter = .zero
         generator.maximumSize = CGSize(width: 800, height: 800)
         
-        var times: [NSValue] = []
+        var cmTimes: [CMTime] = []
         for i in 0..<frameCount {
             let timeSec = startTime + (Double(i) / Double(fps))
             let cmTime = CMTime(seconds: timeSec, preferredTimescale: 600)
-            times.append(NSValue(time: cmTime))
+            cmTimes.append(cmTime)
         }
         
         if FileManager.default.fileExists(atPath: destinationURL.path) {
@@ -61,27 +61,25 @@ public final class GIFExportService: @unchecked Sendable {
         ]
         
         var processed = 0
-        for val in times {
-            let time = val.timeValue
-            if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
-                var finalCGImage = cgImage
-                // Если есть Crop
-                if let crop = options.cropRect, crop.width > 0, crop.height > 0 {
-                    let w = CGFloat(cgImage.width)
-                    let h = CGFloat(cgImage.height)
-                    let cropPixelRect = CGRect(
-                        x: crop.origin.x * w,
-                        y: crop.origin.y * h,
-                        width: crop.width * w,
-                        height: crop.height * h
-                    )
-                    if let cropped = cgImage.cropping(to: cropPixelRect) {
-                        finalCGImage = cropped
-                    }
+        for try await result in generator.images(for: cmTimes) {
+            let cgImage = try result.image
+            var finalCGImage = cgImage
+            // Если есть Crop
+            if let crop = options.cropRect, crop.width > 0, crop.height > 0 {
+                let w = CGFloat(cgImage.width)
+                let h = CGFloat(cgImage.height)
+                let cropPixelRect = CGRect(
+                    x: crop.origin.x * w,
+                    y: crop.origin.y * h,
+                    width: crop.width * w,
+                    height: crop.height * h
+                )
+                if let cropped = cgImage.cropping(to: cropPixelRect) {
+                    finalCGImage = cropped
                 }
-                
-                CGImageDestinationAddImage(destination, finalCGImage, frameProperties as CFDictionary)
             }
+            
+            CGImageDestinationAddImage(destination, finalCGImage, frameProperties as CFDictionary)
             processed += 1
             progressHandler(Double(processed) / Double(frameCount))
         }

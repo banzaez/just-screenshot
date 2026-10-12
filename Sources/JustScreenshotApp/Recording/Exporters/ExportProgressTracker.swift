@@ -14,6 +14,7 @@ final class ExportProgressTracker: @unchecked Sendable {
     }
     
     func start() {
+        stop()
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 0.1, repeating: 0.1)
         timer.setEventHandler { [weak self] in
@@ -26,7 +27,9 @@ final class ExportProgressTracker: @unchecked Sendable {
     }
     
     func stop() {
-        timer?.cancel()
-        timer = nil
+        queue.sync {
+            timer?.cancel()
+            timer = nil
+        }
     }
 }

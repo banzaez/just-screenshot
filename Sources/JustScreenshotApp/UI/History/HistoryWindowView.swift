@@ -83,17 +83,21 @@ private struct HistoryCard: View {
     let onCopy: () -> Void
     
     @ObservedObject private var store = HistoryStore.shared
+    @State private var thumbnail: NSImage?
     @State private var hovering = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10).fill(Color.primary.opacity(0.06))
-                if let thumb = store.thumbnail(for: entry) {
+                if let thumb = thumbnail {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .padding(6)
+                } else {
+                    ProgressView()
+                        .scaleEffect(0.6)
                 }
                 
                 if hovering {
@@ -111,6 +115,10 @@ private struct HistoryCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .onHover { hovering = $0 }
             .onTapGesture(count: 2, perform: onEdit)
+            .task(id: entry.id) {
+                // Загружаем миниатюру вне синхронного рендера body
+                thumbnail = store.thumbnail(for: entry)
+            }
             
             HStack {
                 Text(entry.date, format: .dateTime.day().month().hour().minute())

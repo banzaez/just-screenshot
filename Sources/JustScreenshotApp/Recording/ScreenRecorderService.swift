@@ -86,11 +86,16 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         self.isPaused = false
         self.isRecording = true
         
-        // Запуск потока ScreenCaptureKit
-        let scStream = SCStream(filter: filter, configuration: config, delegate: self)
-        try scStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: recordingQueue)
-        try await scStream.startCapture()
-        self.stream = scStream
+        // Запуск потока ScreenCaptureKit с отказоустойчивым откатом при ошибке
+        do {
+            let scStream = SCStream(filter: filter, configuration: config, delegate: self)
+            try scStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: recordingQueue)
+            try await scStream.startCapture()
+            self.stream = scStream
+        } catch {
+            await cancelRecording()
+            throw error
+        }
     }
     
     /// Приостановка записи
