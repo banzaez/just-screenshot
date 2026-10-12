@@ -10,10 +10,13 @@ public final class AppWindowManager: ObservableObject {
     
     @Published public var currentCapturedItem: CapturedItem?
     @Published public var isRecording: Bool = false
+    @Published public var isRecordingPaused: Bool = false
     @Published public var recordingDuration: TimeInterval = 0
     
     private var overlayWindow: AreaOverlayWindow?
     private var overlayToken = UUID()
+    private var recordingFrameWindow: RecordingFrameWindow?
+    private var recordingBarWindow: RecordingControlBarWindow?
     private let hudStack = HUDStackManager()
     private var editors: [UUID: ManagedWindow] = [:]
     private var pins: [UUID: ManagedWindow] = [:]
@@ -385,25 +388,95 @@ public final class AppWindowManager: ObservableObject {
         do {
             try await ScreenRecorderService.shared.startRecording(rect: rect, destinationURL: outputURL)
             isRecording = true
+            isRecordingPaused = false
             recordingDuration = 0
             NSSound(named: "Purr")?.play()
+            
+            // Преобразуем координаты ScreenCaptureKit (origin вверху основного экрана) в координаты AppKit
+            let screenHeight = NSScreen.main?.frame.height ?? 900
+            let appKitRect = NSRect(
+                x: rect.origin.x,
+                y: screenHeight - rect.origin.y - rect.height,
+                width: rect.width,
+                height: rect.height
+            )
+            
+            // 1. Показываем рамку выделения области
+            let frameWin = RecordingFrameWindow(screenRect: appKitRect)
+            frameWin.orderFrontRegardless()
+            self.recordingFrameWindow = frameWin
+            
+            // 2. Вычисляем позицию для плавающей панели снизу области
+            var barCenter = NSPoint(x: appKitRect.midX, y: appKitRect.minY - 35)
+            // Если панель выходит за нижний край экрана, показываем её внутри внизу области
+            if barCenter.y < 40 {
+                barCenter.y = appKitRect.minY + 35
+            }
+            // Предотвращаем выход за левый и правый края
+            let minX: CGFloat = 160
+            let maxX: CGFloat = (NSScreen.main?.frame.width ?? 1440) - 160
+            barCenter.x = max(minX, min(maxX, barCenter.x))
+            
+            let barWin = RecordingControlBarWindow(
+                initialPosition: barCenter,
+                windowManager: self,
+                onPauseResume: { [weak self] in self?.togglePauseResumeScreenRecording() },
+                onStop: { [weak self] in self?.stopScreenRecording() },
+                onCancel: { [weak self] in self?.cancelScreenRecording() }
+            )
+            barWin.orderFrontRegardless()
+            self.recordingBarWindow = barWin
+            
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.recordingDuration += 1 }
+                Task { @MainActor [weak self] in
+                    guard let self, self.isRecording, !self.isRecordingPaused else { return }
+                    self.recordingDuration += 1
+                }
             }
         } catch {
             print("Recording start failed: \(error.localizedDescription)")
         }
     }
     
+    public func togglePauseResumeScreenRecording() {
+        guard isRecording else { return }
+        if isRecordingPaused {
+            ScreenRecorderService.shared.resumeRecording()
+            isRecordingPaused = false
+        } else {
+            ScreenRecorderService.shared.pauseRecording()
+            isRecordingPaused = true
+        }
+    }
+    
     public func stopScreenRecording() {
-        recordingTimer?.invalidate()
-        recordingTimer = nil
-        isRecording = false
+        cleanupRecordingSession()
         
         Task {
             if let savedURL = try? await ScreenRecorderService.shared.stopRecording() {
                 NSWorkspace.shared.activateFileViewerSelecting([savedURL])
             }
         }
+    }
+    
+    public func cancelScreenRecording() {
+        cleanupRecordingSession()
+        
+        Task {
+            await ScreenRecorderService.shared.cancelRecording()
+        }
+    }
+    
+    private func cleanupRecordingSession() {
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        isRecording = false
+        isRecordingPaused = false
+        
+        recordingFrameWindow?.orderOut(nil)
+        recordingFrameWindow = nil
+        
+        recordingBarWindow?.orderOut(nil)
+        recordingBarWindow = nil
     }
 }

@@ -11,15 +11,24 @@ struct JustScreenshotApp: App {
             VStack(alignment: .leading, spacing: 4) {
                 if windowManager.isRecording {
                     HStack {
-                        Circle().fill(Color.red).frame(width: 8, height: 8)
-                        Text("Идет запись: \(Int(windowManager.recordingDuration))с")
+                        Circle().fill(windowManager.isRecordingPaused ? Color.orange : Color.red).frame(width: 8, height: 8)
+                        Text(windowManager.isRecordingPaused ? "Запись на паузе: \(Int(windowManager.recordingDuration))с" : "Идет запись: \(Int(windowManager.recordingDuration))с")
                             .font(.headline)
                     }
                     
-                    Button("Остановить запись") {
+                    Button(windowManager.isRecordingPaused ? "Продолжить запись" : "Приостановить запись") {
+                        windowManager.togglePauseResumeScreenRecording()
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                    
+                    Button("Остановить запись и сохранить") {
                         windowManager.stopScreenRecording()
                     }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
+                    
+                    Button("Отменить запись (удалить)") {
+                        windowManager.cancelScreenRecording()
+                    }
                     
                     Divider()
                 } else {

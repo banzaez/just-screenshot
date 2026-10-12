@@ -16,8 +16,11 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
     
     private var isRecording = false
+    private var isPaused = false
     private var outputURL: URL?
     private var recordingStartTime: CMTime?
+    private var pauseStartTime: CMTime?
+    private var totalPausedDuration: CMTime = .zero
     
     public override init() {
         super.init()
@@ -78,6 +81,9 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         self.videoInput = input
         self.pixelBufferAdaptor = adaptor
         self.recordingStartTime = nil
+        self.pauseStartTime = nil
+        self.totalPausedDuration = .zero
+        self.isPaused = false
         self.isRecording = true
         
         // Запуск потока ScreenCaptureKit
@@ -87,6 +93,22 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         self.stream = scStream
     }
     
+    /// Приостановка записи
+    public func pauseRecording() {
+        recordingQueue.async {
+            guard self.isRecording, !self.isPaused else { return }
+            self.isPaused = true
+        }
+    }
+    
+    /// Возобновление записи
+    public func resumeRecording() {
+        recordingQueue.async {
+            guard self.isRecording, self.isPaused else { return }
+            self.isPaused = false
+        }
+    }
+    
     /// Остановка записи и сохранение файла
     public func stopRecording() async throws -> URL? {
         guard isRecording, let scStream = stream else { return nil }
@@ -94,6 +116,7 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         try await scStream.stopCapture()
         self.stream = nil
         self.isRecording = false
+        self.isPaused = false
         
         guard let writer = self.assetWriter, let input = self.videoInput else {
             return self.outputURL
@@ -108,6 +131,26 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         }
     }
     
+    /// Отмена записи с удалением неполного файла
+    public func cancelRecording() async {
+        guard isRecording, let scStream = stream else { return }
+        
+        try? await scStream.stopCapture()
+        self.stream = nil
+        self.isRecording = false
+        self.isPaused = false
+        
+        self.assetWriter?.cancelWriting()
+        self.assetWriter = nil
+        self.videoInput = nil
+        self.pixelBufferAdaptor = nil
+        
+        if let outputURL = self.outputURL {
+            try? FileManager.default.removeItem(at: outputURL)
+            self.outputURL = nil
+        }
+    }
+    
     // MARK: - SCStreamOutput
     public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen else { return }
@@ -116,13 +159,28 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         
+        if isPaused {
+            if pauseStartTime == nil {
+                pauseStartTime = pts
+            }
+            return
+        }
+        
+        if let pauseStart = pauseStartTime {
+            let pauseDuration = CMTimeSubtract(pts, pauseStart)
+            totalPausedDuration = CMTimeAdd(totalPausedDuration, pauseDuration)
+            pauseStartTime = nil
+        }
+        
+        let adjustedPts = CMTimeSubtract(pts, totalPausedDuration)
+        
         if recordingStartTime == nil {
-            recordingStartTime = pts
-            writer.startSession(atSourceTime: pts)
+            recordingStartTime = adjustedPts
+            writer.startSession(atSourceTime: adjustedPts)
         }
         
         if let input = videoInput, input.isReadyForMoreMediaData, let adaptor = pixelBufferAdaptor {
-            adaptor.append(imageBuffer, withPresentationTime: pts)
+            adaptor.append(imageBuffer, withPresentationTime: adjustedPts)
         }
     }
 }
