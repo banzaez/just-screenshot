@@ -44,4 +44,17 @@ public enum ImageExporter {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
     }
+    
+    /// Сохранение временного PNG файла для передачи в Drag & Drop
+    public static func saveTemporaryPNG(_ image: NSImage, filename: String = "Screenshot") -> URL? {
+        guard let data = pngData(from: image) else { return nil }
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("\(filename)-\(UUID().uuidString.prefix(8)).png")
+        do {
+            try data.write(to: fileURL)
+            return fileURL
+        } catch {
+            return nil
+        }
+    }
 }

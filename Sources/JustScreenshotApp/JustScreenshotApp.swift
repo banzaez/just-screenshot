@@ -5,6 +5,7 @@ import AppKit
 struct JustScreenshotApp: App {
     @StateObject private var windowManager = AppWindowManager.shared
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
+    @StateObject private var localization = LocalizationManager.shared
     
     var body: some Scene {
         MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : "camera.viewfinder") {
@@ -12,21 +13,21 @@ struct JustScreenshotApp: App {
                 if windowManager.isRecording {
                     HStack {
                         Circle().fill(windowManager.isRecordingPaused ? Color.orange : Color.red).frame(width: 8, height: 8)
-                        Text(windowManager.isRecordingPaused ? "Запись на паузе: \(Int(windowManager.recordingDuration))с" : "Идет запись: \(Int(windowManager.recordingDuration))с")
+                        Text(windowManager.isRecordingPaused ? L("menu.recording_paused", Int(windowManager.recordingDuration)) : L("menu.recording_active", Int(windowManager.recordingDuration)))
                             .font(.headline)
                     }
                     
-                    Button(windowManager.isRecordingPaused ? "Продолжить запись" : "Приостановить запись") {
+                    Button(windowManager.isRecordingPaused ? L("menu.resume_recording") : L("menu.pause_recording")) {
                         windowManager.togglePauseResumeScreenRecording()
                     }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                     
-                    Button("Остановить запись и сохранить") {
+                    Button(L("menu.stop_save_recording")) {
                         windowManager.stopScreenRecording()
                     }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                     
-                    Button("Отменить запись (удалить)") {
+                    Button(L("menu.cancel_recording")) {
                         windowManager.cancelScreenRecording()
                     }
                     
@@ -35,23 +36,44 @@ struct JustScreenshotApp: App {
                     Button {
                         windowManager.startScreenRecording()
                     } label: {
-                        Label("Запись экрана", systemImage: "record.circle")
+                        Label(L("menu.record_screen"), systemImage: "record.circle")
                     }
                     .keyboardShortcut("3", modifiers: [.command, .shift])
                     
                     Button {
                         windowManager.startWindowCapture()
                     } label: {
-                        Label("Скриншот окна", systemImage: "macwindow")
+                        Label(L("menu.capture_window"), systemImage: "macwindow")
                     }
                     .keyboardShortcut("4", modifiers: [.command, .shift])
                     
                     Button {
                         windowManager.startAreaCapture()
                     } label: {
-                        Label("Скриншот произвольного размера", systemImage: "crop")
+                        Label(L("menu.capture_area"), systemImage: "crop")
                     }
                     .keyboardShortcut("5", modifiers: [.command, .shift])
+                    
+                    Button {
+                        windowManager.repeatLastCapture()
+                    } label: {
+                        Label(L("menu.repeat_capture"), systemImage: "arrow.counterclockwise")
+                    }
+                    .keyboardShortcut("5", modifiers: [.command, .option])
+                    
+                    Menu {
+                        Button(L("menu.delay_3s")) {
+                            windowManager.startAreaCapture(delaySeconds: 3)
+                        }
+                        Button(L("menu.delay_5s")) {
+                            windowManager.startAreaCapture(delaySeconds: 5)
+                        }
+                        Button(L("menu.delay_10s")) {
+                            windowManager.startAreaCapture(delaySeconds: 10)
+                        }
+                    } label: {
+                        Label(L("menu.timed_screenshot"), systemImage: "timer")
+                    }
                     
                     Divider()
                 }
@@ -59,20 +81,20 @@ struct JustScreenshotApp: App {
                 Button {
                     windowManager.showHistory()
                 } label: {
-                    Label("История снимков", systemImage: "clock.arrow.circlepath")
+                    Label(L("menu.history"), systemImage: "clock.arrow.circlepath")
                 }
                 .keyboardShortcut("h", modifiers: [.command, .shift])
                 
                 Button {
                     windowManager.openImageFromDisk()
                 } label: {
-                    Label("Открыть изображение…", systemImage: "photo")
+                    Label(L("menu.open_image"), systemImage: "photo")
                 }
                 
                 Button {
                     windowManager.openImageFromClipboard()
                 } label: {
-                    Label("Редактировать из буфера обмена", systemImage: "doc.on.clipboard")
+                    Label(L("menu.edit_clipboard"), systemImage: "doc.on.clipboard")
                 }
                 
                 Divider()
@@ -80,11 +102,11 @@ struct JustScreenshotApp: App {
                 Button {
                     windowManager.showSettings()
                 } label: {
-                    Label("Настройки…", systemImage: "gearshape")
+                    Label(L("menu.settings"), systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: [.command])
                 
-                Button("Проверить разрешения записи экрана") {
+                Button(L("menu.check_permissions")) {
                     Task {
                         _ = await ScreenCaptureService.shared.checkAndRequestPermissions()
                     }
@@ -92,7 +114,7 @@ struct JustScreenshotApp: App {
                 
                 Divider()
                 
-                Button("Выход") {
+                Button(L("menu.quit")) {
                     NSApplication.shared.terminate(nil)
                 }
                 .keyboardShortcut("q", modifiers: [.command])

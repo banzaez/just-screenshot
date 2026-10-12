@@ -69,7 +69,9 @@ public struct QuickAccessOverlayView: View {
             }
             .animation(.easeOut(duration: 0.15), value: feedback)
             .onDrag {
-                if let tiff = item.image.tiffRepresentation {
+                if let tempURL = ImageExporter.saveTemporaryPNG(item.image) {
+                    return NSItemProvider(object: tempURL as NSURL)
+                } else if let tiff = item.image.tiffRepresentation {
                     return NSItemProvider(item: tiff as NSSecureCoding, typeIdentifier: "public.tiff")
                 }
                 return NSItemProvider()
@@ -78,7 +80,7 @@ public struct QuickAccessOverlayView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Снимок экрана")
+                        Text(L("hud.screenshot"))
                             .font(.system(size: 14, weight: .semibold))
                         Text("\(Int(item.image.size.width)) × \(Int(item.image.size.height)) px")
                             .font(.system(size: 11, design: .monospaced))
@@ -94,12 +96,12 @@ public struct QuickAccessOverlayView: View {
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .help("Закрыть")
+                    .help(L("editor.close"))
                 }
                 
                 HStack(spacing: 6) {
                     Button(action: onAnnotate) {
-                        Label("Редактор", systemImage: "pencil.tip.crop.circle")
+                        Label(L("hud.editor"), systemImage: "pencil.tip.crop.circle")
                             .font(.system(size: 12, weight: .medium))
                             .frame(height: 28)
                             .padding(.horizontal, 6)
@@ -107,16 +109,16 @@ public struct QuickAccessOverlayView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     
-                    EditorIconButton("doc.on.doc", title: "Копировать", width: 30) {
+                    EditorIconButton("doc.on.doc", title: L("editor.copy"), width: 30) {
                         onCopy()
-                        flash("Скопировано")
+                        flash(L("hud.copied"))
                     }
-                    EditorIconButton("square.and.arrow.down", title: "Сохранить как…", width: 30, action: onSave)
-                    EditorIconButton("pin", title: "Закрепить поверх окон", width: 30, action: onPin)
-                    EditorIconButton("text.viewfinder", title: "Распознать текст и скопировать", width: 30) {
-                        flash("Распознаю…")
+                    EditorIconButton("square.and.arrow.down", title: L("hud.save_as"), width: 30, action: onSave)
+                    EditorIconButton("pin", title: L("hud.pin_top"), width: 30, action: onPin)
+                    EditorIconButton("text.viewfinder", title: L("hud.ocr_button"), width: 30) {
+                        flash(L("hud.recognizing"))
                         onOCR { text in
-                            flash(text.isEmpty ? "Текст не найден" : "Текст скопирован\n(\(text.count) симв.)")
+                            flash(text.isEmpty ? L("hud.ocr_not_found") : L("hud.ocr_copied", text.count))
                         }
                     }
                 }

@@ -25,8 +25,8 @@ public struct PinnedImageView: View {
             
             if hovering {
                 HStack(spacing: 4) {
-                    EditorIconButton("pencil", title: "Редактировать", width: 30, action: onEdit)
-                    EditorIconButton("xmark", title: "Открепить", width: 30, action: onClose)
+                    EditorIconButton("pencil", title: L("history.edit"), width: 30, action: onEdit)
+                    EditorIconButton("xmark", title: L("pin.unpin"), width: 30, action: onClose)
                 }
                 .padding(6)
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9))
@@ -39,14 +39,14 @@ public struct PinnedImageView: View {
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
         .contextMenu {
-            Button("Копировать") { ImageExporter.copyToClipboard(image) }
-            Menu("Прозрачность") {
+            Button(L("editor.copy")) { ImageExporter.copyToClipboard(image) }
+            Menu(L("pin.opacity")) {
                 ForEach([1.0, 0.8, 0.6, 0.4], id: \.self) { v in
                     Button("\(Int(v * 100))%") { opacity = v }
                 }
             }
             Divider()
-            Button("Открепить", action: onClose)
+            Button(L("pin.unpin"), action: onClose)
         }
     }
 }

@@ -7,6 +7,7 @@ public final class AreaOverlayWindow: NSWindow {
         screen: NSScreen,
         mode: OverlayMode,
         visibleWindows: [SCWindow] = [],
+        backgroundImage: CGImage? = nil,
         onCompleteRect: @escaping (CGRect) -> Void,
         onCompleteWindow: @escaping (SCWindow) -> Void,
         onCancel: @escaping () -> Void
@@ -30,6 +31,7 @@ public final class AreaOverlayWindow: NSWindow {
             frame: NSRect(origin: .zero, size: screen.frame.size),
             mode: mode,
             visibleWindows: visibleWindows,
+            backgroundImage: backgroundImage,
             onCompleteRect: onCompleteRect,
             onCompleteWindow: onCompleteWindow,
             onCancel: onCancel

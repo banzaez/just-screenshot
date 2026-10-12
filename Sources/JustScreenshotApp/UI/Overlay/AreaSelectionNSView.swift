@@ -15,21 +15,40 @@ final class AreaSelectionNSView: NSView {
     private var hoveredWindow: SCWindow?
     private var trackingArea: NSTrackingArea?
     
+    private let backgroundImage: CGImage?
+    private var pixelDataPtr: UnsafePointer<UInt8>?
+    private var pixelBytesPerRow: Int = 0
+    private var pixelWidth: Int = 0
+    private var pixelHeight: Int = 0
+    private var retainedPixelData: CFData?
+    
     init(
         frame: NSRect,
         mode: OverlayMode,
         visibleWindows: [SCWindow],
+        backgroundImage: CGImage? = nil,
         onCompleteRect: @escaping (CGRect) -> Void,
         onCompleteWindow: @escaping (SCWindow) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.mode = mode
         self.visibleWindows = visibleWindows
+        self.backgroundImage = backgroundImage
         self.onCompleteRect = onCompleteRect
         self.onCompleteWindow = onCompleteWindow
         self.onCancel = onCancel
         super.init(frame: frame)
         self.wantsLayer = true
+        
+        if let bg = backgroundImage,
+           let provider = bg.dataProvider,
+           let data = provider.data {
+            self.retainedPixelData = data
+            self.pixelDataPtr = CFDataGetBytePtr(data)
+            self.pixelBytesPerRow = bg.bytesPerRow
+            self.pixelWidth = bg.width
+            self.pixelHeight = bg.height
+        }
     }
     
     required init?(coder: NSCoder) {
@@ -54,12 +73,49 @@ final class AreaSelectionNSView: NSView {
         }
     }
     
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        needsDisplay = true
+    }
+    
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
+        
+        // Быстрое копирование HEX-кода при зажатой клавише Option (⌥)
+        if event.modifierFlags.contains(.option) {
+            let screenHeight = bounds.height
+            let screenPoint = CGPoint(x: loc.x, y: screenHeight - loc.y)
+            if let hex = getPixelHex(at: screenPoint) {
+                ImageExporter.copyText(hex)
+                NSSound(named: "Tink")?.play()
+                onCancel()
+                return
+            }
+        }
+        
         startPoint = loc
         currentPoint = loc
         isDragging = false
         needsDisplay = true
+    }
+    
+    /// Считывание цвета пикселя с предварительно захваченного экрана через ScreenCaptureKit
+    private func getPixelHex(at screenPoint: CGPoint) -> String? {
+        guard let data = pixelDataPtr, pixelWidth > 0, pixelHeight > 0 else { return nil }
+        
+        let scaleX = CGFloat(pixelWidth) / bounds.width
+        let scaleY = CGFloat(pixelHeight) / bounds.height
+        
+        let px = Int(screenPoint.x * scaleX)
+        let py = Int(screenPoint.y * scaleY)
+        
+        guard px >= 0, px < pixelWidth, py >= 0, py < pixelHeight else { return nil }
+        
+        let offset = py * pixelBytesPerRow + px * 4
+        let b = data[offset]
+        let g = data[offset + 1]
+        let r = data[offset + 2]
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -171,8 +227,8 @@ final class AreaSelectionNSView: NSView {
             context.addPath(path)
             context.strokePath()
             
-            let appTitle = hovered.owningApplication?.applicationName ?? (hovered.title ?? "Окно")
-            drawBadge(text: "📸 \(appTitle) • Кликните для снимка окна", at: appKitRect, in: context)
+            let appTitle = hovered.owningApplication?.applicationName ?? (hovered.title ?? L("overlay.window_fallback"))
+            drawBadge(text: L("overlay.window_badge", appTitle), at: appKitRect, in: context)
         }
         // 2. Отрисовка рамки произвольного размера
         else if isDragging, let start = startPoint, let current = currentPoint {
@@ -195,9 +251,48 @@ final class AreaSelectionNSView: NSView {
             
             let prefix = mode == .recordingArea ? "🎥 Запись: " : ""
             drawBadge(text: "\(prefix)\(Int(rect.width)) × \(Int(rect.height)) px", at: rect, in: context)
+        } else if mode != .windowOnly, let current = currentPoint {
+            // Отрисовка аккуратного прицела/перекрестья до начала драга
+            context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.35))
+            context.setLineWidth(1.0)
+            context.setLineDash(phase: 0, lengths: [4, 4])
+            
+            context.move(to: CGPoint(x: 0, y: current.y))
+            context.addLine(to: CGPoint(x: bounds.width, y: current.y))
+            context.move(to: CGPoint(x: current.x, y: 0))
+            context.addLine(to: CGPoint(x: current.x, y: bounds.height))
+            context.strokePath()
+            context.setLineDash(phase: 0, lengths: [])
+            
+            drawCrosshairBadge(point: current, in: context)
         }
         
         drawTopTip(in: context)
+    }
+    
+    private func drawCrosshairBadge(point: CGPoint, in context: CGContext) {
+        let screenHeight = bounds.height
+        let screenPoint = CGPoint(x: point.x, y: screenHeight - point.y)
+        let hex = getPixelHex(at: screenPoint) ?? "#------"
+        
+        let text = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  🎨 \(hex)" as NSString
+        let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .semibold)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.white
+        ]
+        let textSize = text.size(withAttributes: attrs)
+        let badgeRect = CGRect(
+            x: min(max(point.x + 14, 10), bounds.width - textSize.width - 24),
+            y: min(max(point.y + 14, 10), bounds.height - textSize.height - 18),
+            width: textSize.width + 16,
+            height: textSize.height + 6
+        )
+        let path = CGPath(roundedRect: badgeRect, cornerWidth: 5, cornerHeight: 5, transform: nil)
+        context.setFillColor(CGColor(gray: 0.08, alpha: 0.92))
+        context.addPath(path)
+        context.fillPath()
+        text.draw(at: CGPoint(x: badgeRect.origin.x + 8, y: badgeRect.origin.y + 3), withAttributes: attrs)
     }
     
     private func drawBadge(text: String, at rect: CGRect, in context: CGContext) {
@@ -227,11 +322,11 @@ final class AreaSelectionNSView: NSView {
         let tipText: NSString
         switch mode {
         case .windowOnly:
-            tipText = "Кликните по окну для скриншота окна • ESC для отмены"
+            tipText = L("overlay.window_tip") as NSString
         case .areaOnly:
-            tipText = "Выделите прямоугольник произвольного размера для скриншота • ESC для отмены"
+            tipText = L("overlay.area_tip") as NSString
         case .recordingArea:
-            tipText = "Выделите область для записи экрана в видео (MP4) • ESC для отмены"
+            tipText = L("overlay.record_tip") as NSString
         }
         
         let tipFont = NSFont.systemFont(ofSize: 13, weight: .medium)

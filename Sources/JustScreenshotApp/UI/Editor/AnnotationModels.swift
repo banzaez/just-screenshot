@@ -12,6 +12,7 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     case counter = "Счетчик (1-2-3)"
     case blur = "Размытие"
     case highlighter = "Маркер"
+    case magnifier = "Лупа"
     
     public var id: String { rawValue }
     
@@ -26,6 +27,23 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
         case .counter: return "1.circle.fill"
         case .blur: return "checkerboard.rectangle"
         case .highlighter: return "highlighter"
+        case .magnifier: return "plus.magnifyingglass"
+        }
+    }
+    
+    @MainActor
+    public var localizedTitle: String {
+        switch self {
+        case .select: return L("editor.tool.select")
+        case .arrow: return L("editor.tool.arrow")
+        case .rectangle: return L("editor.tool.rectangle")
+        case .roundedRect: return L("editor.tool.rounded_rect")
+        case .ellipse: return L("editor.tool.ellipse")
+        case .text: return L("editor.tool.text")
+        case .counter: return L("editor.tool.counter")
+        case .blur: return L("editor.tool.blur")
+        case .highlighter: return L("editor.tool.highlighter")
+        case .magnifier: return L("editor.tool.magnifier")
         }
     }
 }
@@ -73,8 +91,8 @@ public struct AnnotationItem: Identifiable, Sendable {
     /// Линейные элементы (стрелка, маркер) поворачиваются изменением концов отрезка
     public var isLineLike: Bool { tool == .arrow || tool == .highlighter }
     /// Элементы, у которых можно тянуть углы
-    public var isRectLike: Bool { tool == .rectangle || tool == .roundedRect || tool == .blur || tool == .ellipse }
-    public var supportsRotation: Bool { tool != .counter && tool != .select && tool != .blur }
+    public var isRectLike: Bool { tool == .rectangle || tool == .roundedRect || tool == .blur || tool == .ellipse || tool == .magnifier }
+    public var supportsRotation: Bool { tool != .counter && tool != .select && tool != .blur && tool != .magnifier }
     
     /// Измеренный размер текстового блока (совпадает с рендером)
     public var textSize: CGSize {
@@ -108,7 +126,7 @@ public struct AnnotationItem: Identifiable, Sendable {
         case .arrow, .highlighter:
             let minX = min(startPoint.x, endPoint.x), minY = min(startPoint.y, endPoint.y)
             return CGRect(x: minX, y: minY, width: abs(startPoint.x - endPoint.x), height: abs(startPoint.y - endPoint.y))
-        case .rectangle, .roundedRect, .blur, .ellipse:
+        case .rectangle, .roundedRect, .blur, .ellipse, .magnifier:
             let minX = min(startPoint.x, endPoint.x), minY = min(startPoint.y, endPoint.y)
             let w = abs(startPoint.x - endPoint.x), h = abs(startPoint.y - endPoint.y)
             return CGRect(x: minX - 3, y: minY - 3, width: w + 6, height: h + 6)

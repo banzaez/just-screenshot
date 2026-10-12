@@ -51,7 +51,7 @@ public struct RecordingControlBarView: View {
                     .foregroundColor(.white)
                 
                 if windowManager.isRecordingPaused {
-                    Text("ПАУЗА")
+                    Text(L("recording.bar.pause_badge"))
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(.orange)
                         .padding(.horizontal, 4)
@@ -76,7 +76,7 @@ public struct RecordingControlBarView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .help(windowManager.isRecordingPaused ? "Возобновить запись" : "Приостановить запись")
+            .help(windowManager.isRecordingPaused ? L("recording.bar.resume_help") : L("recording.bar.pause_help"))
             
             // Кнопка Стоп (Завершить и сохранить)
             Button(action: onStop) {
@@ -84,7 +84,7 @@ public struct RecordingControlBarView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white)
                         .frame(width: 10, height: 10)
-                    Text("Готово")
+                    Text(L("recording.bar.done"))
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white)
                 }
@@ -94,7 +94,7 @@ public struct RecordingControlBarView: View {
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .help("Остановить запись и сохранить видео")
+            .help(L("recording.bar.done_help"))
             
             // Кнопка Отмена (Удалить и отменить запись)
             Button(action: onCancel) {
@@ -106,7 +106,7 @@ public struct RecordingControlBarView: View {
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
-            .help("Отменить запись без сохранения")
+            .help(L("recording.bar.cancel_help"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

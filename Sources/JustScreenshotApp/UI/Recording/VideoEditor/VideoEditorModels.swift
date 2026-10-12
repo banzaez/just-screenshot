@@ -17,6 +17,16 @@ public enum VideoAnnotationType: String, CaseIterable, Identifiable, Sendable {
         case .blur: return "eye.slash"
         }
     }
+    
+    @MainActor
+    public var localizedTitle: String {
+        switch self {
+        case .text: return L("video_editor.type_text")
+        case .arrow: return L("video_editor.type_arrow")
+        case .rect: return L("video_editor.type_rect")
+        case .blur: return L("video_editor.type_blur")
+        }
+    }
 }
 
 public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {

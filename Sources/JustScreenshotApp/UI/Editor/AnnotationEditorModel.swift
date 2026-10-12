@@ -10,6 +10,8 @@ public final class AnnotationEditorModel: ObservableObject {
     @Published public var showBackdrop: Bool = true
     @Published public var backdropPreset: BackdropPreset = .aurora
     @Published public var backdropPadding: CGFloat = 48
+    @Published public var backdropCornerRadius: CGFloat = 12
+    @Published public var backdropShadowRadius: CGFloat = 24
     @Published public var addShadow: Bool = true
     
     public private(set) var hasUnsavedChanges: Bool = false
@@ -40,6 +42,8 @@ public final class AnnotationEditorModel: ObservableObject {
             items: items,
             backdrop: showBackdrop ? backdropPreset : nil,
             padding: backdropPadding,
+            cornerRadius: backdropCornerRadius,
+            shadowRadius: backdropShadowRadius,
             shadow: addShadow
         )
     }

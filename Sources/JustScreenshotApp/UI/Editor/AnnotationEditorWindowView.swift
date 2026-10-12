@@ -109,6 +109,26 @@ public struct AnnotationEditorWindowView: View {
         selectedItemID = nil
     }
     
+    private func autoRedactSensitiveData() {
+        Task { @MainActor in
+            let regions = await TextRecognizer.findSensitiveRegions(in: capturedItem.image)
+            guard !regions.isEmpty else { return }
+            
+            undoStack.append(model.items)
+            redoStack.removeAll()
+            
+            for rect in regions {
+                let blurItem = AnnotationItem(
+                    tool: .blur,
+                    startPoint: CGPoint(x: rect.minX, y: rect.minY),
+                    endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
+                )
+                model.items.append(blurItem)
+            }
+            model.markModified()
+        }
+    }
+    
     public var body: some View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -126,7 +146,8 @@ public struct AnnotationEditorWindowView: View {
                     onZoomIn: { setZoom(zoom * 1.25) },
                     onZoomOut: { setZoom(zoom / 1.25) },
                     onFit: { fitMode = true },
-                    onActualSize: { setZoom(1.0) }
+                    onActualSize: { setZoom(1.0) },
+                    onAutoRedact: autoRedactSensitiveData
                 )
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -177,8 +198,8 @@ public struct AnnotationEditorWindowView: View {
                             )
                             .frame(width: displayW, height: displayH)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: model.showBackdrop ? 10 * z : 0))
-                        .shadow(color: .black.opacity(model.showBackdrop && model.addShadow ? 0.4 : 0), radius: 24 * z, x: 0, y: 10 * z)
+                        .clipShape(RoundedRectangle(cornerRadius: model.showBackdrop ? model.backdropCornerRadius * z : 0))
+                        .shadow(color: .black.opacity(model.showBackdrop && model.addShadow ? 0.4 : 0), radius: model.backdropShadowRadius * z, x: 0, y: model.backdropShadowRadius * 0.4 * z)
                     }
                     .frame(width: displayW + pad * 2, height: displayH + pad * 2)
                     .frame(
@@ -201,6 +222,8 @@ public struct AnnotationEditorWindowView: View {
                     showBackdrop: $model.showBackdrop,
                     backdropPreset: $model.backdropPreset,
                     backdropPadding: $model.backdropPadding,
+                    backdropCornerRadius: $model.backdropCornerRadius,
+                    backdropShadowRadius: $model.backdropShadowRadius,
                     addShadow: $model.addShadow,
                     onClose: onClose,
                     onCopy: { ImageExporter.copyToClipboard(finalImage()) },

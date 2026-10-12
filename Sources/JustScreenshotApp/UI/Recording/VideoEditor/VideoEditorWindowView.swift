@@ -62,7 +62,7 @@ public struct VideoEditorWindowView: View {
                             .font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
-                    .help("Назад на 1 сек")
+                    .help(L("video_editor.back_1s"))
                     
                     Button {
                         model.togglePlayPause()
@@ -73,7 +73,7 @@ public struct VideoEditorWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut(.space, modifiers: [])
-                    .help("Воспроизведение / Пауза (Пробел)")
+                    .help(L("video_editor.play_pause"))
                     
                     Button {
                         model.seek(to: model.currentTime + 1.0)
@@ -82,11 +82,11 @@ public struct VideoEditorWindowView: View {
                             .font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
-                    .help("Вперед на 1 сек")
+                    .help(L("video_editor.forward_1s"))
                     
                     Spacer()
                     
-                    Text("Длительность: \(String(format: "%.1f", model.trimEnd - model.trimStart)) с")
+                    Text(L("video_editor.duration", String(format: "%.1f", model.trimEnd - model.trimStart)))
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -111,7 +111,7 @@ public struct VideoEditorWindowView: View {
         
         model.isExporting = true
         model.exportProgress = 0.0
-        model.exportStatusText = isGIF ? "Генерация GIF анимации..." : "Экспорт видео в MP4..."
+        model.exportStatusText = isGIF ? L("video_editor.exporting_gif") : L("video_editor.exporting_mp4")
         
         let options = VideoExportService.ExportOptions(
             trimStart: model.trimStart,
@@ -155,7 +155,7 @@ public struct VideoEditorWindowView: View {
                 await MainActor.run {
                     self.model.isExporting = false
                     let alert = NSAlert()
-                    alert.messageText = "Ошибка экспорта"
+                    alert.messageText = L("video_editor.export_error")
                     alert.informativeText = error.localizedDescription
                     alert.runModal()
                 }

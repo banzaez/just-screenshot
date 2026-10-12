@@ -43,17 +43,54 @@ public final class AppWindowManager: ObservableObject {
         let settings = AppSettings.shared
         let hk = GlobalHotKeyManager.shared
         
+        // 1. Запись экрана (Основной и Альтернативный)
         hk.register(id: 1, keyCode: settings.shortcutRecording.keyCode, modifiers: settings.shortcutRecording.modifiers) { [weak self] in
             self?.toggleRecording()
         }
+        if let alt = settings.shortcutRecordingAlt {
+            hk.register(id: 11, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak self] in
+                self?.toggleRecording()
+            }
+        }
+        
+        // 2. Снимок окна
         hk.register(id: 2, keyCode: settings.shortcutWindow.keyCode, modifiers: settings.shortcutWindow.modifiers) { [weak self] in
             self?.startWindowCapture()
         }
+        if let alt = settings.shortcutWindowAlt {
+            hk.register(id: 12, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak self] in
+                self?.startWindowCapture()
+            }
+        }
+        
+        // 3. Снимок области
         hk.register(id: 3, keyCode: settings.shortcutArea.keyCode, modifiers: settings.shortcutArea.modifiers) { [weak self] in
             self?.startAreaCapture()
         }
+        if let alt = settings.shortcutAreaAlt {
+            hk.register(id: 13, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak self] in
+                self?.startAreaCapture()
+            }
+        }
+        
+        // 4. История снимков
         hk.register(id: 4, keyCode: settings.shortcutHistory.keyCode, modifiers: settings.shortcutHistory.modifiers) { [weak self] in
             self?.showHistory()
+        }
+        if let alt = settings.shortcutHistoryAlt {
+            hk.register(id: 14, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak self] in
+                self?.showHistory()
+            }
+        }
+        
+        // 5. Повтор предыдущего захвата (Repeat Last Capture)
+        hk.register(id: 5, keyCode: settings.shortcutRepeat.keyCode, modifiers: settings.shortcutRepeat.modifiers) { [weak self] in
+            self?.repeatLastCapture()
+        }
+        if let alt = settings.shortcutRepeatAlt {
+            hk.register(id: 15, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak self] in
+                self?.repeatLastCapture()
+            }
         }
     }
     
@@ -93,7 +130,15 @@ public final class AppWindowManager: ObservableObject {
         }
     }
     
-    public func startAreaCapture() {
+    public func startAreaCapture(delaySeconds: Int = 0) {
+        if delaySeconds > 0 {
+            let countdown = CountdownOverlayWindow(seconds: delaySeconds) { [weak self] in
+                self?.startAreaCapture(delaySeconds: 0)
+            }
+            countdown.makeKeyAndOrderFront(nil)
+            return
+        }
+        
         Task { [weak self] in
             guard let self else { return }
             let hasPerm = await ScreenCaptureService.shared.ensurePermission()
@@ -102,9 +147,12 @@ public final class AppWindowManager: ObservableObject {
             self.closeAllOverlays()
             guard let screen = NSScreen.main else { return }
             self.overlayToken = UUID()
+            let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen)
+            
             self.presentOverlay(
                 AreaOverlayWindow(
                     screen: screen, mode: .areaOnly, visibleWindows: [],
+                    backgroundImage: bgImage,
                     onCompleteRect: { [weak self] rect in
                         self?.closeAllOverlays()
                         Task { [weak self] in await self?.captureRectAndShowHUD(rect: rect) }
@@ -113,6 +161,21 @@ public final class AppWindowManager: ObservableObject {
                     onCancel: { [weak self] in self?.closeAllOverlays() }
                 )
             )
+        }
+    }
+    
+    /// Повтор захвата предыдущей области экрана (Repeat Last Capture)
+    public func repeatLastCapture() {
+        guard let rect = AppSettings.shared.lastCapturedRect else {
+            // Если область еще не была зафиксирована, запускаем обычный выбор
+            startAreaCapture()
+            return
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let hasPerm = await ScreenCaptureService.shared.ensurePermission()
+            guard hasPerm else { return }
+            await self.captureRectAndShowHUD(rect: rect)
         }
     }
     
@@ -158,6 +221,7 @@ public final class AppWindowManager: ObservableObject {
     
     private func captureRectAndShowHUD(rect: CGRect) async {
         do {
+            AppSettings.shared.lastCapturedRect = rect
             let image = try await ScreenCaptureService.shared.captureRect(rect)
             processCapturedItem(CapturedItem(image: image, rect: rect))
         } catch {
@@ -231,7 +295,7 @@ public final class AppWindowManager: ObservableObject {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.title = "Редактор — \(Int(item.image.size.width)) × \(Int(item.image.size.height))"
+        window.title = L("editor.title", Int(item.image.size.width), Int(item.image.size.height))
         window.minSize = NSSize(width: 640, height: 460)
         window.contentView = NSHostingView(rootView: view)
         
@@ -258,12 +322,12 @@ public final class AppWindowManager: ObservableObject {
         guard model.hasUnsavedChanges else { return true }
         
         let alert = NSAlert()
-        alert.messageText = "Сохранить изменения в историю перед закрытием?"
-        alert.informativeText = "В редакторе есть несохранённые аннотации или изменения оформления."
+        alert.messageText = L("alert.unsaved_title")
+        alert.informativeText = L("alert.unsaved_informative")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Сохранить")      // NSApplication.ModalResponse.alertFirstButtonReturn
-        alert.addButton(withTitle: "Не сохранять")   // NSApplication.ModalResponse.alertSecondButtonReturn
-        alert.addButton(withTitle: "Отмена")         // NSApplication.ModalResponse.alertThirdButtonReturn
+        alert.addButton(withTitle: L("alert.save"))       // NSApplication.ModalResponse.alertFirstButtonReturn
+        alert.addButton(withTitle: L("alert.dont_save"))   // NSApplication.ModalResponse.alertSecondButtonReturn
+        alert.addButton(withTitle: L("alert.cancel"))      // NSApplication.ModalResponse.alertThirdButtonReturn
         
         let response = alert.runModal()
         switch response {
@@ -303,7 +367,7 @@ public final class AppWindowManager: ObservableObject {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.title = "Редактор видео — \(videoURL.lastPathComponent)"
+        window.title = L("video_editor.title", videoURL.lastPathComponent)
         window.minSize = NSSize(width: 720, height: 500)
         window.contentView = NSHostingView(rootView: view)
         window.center()
@@ -345,7 +409,7 @@ public final class AppWindowManager: ObservableObject {
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.title = "История снимков"
+        window.title = L("history.title")
         window.minSize = NSSize(width: 560, height: 400)
         window.contentView = NSHostingView(rootView: view)
         window.center()
@@ -369,12 +433,12 @@ public final class AppWindowManager: ObservableObject {
         }
         let view = SettingsWindowView()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
-        window.title = "Настройки"
-        window.minSize = NSSize(width: 500, height: 480)
+        window.title = L("settings.title")
+        window.minSize = NSSize(width: 520, height: 600)
         window.contentView = NSHostingView(rootView: view)
         window.center()
         

@@ -6,6 +6,8 @@ public struct EditorBottomBarView: View {
     @Binding public var showBackdrop: Bool
     @Binding public var backdropPreset: BackdropPreset
     @Binding public var backdropPadding: CGFloat
+    @Binding public var backdropCornerRadius: CGFloat
+    @Binding public var backdropShadowRadius: CGFloat
     @Binding public var addShadow: Bool
     
     public let onClose: () -> Void
@@ -19,6 +21,8 @@ public struct EditorBottomBarView: View {
         showBackdrop: Binding<Bool>,
         backdropPreset: Binding<BackdropPreset>,
         backdropPadding: Binding<CGFloat>,
+        backdropCornerRadius: Binding<CGFloat>,
+        backdropShadowRadius: Binding<CGFloat>,
         addShadow: Binding<Bool>,
         onClose: @escaping () -> Void,
         onCopy: @escaping () -> Void,
@@ -28,6 +32,8 @@ public struct EditorBottomBarView: View {
         self._showBackdrop = showBackdrop
         self._backdropPreset = backdropPreset
         self._backdropPadding = backdropPadding
+        self._backdropCornerRadius = backdropCornerRadius
+        self._backdropShadowRadius = backdropShadowRadius
         self._addShadow = addShadow
         self.onClose = onClose
         self.onCopy = onCopy
@@ -37,50 +43,20 @@ public struct EditorBottomBarView: View {
     
     public var body: some View {
         HStack(spacing: 12) {
-            Toggle("Красивый фон", isOn: $showBackdrop)
-                .toggleStyle(.switch)
-                .controlSize(.small)
+            // Группа фона с выпадающим меню и настройками
+            backdropControlGroup
             
-            if showBackdrop {
-                HStack(spacing: 6) {
-                    ForEach(BackdropPreset.allCases) { preset in
-                        Button { backdropPreset = preset } label: {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(preset.gradient)
-                                .frame(width: 26, height: 22)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .stroke(backdropPreset == preset ? Color.accentColor : Color.primary.opacity(0.2), lineWidth: backdropPreset == preset ? 2.5 : 1)
-                                )
-                                .frame(width: 32, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(preset.rawValue)
-                    }
-                }
-                
-                HStack(spacing: 6) {
-                    Text("Отступ").font(.caption).foregroundStyle(.secondary)
-                    Slider(value: $backdropPadding, in: 16...120, step: 2).frame(width: 90)
-                }
-                
-                Toggle("Тень", isOn: $addShadow)
-                    .toggleStyle(.checkbox)
-                    .font(.callout)
-            }
+            Spacer(minLength: 12)
             
-            Spacer(minLength: 8)
-            
-            Button("Закрыть", action: onClose)
+            Button(L("editor.close"), action: onClose)
                 .keyboardShortcut("w", modifiers: [.command])
-                .controlSize(.large)
+                .controlSize(.regular)
             
             Button(action: onCopy) {
-                Label("Копировать", systemImage: "doc.on.doc")
+                Label(L("editor.copy"), systemImage: "doc.on.doc")
             }
             .buttonStyle(.bordered)
-            .controlSize(.large)
+            .controlSize(.regular)
             .keyboardShortcut("c", modifiers: [.command, .shift])
             
             Button {
@@ -91,23 +67,170 @@ public struct EditorBottomBarView: View {
                 }
             } label: {
                 Label(
-                    justSavedToHistory ? "Сохранено ✓" : "Сохранить",
+                    justSavedToHistory ? L("editor.saved") : L("editor.save"),
                     systemImage: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down"
                 )
             }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
+            .controlSize(.regular)
             .tint(justSavedToHistory ? .green : nil)
             .keyboardShortcut("s", modifiers: [.command])
-            .help("Сохранить снимок с аннотациями в историю приложения (⌘S)")
+            .help(L("editor.save_history_help"))
             
             Button(action: onSave) {
-                Label("Экспорт…", systemImage: "square.and.arrow.up")
+                Label(L("editor.export"), systemImage: "square.and.arrow.up")
             }
             .buttonStyle(.bordered)
-            .controlSize(.large)
+            .controlSize(.regular)
             .keyboardShortcut("e", modifiers: [.command])
-            .help("Экспортировать в файл через диалог сохранения (⌘E)")
+            .help(L("editor.export_help"))
         }
+    }
+    
+    // MARK: - Группа настроек фона с выпадающим меню и компактными ползунками
+    
+    private var backdropControlGroup: some View {
+        HStack(spacing: 8) {
+            // Переключатель фона
+            Toggle(isOn: $showBackdrop) {
+                Label(L("editor.backdrop"), systemImage: "photo.artframe")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .toggleStyle(.button)
+            .buttonStyle(.bordered)
+            .tint(showBackdrop ? .accentColor : nil)
+            .controlSize(.small)
+            
+            if showBackdrop {
+                // Выпадающее меню выбора градиента/фона
+                Menu {
+                    Text(L("editor.gradient_presets")).font(.caption)
+                    ForEach(BackdropPreset.allCases) { preset in
+                        Button {
+                            backdropPreset = preset
+                        } label: {
+                            HStack {
+                                Text(preset.localizedName)
+                                if backdropPreset == preset {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(backdropPreset.gradient)
+                            .frame(width: 14, height: 14)
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
+                        Text(backdropPreset.localizedName)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .menuStyle(.borderlessButton)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                )
+                
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 2)
+                
+                // Компактные стильные ползунки параметров
+                compactSlider(
+                    label: L("editor.padding"),
+                    icon: "arrow.up.left.and.arrow.down.right",
+                    value: $backdropPadding,
+                    range: 16...120,
+                    step: 2,
+                    unit: L("editor.unit_px")
+                )
+                
+                compactSlider(
+                    label: L("editor.corners"),
+                    icon: "square.dashed",
+                    value: $backdropCornerRadius,
+                    range: 0...32,
+                    step: 2,
+                    unit: L("editor.unit_px")
+                )
+                
+                // Переключатель тени
+                Toggle(isOn: $addShadow) {
+                    Image(systemName: "shadow")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .toggleStyle(.button)
+                .buttonStyle(.bordered)
+                .tint(addShadow ? .accentColor : nil)
+                .controlSize(.mini)
+                .help(L("editor.shadow_help"))
+                
+                if addShadow {
+                    compactSlider(
+                        label: L("editor.shadow"),
+                        icon: "circle.lefthalf.striped.horizontal",
+                        value: $backdropShadowRadius,
+                        range: 4...60,
+                        step: 4,
+                        unit: L("editor.unit_px")
+                    )
+                }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(showBackdrop ? Color.primary.opacity(0.03) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(showBackdrop ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 1)
+        )
+        .animation(.easeInOut(duration: 0.2), value: showBackdrop)
+        .animation(.easeInOut(duration: 0.2), value: addShadow)
+    }
+    
+    // MARK: - Элегантный компактный ползунок со значением
+    
+    @ViewBuilder
+    private func compactSlider(
+        label: String,
+        icon: String,
+        value: Binding<CGFloat>,
+        range: ClosedRange<CGFloat>,
+        step: CGFloat,
+        unit: String
+    ) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+            
+            Slider(value: value, in: range, step: step)
+                .frame(width: 58)
+                .controlSize(.mini)
+            
+            Text("\(Int(value.wrappedValue))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 18, alignment: .trailing)
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.primary.opacity(0.04))
+        )
+        .help("\(label): \(Int(value.wrappedValue)) \(unit)")
     }
 }

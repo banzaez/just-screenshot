@@ -34,15 +34,27 @@ public enum BackdropPreset: String, CaseIterable, Identifiable, Sendable {
     public var gradient: LinearGradient {
         LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
     }
+    
+    @MainActor
+    public var localizedName: String {
+        switch self {
+        case .aurora: return L("preset.aurora")
+        case .ocean: return L("preset.ocean")
+        case .sunset: return L("preset.sunset")
+        case .forest: return L("preset.forest")
+        case .graphite: return L("preset.graphite")
+        case .snow: return L("preset.snow")
+        }
+    }
 }
 
 /// Кнопка с выпадающей палитрой цветов
 public struct ColorDropdown: View {
     @Binding var selection: Color
-    var title: String = "Цвет"
+    var title: String = ""
     @State private var isOpen = false
     
-    public init(selection: Binding<Color>, title: String = "Цвет") {
+    public init(selection: Binding<Color>, title: String = "") {
         self._selection = selection
         self.title = title
     }
@@ -54,7 +66,7 @@ public struct ColorDropdown: View {
                     .fill(selection)
                     .frame(width: 16, height: 16)
                     .overlay(Circle().stroke(Color.primary.opacity(0.35), lineWidth: 1))
-                Text(title).font(.callout)
+                Text(title.isEmpty ? L("editor.color") : title).font(.callout)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10)
@@ -63,7 +75,7 @@ public struct ColorDropdown: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Выбрать цвет")
+        .help(L("editor.choose_color"))
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 8), count: 5), spacing: 8) {
                 ForEach(EditorPalette.colors, id: \.self) { color in
@@ -112,7 +124,7 @@ public struct WidthDropdown: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("Толщина линии")
+        .help(L("editor.line_width"))
         .popover(isPresented: $isOpen, arrowEdge: .bottom) {
             VStack(spacing: 2) {
                 ForEach(EditorPalette.widths, id: \.self) { w in

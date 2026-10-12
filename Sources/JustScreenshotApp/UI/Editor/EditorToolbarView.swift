@@ -18,6 +18,7 @@ public struct EditorToolbarView: View {
     public let onZoomOut: () -> Void
     public let onFit: () -> Void
     public let onActualSize: () -> Void
+    public let onAutoRedact: () -> Void
     
     public init(
         selectedTool: Binding<AnnotationTool>,
@@ -33,7 +34,8 @@ public struct EditorToolbarView: View {
         onZoomIn: @escaping () -> Void,
         onZoomOut: @escaping () -> Void,
         onFit: @escaping () -> Void,
-        onActualSize: @escaping () -> Void
+        onActualSize: @escaping () -> Void,
+        onAutoRedact: @escaping () -> Void
     ) {
         self._selectedTool = selectedTool
         self._selectedColor = selectedColor
@@ -49,20 +51,21 @@ public struct EditorToolbarView: View {
         self.onZoomOut = onZoomOut
         self.onFit = onFit
         self.onActualSize = onActualSize
+        self.onAutoRedact = onAutoRedact
     }
     
     public var body: some View {
         HStack(spacing: 10) {
             HStack(spacing: 4) {
                 ForEach(AnnotationTool.allCases) { tool in
-                    EditorIconButton(tool.iconName, title: tool.rawValue, isActive: selectedTool == tool) {
+                    EditorIconButton(tool.iconName, title: tool.localizedTitle, isActive: selectedTool == tool) {
                         selectedTool = tool
                     }
                 }
             }
             
             if selectedTool == .text {
-                TextField("Текст заметки", text: $textInputString)
+                TextField(L("editor.default_note_text"), text: $textInputString)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 150)
             }
@@ -75,21 +78,22 @@ public struct EditorToolbarView: View {
             Divider().frame(height: 24)
             
             HStack(spacing: 4) {
-                EditorIconButton("minus.magnifyingglass", title: "Уменьшить", action: onZoomOut)
+                EditorIconButton("minus.magnifyingglass", title: L("editor.zoom_out"), action: onZoomOut)
                 Text("\(zoomPercent)%")
                     .font(.callout.monospacedDigit())
                     .frame(width: 46)
-                EditorIconButton("plus.magnifyingglass", title: "Увеличить", action: onZoomIn)
-                EditorIconButton("arrow.up.left.and.arrow.down.right", title: "Вписать в окно (авто)", isActive: isFitMode, action: onFit)
-                EditorIconButton("1.magnifyingglass", title: "100% (1:1)", action: onActualSize)
+                EditorIconButton("plus.magnifyingglass", title: L("editor.zoom_in"), action: onZoomIn)
+                EditorIconButton("arrow.up.left.and.arrow.down.right", title: L("editor.fit_window"), isActive: isFitMode, action: onFit)
+                EditorIconButton("1.magnifyingglass", title: L("editor.actual_size"), action: onActualSize)
             }
             
             Spacer(minLength: 8)
             
             HStack(spacing: 4) {
-                EditorIconButton("arrow.uturn.backward", title: "Отменить (⌘Z)", action: onUndo)
+                EditorIconButton("eye.slash", title: L("editor.auto_redact"), action: onAutoRedact)
+                EditorIconButton("arrow.uturn.backward", title: L("editor.undo"), action: onUndo)
                     .opacity(canUndo ? 1 : 0.35).disabled(!canUndo)
-                EditorIconButton("arrow.uturn.forward", title: "Повторить (⇧⌘Z)", action: onRedo)
+                EditorIconButton("arrow.uturn.forward", title: L("editor.redo"), action: onRedo)
                     .opacity(canRedo ? 1 : 0.35).disabled(!canRedo)
             }
         }

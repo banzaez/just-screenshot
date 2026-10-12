@@ -24,7 +24,7 @@ public struct HistoryWindowView: View {
     public var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Label("История снимков", systemImage: "clock.arrow.circlepath")
+                Label(L("history.title"), systemImage: "clock.arrow.circlepath")
                     .font(.headline)
                 Text("\(store.entries.count)")
                     .font(.caption.monospacedDigit())
@@ -32,7 +32,7 @@ public struct HistoryWindowView: View {
                     .background(Capsule().fill(Color.primary.opacity(0.1)))
                 Spacer()
                 Button(role: .destructive) { confirmClear = true } label: {
-                    Label("Очистить всё", systemImage: "trash")
+                    Label(L("history.clear_all"), systemImage: "trash")
                 }
                 .disabled(store.entries.isEmpty)
             }
@@ -47,8 +47,8 @@ public struct HistoryWindowView: View {
                     Image(systemName: "photo.on.rectangle.angled")
                         .font(.system(size: 44))
                         .foregroundStyle(.secondary)
-                    Text("Пока нет снимков").font(.title3)
-                    Text("Сделайте скриншот (⌘⇧4 / ⌘⇧5) — он появится здесь")
+                    Text(L("history.empty_title")).font(.title3)
+                    Text(L("history.empty_subtitle"))
                         .font(.callout).foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -69,9 +69,9 @@ public struct HistoryWindowView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 400)
-        .confirmationDialog("Удалить всю историю?", isPresented: $confirmClear) {
-            Button("Удалить всё", role: .destructive) { store.clear() }
-            Button("Отмена", role: .cancel) {}
+        .confirmationDialog(L("history.clear_confirm_title"), isPresented: $confirmClear) {
+            Button(L("history.clear_all"), role: .destructive) { store.clear() }
+            Button(L("alert.cancel"), role: .cancel) {}
         }
     }
 }
@@ -99,11 +99,11 @@ private struct HistoryCard: View {
                 if hovering {
                     RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.45))
                     HStack(spacing: 6) {
-                        EditorIconButton("pencil.tip.crop.circle", title: "Редактировать", action: onEdit)
-                        EditorIconButton("doc.on.doc", title: "Копировать", action: onCopy)
-                        EditorIconButton("pin", title: "Закрепить на экране", action: onPin)
-                        EditorIconButton("folder", title: "Показать в Finder") { store.revealInFinder(entry) }
-                        EditorIconButton("trash", title: "Удалить") { store.delete(entry) }
+                        EditorIconButton("pencil.tip.crop.circle", title: L("history.edit"), action: onEdit)
+                        EditorIconButton("doc.on.doc", title: L("editor.copy"), action: onCopy)
+                        EditorIconButton("pin", title: L("history.pin"), action: onPin)
+                        EditorIconButton("folder", title: L("history.reveal_finder")) { store.revealInFinder(entry) }
+                        EditorIconButton("trash", title: L("history.delete_button")) { store.delete(entry) }
                     }
                 }
             }
@@ -122,12 +122,12 @@ private struct HistoryCard: View {
             }
         }
         .contextMenu {
-            Button("Редактировать", action: onEdit)
-            Button("Копировать", action: onCopy)
-            Button("Закрепить на экране", action: onPin)
-            Button("Показать в Finder") { store.revealInFinder(entry) }
+            Button(L("history.edit"), action: onEdit)
+            Button(L("editor.copy"), action: onCopy)
+            Button(L("history.pin"), action: onPin)
+            Button(L("history.reveal_finder")) { store.revealInFinder(entry) }
             Divider()
-            Button("Удалить", role: .destructive) { store.delete(entry) }
+            Button(L("history.delete_button"), role: .destructive) { store.delete(entry) }
         }
     }
 }

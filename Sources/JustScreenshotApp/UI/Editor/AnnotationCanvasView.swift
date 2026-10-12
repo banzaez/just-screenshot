@@ -337,6 +337,18 @@ public struct AnnotationCanvasView: View {
             p.addLine(to: item.endPoint)
             context.stroke(p, with: .color(item.color.opacity(0.45)),
                            style: StrokeStyle(lineWidth: item.lineWidth * 4, lineCap: .round, lineJoin: .round))
+        case .magnifier:
+            let radius = max(min(rect.width, rect.height) / 2, 16)
+            let circleRect = CGRect(x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2)
+            let circlePath = Path(ellipseIn: circleRect)
+            
+            // Полупрозрачный блик линзы и рамка
+            context.fill(circlePath, with: .color(.white.opacity(0.18)))
+            context.stroke(circlePath, with: .color(.white), lineWidth: 3.5)
+            context.stroke(Path(ellipseIn: circleRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(.black.opacity(0.35)), lineWidth: 1.0)
+            
+            let label = Text("2x").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white)
+            context.draw(label, at: CGPoint(x: rect.midX, y: circleRect.maxY - 14))
         case .text:
             let t = Text(item.text.isEmpty ? "Текст" : item.text)
                 .font(.system(size: item.fontSize, weight: .bold))

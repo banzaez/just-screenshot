@@ -43,25 +43,25 @@ public struct EditorSelectedItemBar: View {
             if let item = item {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        Label(item.tool.rawValue, systemImage: item.tool.iconName)
+                        Label(item.tool.localizedTitle, systemImage: item.tool.iconName)
                             .font(.callout.bold())
                             .foregroundStyle(Color.accentColor)
                         
                         Divider().frame(height: 20)
                         
                         if item.tool == .text {
-                            TextField("Текст", text: Binding(get: { item.text }, set: { onTextChange($0) }))
+                            TextField(L("editor.selected.text_field"), text: Binding(get: { item.text }, set: { onTextChange($0) }))
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 180)
-                            EditorIconButton("textformat.size.smaller", title: "Меньше шрифт") { onFontSizeChange(max(10, item.fontSize - 2)) }
+                            EditorIconButton("textformat.size.smaller", title: L("editor.selected.font_smaller")) { onFontSizeChange(max(10, item.fontSize - 2)) }
                             Text("\(Int(item.fontSize))").font(.callout.monospacedDigit()).frame(width: 28)
-                            EditorIconButton("textformat.size.larger", title: "Больше шрифт") { onFontSizeChange(min(96, item.fontSize + 2)) }
+                            EditorIconButton("textformat.size.larger", title: L("editor.selected.font_larger")) { onFontSizeChange(min(96, item.fontSize + 2)) }
                         }
                         
                         if item.tool == .counter {
-                            EditorIconButton("minus", title: "Номер −1") { onCounterChange(max(1, item.counterNumber - 1)) }
+                            EditorIconButton("minus", title: L("editor.selected.num_minus")) { onCounterChange(max(1, item.counterNumber - 1)) }
                             Text("№ \(item.counterNumber)").font(.callout.monospacedDigit()).frame(width: 44)
-                            EditorIconButton("plus", title: "Номер +1") { onCounterChange(item.counterNumber + 1) }
+                            EditorIconButton("plus", title: L("editor.selected.num_plus")) { onCounterChange(item.counterNumber + 1) }
                         }
                         
                         ColorDropdown(selection: Binding(get: { item.color }, set: { onColorChange($0) }))
@@ -73,19 +73,19 @@ public struct EditorSelectedItemBar: View {
                         Divider().frame(height: 20)
                         
                         if item.tool != .counter {
-                            EditorIconButton("rotate.left", title: "Повернуть −15°") { onSetAngle(item.displayAngle - 15) }
+                            EditorIconButton("rotate.left", title: L("editor.selected.rotate_left")) { onSetAngle(item.displayAngle - 15) }
                             Slider(value: Binding(get: { item.displayAngle }, set: { onSetAngle($0) }), in: -180...180)
                                 .frame(width: 110)
-                            EditorIconButton("rotate.right", title: "Повернуть +15°") { onSetAngle(item.displayAngle + 15) }
+                            EditorIconButton("rotate.right", title: L("editor.selected.rotate_right")) { onSetAngle(item.displayAngle + 15) }
                             Text("\(Int(item.displayAngle.rounded()))°").font(.callout.monospacedDigit()).frame(width: 40)
-                            EditorIconButton("arrow.counterclockwise", title: "Сбросить угол") { onSetAngle(0) }
+                            EditorIconButton("arrow.counterclockwise", title: L("editor.selected.reset_angle")) { onSetAngle(0) }
                         }
                         
                         Divider().frame(height: 20)
                         
-                        EditorIconButton("plus.square.on.square", title: "Дублировать (⌘D)", action: onDuplicate)
-                        EditorIconButton("trash", title: "Удалить (⌘⌫)", action: onDelete)
-                        EditorIconButton("xmark", title: "Снять выделение (Esc)", action: onDeselect)
+                        EditorIconButton("plus.square.on.square", title: L("editor.selected.duplicate"), action: onDuplicate)
+                        EditorIconButton("trash", title: L("editor.selected.delete"), action: onDelete)
+                        EditorIconButton("xmark", title: L("editor.selected.deselect"), action: onDeselect)
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
@@ -95,11 +95,11 @@ public struct EditorSelectedItemBar: View {
                     Image(systemName: "cursorarrow.click.2")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
-                    Text("Выберите элемент на холсте для редактирования свойств (поворот, размер, цвет, удаление)")
+                    Text(L("editor.selected.empty_hint"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text("⌘Z отмена • ⌘D дублировать • ⌫ удалить")
+                    Text(L("editor.selected.shortcuts_hint"))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }

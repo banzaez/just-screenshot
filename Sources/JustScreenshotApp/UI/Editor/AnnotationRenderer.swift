@@ -9,6 +9,8 @@ public enum AnnotationRenderer {
         items: [AnnotationItem],
         backdrop: BackdropPreset?,
         padding: CGFloat,
+        cornerRadius: CGFloat = 12,
+        shadowRadius: CGFloat = 24,
         shadow: Bool
     ) -> NSImage {
         let inner = render(baseImage: baseImage, items: items)
@@ -25,14 +27,14 @@ public enum AnnotationRenderer {
         NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
         
         let innerRect = NSRect(x: pad, y: pad, width: inner.size.width, height: inner.size.height)
-        let clip = NSBezierPath(roundedRect: innerRect, xRadius: 10, yRadius: 10)
+        let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
         
-        if shadow {
+        if shadow && shadowRadius > 0 {
             NSGraphicsContext.saveGraphicsState()
             let sh = NSShadow()
             sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
-            sh.shadowBlurRadius = 24
-            sh.shadowOffset = NSSize(width: 0, height: -10)
+            sh.shadowBlurRadius = shadowRadius
+            sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
             sh.set()
             NSColor.black.setFill()
             clip.fill()
@@ -63,7 +65,7 @@ public enum AnnotationRenderer {
         if let context = NSGraphicsContext.current?.cgContext {
             let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage) : nil
             for item in items {
-                renderItem(item, in: context, imageSize: size, blurred: blurred)
+                renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
             }
         }
         
@@ -71,7 +73,7 @@ public enum AnnotationRenderer {
         return targetImage
     }
     
-    private static func renderItem(_ item: AnnotationItem, in context: CGContext, imageSize: CGSize, blurred: NSImage?) {
+    private static func renderItem(_ item: AnnotationItem, in context: CGContext, imageSize: CGSize, baseImage: NSImage, blurred: NSImage?) {
         context.saveGState()
         
         // Перевод координат из SwiftUI (y сверху вниз) в CoreGraphics (y снизу вверх)
@@ -161,6 +163,37 @@ public enum AnnotationRenderer {
             context.move(to: p1)
             context.addLine(to: p2)
             context.strokePath()
+            
+        case .magnifier:
+            let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            let radius = max(min(rect.width, rect.height) / 2, 16)
+            let circleRect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
+            
+            // Тень вокруг линзы
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: -4), blur: 12, color: CGColor(gray: 0, alpha: 0.45))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fillEllipse(in: circleRect)
+            context.restoreGState()
+            
+            // Клиппинг кругом и отрисовка масштабированного фрагмента (зум 2.0x)
+            context.saveGState()
+            context.addEllipse(in: circleRect)
+            context.clip()
+            
+            let zoomFactor: CGFloat = 2.0
+            context.translateBy(x: center.x, y: center.y)
+            context.scaleBy(x: zoomFactor, y: zoomFactor)
+            context.translateBy(x: -center.x, y: -center.y)
+            
+            baseImage.draw(at: .zero, from: NSRect(origin: .zero, size: imageSize), operation: .copy, fraction: 1.0)
+            context.restoreGState()
+            
+            // Ободок линзы
+            context.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
+            context.setLineWidth(4)
+            context.strokeEllipse(in: circleRect)
             
         case .text:
             let text = (item.text.isEmpty ? "Текст" : item.text) as NSString

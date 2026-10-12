@@ -28,7 +28,7 @@ public struct VideoEditorToolbarView: View {
                         VStack(spacing: 2) {
                             Image(systemName: type.icon)
                                 .font(.system(size: 13, weight: .medium))
-                            Text(type.rawValue)
+                            Text(type.localizedTitle)
                                 .font(.system(size: 9))
                         }
                         .frame(width: 52, height: 38)
@@ -36,7 +36,7 @@ public struct VideoEditorToolbarView: View {
                         .cornerRadius(6)
                     }
                     .buttonStyle(.plain)
-                    .help("Добавить \(type.rawValue)")
+                    .help(L("video_editor.add_annotation", type.localizedTitle))
                 }
             }
             
@@ -50,7 +50,7 @@ public struct VideoEditorToolbarView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "crop")
                         .font(.system(size: 13, weight: .medium))
-                    Text("Кадрировать")
+                    Text(L("video_editor.crop"))
                         .font(.system(size: 11, weight: .medium))
                 }
                 .padding(.horizontal, 10)
@@ -59,14 +59,14 @@ public struct VideoEditorToolbarView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-            .help("Включить или отключить область кадрирования видео")
+            .help(L("video_editor.crop_help"))
             
             // Скорость воспроизведения
             Menu {
-                Button("0.5x Замедленно") { model.setRate(0.5) }
-                Button("1.0x Обычная") { model.setRate(1.0) }
-                Button("1.5x Ускорено") { model.setRate(1.5) }
-                Button("2.0x В 2 раза быстрее") { model.setRate(2.0) }
+                Button(L("video_editor.speed_05")) { model.setRate(0.5) }
+                Button(L("video_editor.speed_10")) { model.setRate(1.0) }
+                Button(L("video_editor.speed_15")) { model.setRate(1.5) }
+                Button(L("video_editor.speed_20")) { model.setRate(2.0) }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "gauge.with.needle")
@@ -89,7 +89,7 @@ public struct VideoEditorToolbarView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.stack")
                         .font(.system(size: 12))
-                    Text("GIF")
+                    Text(L("video_editor.export_gif"))
                         .font(.system(size: 11, weight: .bold))
                 }
                 .padding(.horizontal, 12)
@@ -99,14 +99,14 @@ public struct VideoEditorToolbarView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-            .help("Экспортировать выбранный фрагмент как анимированный GIF")
+            .help(L("video_editor.export_gif_help"))
             
             // Кнопка экспорта в MP4
             Button(action: onExportMP4) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle.fill")
                         .font(.system(size: 12))
-                    Text("Сохранить MP4")
+                    Text(L("video_editor.save_mp4"))
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .padding(.horizontal, 14)
@@ -116,7 +116,7 @@ public struct VideoEditorToolbarView: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-            .help("Экспортировать готовое видео в MP4")
+            .help(L("video_editor.save_mp4_help"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)

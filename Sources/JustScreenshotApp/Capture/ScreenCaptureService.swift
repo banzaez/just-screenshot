@@ -43,11 +43,11 @@ public final class ScreenCaptureService {
     /// Показ диалога с переходом в системные настройки
     public func showPermissionAlert() {
         let alert = NSAlert()
-        alert.messageText = "Требуется доступ к записи экрана"
-        alert.informativeText = "Для создания снимков и записи экрана приложению Just Screenshot требуется разрешение «Запись экрана и аудиосистемы» в Настройках macOS.\n\nПожалуйста, включите доступ и перезапустите приложение при необходимости."
+        alert.messageText = L("alert.permission_title")
+        alert.informativeText = L("alert.permission_informative")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Открыть Настройки")
-        alert.addButton(withTitle: "Отмена")
+        alert.addButton(withTitle: L("alert.open_settings"))
+        alert.addButton(withTitle: L("alert.cancel"))
         
         NSApp.activate(ignoringOtherApps: true)
         let response = alert.runModal()
@@ -89,6 +89,30 @@ public final class ScreenCaptureService {
         let size = NSSize(width: rect.width, height: rect.height)
         let nsImage = NSImage(cgImage: cgImage, size: size)
         return nsImage
+    }
+    
+    /// Захват экрана целиком через современный ScreenCaptureKit (SCScreenshotManager)
+    public func captureScreenWithSCK(screen: NSScreen) async throws -> CGImage {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first(where: { disp in
+            let frame = CGRect(x: CGFloat(disp.frame.origin.x),
+                               y: CGFloat(disp.frame.origin.y),
+                               width: CGFloat(disp.frame.width),
+                               height: CGFloat(disp.frame.height))
+            return frame.intersects(screen.frame)
+        }) ?? content.displays.first else {
+            throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
+        }
+        
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let config = SCStreamConfiguration()
+        config.width = Int(screen.frame.width * screen.backingScaleFactor)
+        config.height = Int(screen.frame.height * screen.backingScaleFactor)
+        config.showsCursor = false
+        config.scalesToFit = false
+        config.colorSpaceName = CGColorSpace.sRGB
+        
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
     
     /// Захват конкретного окна
