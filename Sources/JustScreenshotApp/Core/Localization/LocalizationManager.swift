@@ -5,6 +5,7 @@ import SwiftUI
 public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case english = "en"
     case russian = "ru"
+    case ukrainian = "uk"
     case german = "de"
     case french = "fr"
     case spanish = "es"
@@ -18,6 +19,7 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .english: return "English"
         case .russian: return "Русский"
+        case .ukrainian: return "Українська"
         case .german: return "Deutsch"
         case .french: return "Français"
         case .spanish: return "Español"
@@ -31,6 +33,7 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .english: return "🇺🇸"
         case .russian: return "🇷🇺"
+        case .ukrainian: return "🇺🇦"
         case .german: return "🇩🇪"
         case .french: return "🇫🇷"
         case .spanish: return "🇪🇸"
@@ -44,6 +47,7 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         let preferred = Locale.preferredLanguages
         for lang in preferred {
             let lower = lang.lowercased()
+            if lower.starts(with: "uk") { return .ukrainian }
             if lower.starts(with: "ru") { return .russian }
             if lower.starts(with: "zh") { return .simplifiedChinese }
             if lower.starts(with: "ja") { return .japanese }
@@ -93,9 +97,22 @@ public func L(_ key: String) -> String {
     LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
 }
 
+/// Строго типизированная функция локализации по LocKey
+@MainActor
+public func L(_ key: LocKey) -> String {
+    LocalizationCatalog.translate(key.rawValue, for: LocalizationManager.shared.currentLanguage)
+}
+
 /// Глобальная функция с форматированием аргументов
 @MainActor
 public func L(_ key: String, _ args: CVarArg...) -> String {
     let format = LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
+    return String(format: format, arguments: args)
+}
+
+/// Строго типизированная функция с форматированием аргументов
+@MainActor
+public func L(_ key: LocKey, _ args: CVarArg...) -> String {
+    let format = LocalizationCatalog.translate(key.rawValue, for: LocalizationManager.shared.currentLanguage)
     return String(format: format, arguments: args)
 }

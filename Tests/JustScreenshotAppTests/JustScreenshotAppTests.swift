@@ -52,6 +52,10 @@ struct LocalizationTests {
         #expect(manager.currentLanguage == .russian)
         #expect(L("editor.close") == "Закрыть")
         
+        manager.setLanguage(.ukrainian)
+        #expect(manager.currentLanguage == .ukrainian)
+        #expect(L("editor.close") == "Закрити")
+        
         manager.setLanguage(.german)
         #expect(manager.currentLanguage == .german)
         #expect(L("editor.close") == "Schließen")
@@ -71,5 +75,6 @@ struct LocalizationTests {
         manager.setLanguage(.japanese)
         #expect(manager.currentLanguage == .japanese)
         #expect(L("editor.close") == "閉じる")
+        #expect(L(.editorClose) == "閉じる")
     }
 }

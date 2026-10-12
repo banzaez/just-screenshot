@@ -9,11 +9,21 @@ public struct SettingsWindowView: View {
     @State private var selectedTab: SettingsTab = .general
 
     enum SettingsTab: String, CaseIterable, Identifiable {
-        case general = "Основные"
-        case hotkeys = "Горячие клавиши"
-        case recording = "Запись видео"
+        case general
+        case hotkeys
+        case recording
 
         var id: String { rawValue }
+        
+        @MainActor
+        var localizedTitle: String {
+            switch self {
+            case .general: return L("settings.tab.general")
+            case .hotkeys: return L("settings.tab.hotkeys")
+            case .recording: return L("settings.tab.recording")
+            }
+        }
+        
         var icon: String {
             switch self {
             case .general: return "gearshape"
@@ -30,7 +40,7 @@ public struct SettingsWindowView: View {
             // Вкладки переключения
             Picker("", selection: $selectedTab) {
                 ForEach(SettingsTab.allCases) { tab in
-                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                    Label(tab.localizedTitle, systemImage: tab.icon).tag(tab)
                 }
             }
             .pickerStyle(.segmented)
@@ -60,12 +70,41 @@ public struct SettingsWindowView: View {
 
     // 1. Основные настройки
     private var generalSettingsView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Система и запуск")
+        VStack(alignment: .leading, spacing: 18) {
+            // Секция выбора языка интерфейса
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("settings.language.header"))
+                    .font(.headline)
+
+                HStack(spacing: 12) {
+                    Picker("", selection: $settings.language) {
+                        ForEach(AppLanguage.allCases) { lang in
+                            HStack(spacing: 6) {
+                                Text(lang.flagIcon)
+                                Text(lang.localizedName)
+                            }
+                            .tag(lang)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 200)
+
+                    Text(L("settings.language.description"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.04))
+            .cornerRadius(8)
+
+            Divider()
+
+            Text(L("settings.system.header"))
                 .font(.headline)
 
             Toggle(
-                "Запускать Just Screenshot при входе в систему",
+                L("settings.launch_at_login"),
                 isOn: Binding(
                     get: { launchAtLogin.isEnabled },
                     set: { launchAtLogin.setLaunchAtLogin($0) }
@@ -73,24 +112,24 @@ public struct SettingsWindowView: View {
 
             Divider()
 
-            Text("Скриншоты")
+            Text(L("settings.capture.header"))
                 .font(.headline)
 
             Toggle(
-                "Автоматически копировать снимок в буфер обмена",
+                L("settings.copy_clipboard"),
                 isOn: $settings.copyToClipboardOnCapture)
 
-            Toggle("Воспроизводить звук затвора и записи", isOn: $settings.playSound)
+            Toggle(L("settings.play_sound"), isOn: $settings.playSound)
 
             Divider()
 
-            Text("Папка для сохранения по умолчанию")
+            Text(L("settings.save_dir.header"))
                 .font(.headline)
 
             HStack {
                 Text(
                     settings.defaultSaveDirectoryPath.isEmpty
-                        ? "Не выбрана" : settings.defaultSaveDirectoryPath
+                        ? L("settings.save_dir.not_selected") : settings.defaultSaveDirectoryPath
                 )
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -101,7 +140,7 @@ public struct SettingsWindowView: View {
                 .background(Color.white.opacity(0.06))
                 .cornerRadius(6)
 
-                Button("Выбрать…") {
+                Button(L("settings.choose")) {
                     selectSaveDirectory()
                 }
             }
@@ -120,13 +159,11 @@ public struct SettingsWindowView: View {
         VStack(alignment: .leading, spacing: 18) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Глобальные сочетания клавиш")
+                    Text(L("settings.hotkeys.title"))
                         .font(.headline)
-                    Text(
-                        "Назначайте основные и альтернативные (вторые) сочетания или одиночные функциональные клавиши F1-F12."
-                    )
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    Text(L("settings.hotkeys.subtitle"))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
                 Spacer()
                 Button {
@@ -135,7 +172,7 @@ public struct SettingsWindowView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.counterclockwise")
-                        Text("Сбросить все")
+                        Text(L("settings.hotkeys.reset_all"))
                     }
                     .font(.caption)
                 }
@@ -152,8 +189,8 @@ public struct SettingsWindowView: View {
                     id: "area",
                     icon: "crop",
                     iconColor: .blue,
-                    title: "Снимок произвольной области",
-                    subtitle: "Выделение рамкой любого фрагмента экрана",
+                    title: L("settings.hotkeys.area_title"),
+                    subtitle: L("settings.hotkeys.area_sub"),
                     primaryBinding: $settings.shortcutArea,
                     altBinding: $settings.shortcutAreaAlt
                 )
@@ -162,8 +199,8 @@ public struct SettingsWindowView: View {
                     id: "window",
                     icon: "macwindow",
                     iconColor: .teal,
-                    title: "Снимок окна приложения",
-                    subtitle: "Интерактивный выбор открытого окна кликом",
+                    title: L("settings.hotkeys.window_title"),
+                    subtitle: L("settings.hotkeys.window_sub"),
                     primaryBinding: $settings.shortcutWindow,
                     altBinding: $settings.shortcutWindowAlt
                 )
@@ -172,8 +209,8 @@ public struct SettingsWindowView: View {
                     id: "recording",
                     icon: "record.circle.fill",
                     iconColor: .red,
-                    title: "Запись экрана в видео",
-                    subtitle: "Захват выбранной области в MP4 с плавающим пультом",
+                    title: L("settings.hotkeys.record_title"),
+                    subtitle: L("settings.hotkeys.record_sub"),
                     primaryBinding: $settings.shortcutRecording,
                     altBinding: $settings.shortcutRecordingAlt
                 )
@@ -182,8 +219,8 @@ public struct SettingsWindowView: View {
                     id: "repeat",
                     icon: "arrow.counterclockwise",
                     iconColor: .purple,
-                    title: "Повторить предыдущий захват",
-                    subtitle: "Мгновенный снимок той же самой области экрана",
+                    title: L("settings.hotkeys.repeat_title"),
+                    subtitle: L("settings.hotkeys.repeat_sub"),
                     primaryBinding: $settings.shortcutRepeat,
                     altBinding: $settings.shortcutRepeatAlt
                 )
@@ -192,8 +229,8 @@ public struct SettingsWindowView: View {
                     id: "history",
                     icon: "clock.arrow.circlepath",
                     iconColor: .orange,
-                    title: "История снимков",
-                    subtitle: "Галерея всех ранее сделанных скриншотов",
+                    title: L("settings.hotkeys.history_title"),
+                    subtitle: L("settings.hotkeys.history_sub"),
                     primaryBinding: $settings.shortcutHistory,
                     altBinding: $settings.shortcutHistoryAlt
                 )
@@ -203,11 +240,9 @@ public struct SettingsWindowView: View {
                 Image(systemName: "shield.lefthalf.filled")
                     .foregroundColor(.secondary)
                     .font(.caption)
-                Text(
-                    "Системные сочетания (⌘Q, ⌘W, ⌘H, ⌘Tab, ⌘Space) защищены от случайного переназначения."
-                )
-                .font(.caption)
-                .foregroundColor(.secondary)
+                Text(L("settings.hotkeys.protected_note"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
             .padding(.top, 4)
         }
@@ -247,7 +282,7 @@ public struct SettingsWindowView: View {
 
             // 1. Основной шорткат
             VStack(alignment: .trailing, spacing: 2) {
-                Text("Основной")
+                Text(L("settings.hotkeys.primary"))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.secondary)
                 singleShortcutPill(
@@ -263,7 +298,7 @@ public struct SettingsWindowView: View {
 
             // 2. Альтернативный шорткат
             VStack(alignment: .trailing, spacing: 2) {
-                Text("Второй")
+                Text(L("settings.hotkeys.secondary"))
                     .font(.system(size: 9, weight: .medium))
                     .foregroundColor(.secondary)
                 if let alt = altBinding.wrappedValue {
@@ -283,7 +318,7 @@ public struct SettingsWindowView: View {
                     Button {
                         recordingTarget = .alternate(id)
                     } label: {
-                        Text("+ Добавить")
+                        Text("+ " + L("editor.add_point"))
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 8)
@@ -338,7 +373,7 @@ public struct SettingsWindowView: View {
         return HStack(spacing: 4) {
             if isRecordingThis {
                 HStack(spacing: 6) {
-                    Text("Нажмите клавиши…")
+                    Text(L("settings.hotkeys.press_keys"))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.blue)
 
@@ -395,7 +430,7 @@ public struct SettingsWindowView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                    .help("Кликните для изменения сочетания клавиш")
+                    .help(L("settings.hotkeys.click_to_change"))
 
                     if let onClear {
                         Button(action: onClear) {
@@ -404,7 +439,7 @@ public struct SettingsWindowView: View {
                                 .foregroundColor(.secondary.opacity(0.7))
                         }
                         .buttonStyle(.plain)
-                        .help("Удалить этот альтернативный шорткат")
+                        .help(L("settings.hotkeys.remove_alt"))
                     }
                 }
             }
@@ -414,51 +449,47 @@ public struct SettingsWindowView: View {
     // 3. Запись видео
     private var recordingSettingsView: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Параметры видео")
+            Text(L("settings.recording.params"))
                 .font(.headline)
 
             Toggle(
-                "Показывать плавающую панель со временем и кнопками паузы/стоп",
+                L("settings.recording.show_bar"),
                 isOn: $settings.showFloatingBarDuringRecording)
 
-            Text(
-                "Когда флажок включен, внизу записываемой области отображается стильный пульт управления."
-            )
-            .font(.caption)
-            .foregroundColor(.secondary)
+            Text(L("settings.recording.show_bar_desc"))
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             Toggle(
-                "Отображать нажатия клавиш и сочетания (Keystrokes HUD)",
+                L("settings.recording.show_keystrokes"),
                 isOn: $settings.showKeystrokesDuringRecording)
 
-            Text(
-                "Показывает всплывающие бейджи с нажимаемыми шорткатами (⌘, ⌥, ⇧ и буквы) внутри рамки записи."
-            )
-            .font(.caption)
-            .foregroundColor(.secondary)
+            Text(L("settings.recording.show_keystrokes_desc"))
+                .font(.caption)
+                .foregroundColor(.secondary)
 
             Divider()
 
-            Text("Формат и кодек")
+            Text(L("settings.recording.format_header"))
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("Кодек записи:")
+                    Text(L("settings.recording.codec_label"))
                     Spacer()
                     Text("Apple H.264 (MP4)")
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    Text("Захват курсора мыши:")
+                    Text(L("settings.recording.cursor_label"))
                     Spacer()
-                    Text("Включен")
+                    Text(L("settings.recording.cursor_enabled"))
                         .foregroundColor(.secondary)
                 }
                 HStack {
-                    Text("Окно редактирования:")
+                    Text(L("settings.recording.editor_label"))
                     Spacer()
-                    Text("Открывать сразу после записи")
+                    Text(L("settings.recording.editor_open"))
                         .foregroundColor(.secondary)
                 }
             }
@@ -474,7 +505,7 @@ public struct SettingsWindowView: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.prompt = "Выбрать"
+        panel.prompt = L("settings.select_button")
 
         NSApp.activate(ignoringOtherApps: true)
         if panel.runModal() == .OK, let url = panel.url {
