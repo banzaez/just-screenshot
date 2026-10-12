@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:just-screenshot}",
+            "name": "Debug JustScreenshotApp",
+            "target": "JustScreenshotApp",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug JustScreenshotApp"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:just-screenshot}",
+            "name": "Release JustScreenshotApp",
+            "target": "JustScreenshotApp",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release JustScreenshotApp"
+        }
+    ]
+}

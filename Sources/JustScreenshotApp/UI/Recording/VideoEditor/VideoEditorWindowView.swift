@@ -1,0 +1,165 @@
+import SwiftUI
+import AVKit
+
+/// Главное окно профессионального видеоредактора
+public struct VideoEditorWindowView: View {
+    @ObservedObject var model: VideoEditorModel
+    var onClose: () -> Void
+    
+    public init(model: VideoEditorModel, onClose: @escaping () -> Void) {
+        self.model = model
+        self.onClose = onClose
+    }
+    
+    public var body: some View {
+        VStack(spacing: 0) {
+            // 1. Верхний тулбар
+            VideoEditorToolbarView(
+                model: model,
+                onExportMP4: { performExport(isGIF: false) },
+                onExportGIF: { performExport(isGIF: true) }
+            )
+            
+            // 2. Основная рабочая область (Плеер + Canvas оверлей)
+            ZStack {
+                Color.black
+                
+                VideoPlayerRepresentable(player: model.player)
+                
+                VideoOverlayCanvasView(model: model)
+                
+                // Оверлей процесса экспорта
+                if model.isExporting {
+                    ZStack {
+                        Color.black.opacity(0.7)
+                        VStack(spacing: 12) {
+                            ProgressView(value: model.exportProgress)
+                                .progressViewStyle(.linear)
+                                .frame(width: 240)
+                            Text(model.exportStatusText)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                        .padding(24)
+                        .background(.ultraThinMaterial)
+                        .cornerRadius(12)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            
+            // 3. Нижняя панель (Таймлайн и управление воспроизведением)
+            VStack(spacing: 0) {
+                // Таймлайн обрезки с превью кадров
+                VideoTimelineView(model: model)
+                
+                // Кнопки управления воспроизведением (Play/Pause, шаг кадра)
+                HStack(spacing: 16) {
+                    Button {
+                        model.seek(to: model.currentTime - 1.0)
+                    } label: {
+                        Image(systemName: "gobackward.10")
+                            .font(.system(size: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Назад на 1 сек")
+                    
+                    Button {
+                        model.togglePlayPause()
+                    } label: {
+                        Image(systemName: model.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.space, modifiers: [])
+                    .help("Воспроизведение / Пауза (Пробел)")
+                    
+                    Button {
+                        model.seek(to: model.currentTime + 1.0)
+                    } label: {
+                        Image(systemName: "goforward.10")
+                            .font(.system(size: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Вперед на 1 сек")
+                    
+                    Spacer()
+                    
+                    Text("Длительность: \(String(format: "%.1f", model.trimEnd - model.trimStart)) с")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(Color(NSColor.windowBackgroundColor))
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+    
+    private func performExport(isGIF: Bool) {
+        model.pause()
+        
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = isGIF ? [.gif] : [.mpeg4Movie]
+        savePanel.canCreateDirectories = true
+        savePanel.nameFieldStringValue = isGIF ? "Animation.gif" : "VideoEdit.mp4"
+        
+        NSApp.activate(ignoringOtherApps: true)
+        guard savePanel.runModal() == .OK, let targetURL = savePanel.url else { return }
+        
+        model.isExporting = true
+        model.exportProgress = 0.0
+        model.exportStatusText = isGIF ? "Генерация GIF анимации..." : "Экспорт видео в MP4..."
+        
+        let options = VideoExportService.ExportOptions(
+            trimStart: model.trimStart,
+            trimEnd: model.trimEnd,
+            playbackRate: model.playbackRate,
+            cropRect: model.isCropping ? model.cropRect : nil,
+            exportGIF: isGIF,
+            gifFPS: 15,
+            annotations: model.annotations
+        )
+        
+        Task {
+            do {
+                if isGIF {
+                    try await VideoExportService.shared.exportGIF(
+                        sourceURL: model.videoURL,
+                        destinationURL: targetURL,
+                        options: options
+                    ) { progress in
+                        Task { @MainActor in
+                            self.model.exportProgress = progress
+                        }
+                    }
+                } else {
+                    try await VideoExportService.shared.exportVideo(
+                        sourceURL: model.videoURL,
+                        destinationURL: targetURL,
+                        options: options
+                    ) { progress in
+                        Task { @MainActor in
+                            self.model.exportProgress = progress
+                        }
+                    }
+                }
+                
+                await MainActor.run {
+                    self.model.isExporting = false
+                    NSWorkspace.shared.activateFileViewerSelecting([targetURL])
+                }
+            } catch {
+                await MainActor.run {
+                    self.model.isExporting = false
+                    let alert = NSAlert()
+                    alert.messageText = "Ошибка экспорта"
+                    alert.informativeText = error.localizedDescription
+                    alert.runModal()
+                }
+            }
+        }
+    }
+}

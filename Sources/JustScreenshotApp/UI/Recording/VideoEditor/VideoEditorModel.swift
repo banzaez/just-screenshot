@@ -1,0 +1,167 @@
+import SwiftUI
+import AVKit
+import Combine
+
+/// Модель состояния профессионального редактора видео
+@MainActor
+public final class VideoEditorModel: ObservableObject {
+    public let videoURL: URL
+    public let player: AVPlayer
+    
+    @Published public var isPlaying: Bool = false
+    @Published public var currentTime: Double = 0.0
+    @Published public var duration: Double = 1.0
+    
+    // Обрезка (Trim In / Trim Out)
+    @Published public var trimStart: Double = 0.0
+    @Published public var trimEnd: Double = 1.0
+    
+    // Скорость воспроизведения (0.5x, 1x, 1.5x, 2x)
+    @Published public var playbackRate: Float = 1.0
+    
+    // Кадрирование (Crop)
+    @Published public var isCropping: Bool = false
+    @Published public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
+    
+    // Аннотации
+    @Published public var annotations: [VideoAnnotationItem] = []
+    @Published public var selectedAnnotationID: UUID?
+    
+    // Экспорт
+    @Published public var isExporting: Bool = false
+    @Published public var exportProgress: Double = 0.0
+    @Published public var exportStatusText: String = ""
+    
+    // Превью-кадры таймлайна (thumbnails)
+    @Published public var thumbnails: [NSImage] = []
+    
+    private var timeObserverToken: Any?
+    private var cancellables = Set<AnyCancellable>()
+    
+    public init(videoURL: URL) {
+        self.videoURL = videoURL
+        let playerItem = AVPlayerItem(url: videoURL)
+        self.player = AVPlayer(playerItem: playerItem)
+        
+        setupPlayerObserver()
+        loadVideoMetadata()
+    }
+    
+    public func cleanup() {
+        if let token = timeObserverToken {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+        player.pause()
+    }
+    
+    private func setupPlayerObserver() {
+        let interval = CMTime(value: 1, timescale: 30)
+        timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let sec = time.seconds
+                if !sec.isNaN {
+                    self.currentTime = sec
+                    // Зацикливание внутри диапазона trimStart...trimEnd
+                    if sec >= self.trimEnd {
+                        self.seek(to: self.trimStart)
+                        if self.isPlaying {
+                            self.player.play()
+                            self.player.rate = self.playbackRate
+                        }
+                    }
+                }
+            }
+        }
+        
+        NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime, object: player.currentItem)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.seek(to: self.trimStart)
+                if self.isPlaying {
+                    self.player.play()
+                    self.player.rate = self.playbackRate
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func loadVideoMetadata() {
+        Task {
+            let asset = AVURLAsset(url: videoURL)
+            if let dur = try? await asset.load(.duration).seconds, dur > 0 {
+                self.duration = dur
+                self.trimEnd = dur
+                await self.generateThumbnails(asset: asset, count: 10)
+            }
+        }
+    }
+    
+    private func generateThumbnails(asset: AVAsset, count: Int) async {
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 160, height: 100)
+        
+        var thumbs: [NSImage] = []
+        for i in 0..<count {
+            let time = CMTime(seconds: (self.duration / Double(count)) * Double(i), preferredTimescale: 600)
+            if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
+                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+                thumbs.append(img)
+            }
+        }
+        self.thumbnails = thumbs
+    }
+    
+    public func togglePlayPause() {
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
+    }
+    
+    public func play() {
+        if currentTime >= trimEnd {
+            seek(to: trimStart)
+        }
+        player.play()
+        player.rate = playbackRate
+        isPlaying = true
+    }
+    
+    public func pause() {
+        player.pause()
+        isPlaying = false
+    }
+    
+    public func seek(to time: Double) {
+        let clamped = max(0, min(duration, time))
+        currentTime = clamped
+        let cmTime = CMTime(seconds: clamped, preferredTimescale: 600)
+        player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+    
+    public func setRate(_ rate: Float) {
+        playbackRate = rate
+        if isPlaying {
+            player.rate = rate
+        }
+    }
+    
+    // Аннотации
+    public func addAnnotation(type: VideoAnnotationType) {
+        let newItem = VideoAnnotationItem(type: type)
+        annotations.append(newItem)
+        selectedAnnotationID = newItem.id
+    }
+    
+    public func removeAnnotation(id: UUID) {
+        annotations.removeAll { $0.id == id }
+        if selectedAnnotationID == id {
+            selectedAnnotationID = nil
+        }
+    }
+}

@@ -77,10 +77,12 @@ struct JustScreenshotApp: App {
                 
                 Divider()
                 
-                Toggle("Запускать при входе в систему", isOn: Binding(
-                    get: { launchAtLogin.isEnabled },
-                    set: { launchAtLogin.setLaunchAtLogin($0) }
-                ))
+                Button {
+                    windowManager.showSettings()
+                } label: {
+                    Label("Настройки…", systemImage: "gearshape")
+                }
+                .keyboardShortcut(",", modifiers: [.command])
                 
                 Button("Проверить разрешения записи экрана") {
                     Task {

@@ -53,6 +53,21 @@ public final class GlobalHotKeyManager: @unchecked Sendable {
         }
     }
     
+    public func unregister(id: UInt32) {
+        if let ref = hotKeyRefs.removeValue(forKey: id) {
+            UnregisterEventHotKey(ref)
+        }
+        handlers.removeValue(forKey: id)
+    }
+    
+    public func unregisterAll() {
+        for (_, ref) in hotKeyRefs {
+            UnregisterEventHotKey(ref)
+        }
+        hotKeyRefs.removeAll()
+        handlers.removeAll()
+    }
+    
     private func installCarbonEventHandler() {
         var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         

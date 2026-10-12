@@ -19,8 +19,10 @@ public final class AppWindowManager: ObservableObject {
     private var recordingBarWindow: RecordingControlBarWindow?
     private let hudStack = HUDStackManager()
     private var editors: [UUID: ManagedWindow] = [:]
+    private var videoEditors: [UUID: ManagedWindow] = [:]
     private var pins: [UUID: ManagedWindow] = [:]
     private var historyWindow: ManagedWindow?
+    private var settingsWindow: ManagedWindow?
     private var cascadePoint = NSPoint.zero
     private var recordingTimer: Timer?
     
@@ -32,14 +34,27 @@ public final class AppWindowManager: ObservableObject {
     
     // MARK: - Горячие клавиши
     
+    public func reloadGlobalHotkeys() {
+        GlobalHotKeyManager.shared.unregisterAll()
+        setupGlobalHotkeys()
+    }
+    
     private func setupGlobalHotkeys() {
-        let cmdShift: UInt32 = UInt32(cmdKey | shiftKey)
+        let settings = AppSettings.shared
         let hk = GlobalHotKeyManager.shared
-        hk.register(id: 1, keyCode: UInt32(kVK_ANSI_3), modifiers: cmdShift) { [weak self] in self?.toggleRecording() }
-        hk.register(id: 2, keyCode: UInt32(kVK_ANSI_4), modifiers: cmdShift) { [weak self] in self?.startWindowCapture() }
-        hk.register(id: 3, keyCode: UInt32(kVK_ANSI_W), modifiers: cmdShift) { [weak self] in self?.startWindowCapture() }
-        hk.register(id: 4, keyCode: UInt32(kVK_ANSI_5), modifiers: cmdShift) { [weak self] in self?.startAreaCapture() }
-        hk.register(id: 5, keyCode: UInt32(kVK_ANSI_H), modifiers: cmdShift) { [weak self] in self?.showHistory() }
+        
+        hk.register(id: 1, keyCode: settings.shortcutRecording.keyCode, modifiers: settings.shortcutRecording.modifiers) { [weak self] in
+            self?.toggleRecording()
+        }
+        hk.register(id: 2, keyCode: settings.shortcutWindow.keyCode, modifiers: settings.shortcutWindow.modifiers) { [weak self] in
+            self?.startWindowCapture()
+        }
+        hk.register(id: 3, keyCode: settings.shortcutArea.keyCode, modifiers: settings.shortcutArea.modifiers) { [weak self] in
+            self?.startAreaCapture()
+        }
+        hk.register(id: 4, keyCode: settings.shortcutHistory.keyCode, modifiers: settings.shortcutHistory.modifiers) { [weak self] in
+            self?.showHistory()
+        }
     }
     
     public func toggleRecording() {
@@ -161,9 +176,13 @@ public final class AppWindowManager: ObservableObject {
     
     private func processCapturedItem(_ item: CapturedItem) {
         currentCapturedItem = item
-        ImageExporter.copyToClipboard(item.image)
+        if AppSettings.shared.copyToClipboardOnCapture {
+            ImageExporter.copyToClipboard(item.image)
+        }
         history.add(item.image, id: item.id)
-        NSSound(named: "Screen Capture")?.play()
+        if AppSettings.shared.playSound {
+            NSSound(named: "Screen Capture")?.play()
+        }
         showQuickAccessHUD(item: item)
     }
     
@@ -269,6 +288,41 @@ public final class AppWindowManager: ObservableObject {
         }
     }
     
+    // MARK: - Видеоредактор
+    
+    public func openVideoEditor(videoURL: URL) {
+        let editorID = UUID()
+        let model = VideoEditorModel(videoURL: videoURL)
+        let view = VideoEditorWindowView(
+            model: model,
+            onClose: { [weak self] in self?.closeVideoEditor(id: editorID) }
+        )
+        
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false
+        )
+        window.title = "Редактор видео — \(videoURL.lastPathComponent)"
+        window.minSize = NSSize(width: 720, height: 500)
+        window.contentView = NSHostingView(rootView: view)
+        window.center()
+        
+        let managed = ManagedWindow(window: window) { [weak self] closed in
+            model.cleanup()
+            self?.videoEditors = self?.videoEditors.filter { $0.value !== closed } ?? [:]
+        }
+        
+        videoEditors[editorID] = managed
+        managed.bringToFront()
+        NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    private func closeVideoEditor(id: UUID) {
+        guard let managed = videoEditors.removeValue(forKey: id) else { return }
+        managed.closeSilently()
+    }
+    
     // MARK: - История
     
     public func showHistory() {
@@ -304,6 +358,29 @@ public final class AppWindowManager: ObservableObject {
     public func editHistoryEntry(_ entry: HistoryEntry) {
         guard let image = history.image(for: entry) else { return }
         openAnnotationEditor(item: CapturedItem(id: entry.id, image: image, timestamp: entry.date, rect: .zero))
+    }
+    
+    // MARK: - Настройки
+    
+    public func showSettings() {
+        if let existing = settingsWindow {
+            existing.bringToFront()
+            return
+        }
+        let view = SettingsWindowView()
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 540, height: 440),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered, defer: false
+        )
+        window.title = "Настройки"
+        window.contentView = NSHostingView(rootView: view)
+        window.center()
+        
+        let managed = ManagedWindow(window: window) { [weak self] _ in self?.settingsWindow = nil }
+        settingsWindow = managed
+        managed.bringToFront()
+        NSApp.activate(ignoringOtherApps: true)
     }
     
     // MARK: - Открыть изображение / из буфера
@@ -390,7 +467,9 @@ public final class AppWindowManager: ObservableObject {
             isRecording = true
             isRecordingPaused = false
             recordingDuration = 0
-            NSSound(named: "Purr")?.play()
+            if AppSettings.shared.playSound {
+                NSSound(named: "Purr")?.play()
+            }
             
             // Преобразуем координаты ScreenCaptureKit (origin вверху основного экрана) в координаты AppKit
             let screenHeight = NSScreen.main?.frame.height ?? 900
@@ -406,26 +485,28 @@ public final class AppWindowManager: ObservableObject {
             frameWin.orderFrontRegardless()
             self.recordingFrameWindow = frameWin
             
-            // 2. Вычисляем позицию для плавающей панели снизу области
-            var barCenter = NSPoint(x: appKitRect.midX, y: appKitRect.minY - 35)
-            // Если панель выходит за нижний край экрана, показываем её внутри внизу области
-            if barCenter.y < 40 {
-                barCenter.y = appKitRect.minY + 35
+            // 2. Вычисляем позицию для плавающей панели снизу области (если включено в настройках)
+            if AppSettings.shared.showFloatingBarDuringRecording {
+                var barCenter = NSPoint(x: appKitRect.midX, y: appKitRect.minY - 35)
+                // Если панель выходит за нижний край экрана, показываем её внутри внизу области
+                if barCenter.y < 40 {
+                    barCenter.y = appKitRect.minY + 35
+                }
+                // Предотвращаем выход за левый и правый края
+                let minX: CGFloat = 160
+                let maxX: CGFloat = (NSScreen.main?.frame.width ?? 1440) - 160
+                barCenter.x = max(minX, min(maxX, barCenter.x))
+                
+                let barWin = RecordingControlBarWindow(
+                    initialPosition: barCenter,
+                    windowManager: self,
+                    onPauseResume: { [weak self] in self?.togglePauseResumeScreenRecording() },
+                    onStop: { [weak self] in self?.stopScreenRecording() },
+                    onCancel: { [weak self] in self?.cancelScreenRecording() }
+                )
+                barWin.orderFrontRegardless()
+                self.recordingBarWindow = barWin
             }
-            // Предотвращаем выход за левый и правый края
-            let minX: CGFloat = 160
-            let maxX: CGFloat = (NSScreen.main?.frame.width ?? 1440) - 160
-            barCenter.x = max(minX, min(maxX, barCenter.x))
-            
-            let barWin = RecordingControlBarWindow(
-                initialPosition: barCenter,
-                windowManager: self,
-                onPauseResume: { [weak self] in self?.togglePauseResumeScreenRecording() },
-                onStop: { [weak self] in self?.stopScreenRecording() },
-                onCancel: { [weak self] in self?.cancelScreenRecording() }
-            )
-            barWin.orderFrontRegardless()
-            self.recordingBarWindow = barWin
             
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
@@ -454,7 +535,9 @@ public final class AppWindowManager: ObservableObject {
         
         Task {
             if let savedURL = try? await ScreenRecorderService.shared.stopRecording() {
-                NSWorkspace.shared.activateFileViewerSelecting([savedURL])
+                await MainActor.run {
+                    self.openVideoEditor(videoURL: savedURL)
+                }
             }
         }
     }
