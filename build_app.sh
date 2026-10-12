@@ -53,7 +53,12 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
 </plist>
 EOF
 
-echo "✍️ Подписание пакета (Ad-hoc codesign)..."
-codesign --force --deep --sign - "$BUNDLE_DIR"
+echo "✍️ Подписание пакета постоянным сертификатом JustScreenshotDev..."
+if security find-identity -p codesigning -v | grep -q "JustScreenshotDev"; then
+    codesign --force --deep --sign "JustScreenshotDev" "$BUNDLE_DIR"
+else
+    echo "⚠️ Сертификат JustScreenshotDev не найден, используется ad-hoc подпись..."
+    codesign --force --deep --sign - "$BUNDLE_DIR"
+fi
 
 echo "✅ $APP_NAME.app успешно собран и готов к запуску!"
