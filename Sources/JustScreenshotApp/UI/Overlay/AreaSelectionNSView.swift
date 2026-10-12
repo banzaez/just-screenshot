@@ -178,6 +178,9 @@ final class AreaSelectionNSView: NSView {
                     width: rect.width,
                     height: rect.height
                 )
+                self.isHidden = true
+                self.window?.alphaValue = 0.0
+                CATransaction.flush()
                 onCompleteRect(scRect)
                 return
             }

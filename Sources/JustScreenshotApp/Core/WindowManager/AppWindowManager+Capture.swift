@@ -80,8 +80,12 @@ extension AppWindowManager {
                 screen: screen, mode: .areaOnly, visibleWindows: [],
                 backgroundImage: nil,
                 onCompleteRect: { [weak self] rect in
-                    self?.closeAllOverlays()
-                    Task { [weak self] in await self?.captureRectAndShowHUD(rect: rect) }
+                    guard let self else { return }
+                    let overlayIDs = self.overlayWindows.compactMap { $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil }
+                    self.closeAllOverlays()
+                    Task { [weak self] in
+                        await self?.captureRectAndShowHUD(rect: rect, excludingWindowIDs: overlayIDs)
+                    }
                 },
                 onCompleteWindow: { _ in },
                 onCancel: { [weak self] in self?.closeAllOverlays() }
@@ -143,18 +147,20 @@ extension AppWindowManager {
         let windows = overlayWindows
         overlayWindows.removeAll()
         for w in windows {
+            w.alphaValue = 0
             w.orderOut(nil)
             w.contentView = nil
             w.close()
         }
+        CATransaction.flush()
     }
     
     // MARK: - Захват
     
-    func captureRectAndShowHUD(rect: CGRect) async {
+    func captureRectAndShowHUD(rect: CGRect, excludingWindowIDs: [CGWindowID] = []) async {
         do {
             AppSettings.shared.lastCapturedRect = rect
-            let image = try await ScreenCaptureService.shared.captureRect(rect)
+            let image = try await ScreenCaptureService.shared.captureRect(rect, excludingWindowIDs: excludingWindowIDs)
             processCapturedItem(CapturedItem(image: image, rect: rect))
         } catch {
             print("Capture error: \(error.localizedDescription)")

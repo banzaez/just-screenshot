@@ -60,6 +60,9 @@ public final class ScreenCaptureService {
     
     /// Захват определенной области экрана
     public func captureRect(_ rect: CGRect, excludingWindowIDs: [CGWindowID] = []) async throws -> NSImage {
+        // Минимальная пауза 35 мс для завершения анимации/скрытия и синхронизации буфера WindowServer
+        try? await Task.sleep(nanoseconds: 35_000_000)
+        
         // Проверяем доступный контент через ScreenCaptureKit
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         
@@ -73,8 +76,21 @@ public final class ScreenCaptureService {
             throw NSError(domain: "ScreenCaptureService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
         }
         
-        // Фильтр исключения окон
-        let excludedWindows = content.windows.filter { excludingWindowIDs.contains(CGWindowID($0.windowID)) }
+        // Фильтр исключения окон: переданные ID и любые оверлеи текущего приложения
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let excludedWindows = content.windows.filter { window in
+            if excludingWindowIDs.contains(CGWindowID(window.windowID)) {
+                return true
+            }
+            if window.owningApplication?.processID == currentPID {
+                if window.title == "JustScreenshotAreaOverlay" ||
+                   window.title == "JustScreenshotCountdownOverlay" ||
+                   window.windowLayer >= 1000 {
+                    return true
+                }
+            }
+            return false
+        }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
         // Вычисляем точный масштаб отображения для целевого монитора
@@ -107,15 +123,26 @@ public final class ScreenCaptureService {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
             let frame = CGRect(x: CGFloat(disp.frame.origin.x),
-                               y: CGFloat(disp.frame.origin.y),
-                               width: CGFloat(disp.frame.width),
-                               height: CGFloat(disp.frame.height))
+                                y: CGFloat(disp.frame.origin.y),
+                                width: CGFloat(disp.frame.width),
+                                height: CGFloat(disp.frame.height))
             return frame.intersects(screen.frame)
         }) ?? content.displays.first else {
             throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
         }
         
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let excludedWindows = content.windows.filter { window in
+            if window.owningApplication?.processID == currentPID {
+                if window.title == "JustScreenshotAreaOverlay" ||
+                   window.title == "JustScreenshotCountdownOverlay" ||
+                   window.windowLayer >= 1000 {
+                    return true
+                }
+            }
+            return false
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         let config = SCStreamConfiguration()
         config.width = Int(screen.frame.width * screen.backingScaleFactor)
         config.height = Int(screen.frame.height * screen.backingScaleFactor)

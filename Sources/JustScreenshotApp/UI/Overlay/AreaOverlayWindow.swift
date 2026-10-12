@@ -22,6 +22,7 @@ public final class AreaOverlayWindow: NSWindow {
             defer: false
         )
         
+        self.title = "JustScreenshotAreaOverlay"
         self.level = .screenSaver
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.isOpaque = false

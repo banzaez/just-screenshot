@@ -41,7 +41,18 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
             throw NSError(domain: "ScreenRecorder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
         }
         
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let excludedWindows = content.windows.filter { window in
+            if window.owningApplication?.processID == currentPID {
+                if window.title == "JustScreenshotAreaOverlay" ||
+                   window.title == "JustScreenshotCountdownOverlay" ||
+                   window.windowLayer >= 1000 {
+                    return true
+                }
+            }
+            return false
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
         // Преобразуем глобальные координаты в локальные координаты выбранного монитора
         let localRect = CGRect(

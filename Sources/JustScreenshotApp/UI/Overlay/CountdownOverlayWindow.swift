@@ -22,6 +22,7 @@ public final class CountdownOverlayWindow: NSWindow {
         
         self.isOpaque = false
         self.backgroundColor = .clear
+        self.title = "JustScreenshotCountdownOverlay"
         self.level = .screenSaver
         self.ignoresMouseEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
