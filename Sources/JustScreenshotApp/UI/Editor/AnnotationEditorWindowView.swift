@@ -8,10 +8,6 @@ public struct AnnotationEditorWindowView: View {
     public let onSaveToHistory: ((NSImage) -> Void)?
     public let onClose: () -> Void
     
-    @State private var undoStack: [[AnnotationItem]] = []
-    @State private var redoStack: [[AnnotationItem]] = []
-    @State private var isRestoring = false
-    @State private var lastPushTime = Date.distantPast
     @State private var selectedItemID: UUID? = nil
     
     @State private var selectedTool: AnnotationTool = .select
@@ -53,7 +49,6 @@ public struct AnnotationEditorWindowView: View {
         let contentW = imgSize.width + extraPad * 2
         let contentH = imgSize.height + extraPad * 2
         guard contentW > 0, contentH > 0 else { return 1 }
-        // Уменьшаем под окно, при большом окне — не растягиваем больше 100%
         return max(0.05, min(w / contentW, h / contentH, 1.0))
     }
     
@@ -63,23 +58,13 @@ public struct AnnotationEditorWindowView: View {
     }
     
     private func undo() {
-        guard let prev = undoStack.popLast() else { return }
-        isRestoring = true
-        redoStack.append(model.items)
-        model.items = prev
-        model.markModified()
+        model.undo()
         selectedItemID = nil
-        DispatchQueue.main.async { isRestoring = false }
     }
     
     private func redo() {
-        guard let next = redoStack.popLast() else { return }
-        isRestoring = true
-        undoStack.append(model.items)
-        model.items = next
-        model.markModified()
+        model.redo()
         selectedItemID = nil
-        DispatchQueue.main.async { isRestoring = false }
     }
     
     private func finalImage() -> NSImage {
@@ -114,8 +99,7 @@ public struct AnnotationEditorWindowView: View {
             let regions = await TextRecognizer.findSensitiveRegions(in: capturedItem.image)
             guard !regions.isEmpty else { return }
             
-            undoStack.append(model.items)
-            redoStack.removeAll()
+            model.pushExplicitUndoCheckpoint()
             
             for rect in regions {
                 let blurItem = AnnotationItem(
@@ -139,8 +123,8 @@ public struct AnnotationEditorWindowView: View {
                     textInputString: $textInputString,
                     zoomPercent: Int((zoom * 100).rounded()),
                     isFitMode: fitMode,
-                    canUndo: !undoStack.isEmpty,
-                    canRedo: !redoStack.isEmpty,
+                    canUndo: model.canUndo,
+                    canRedo: model.canRedo,
                     onUndo: undo,
                     onRedo: redo,
                     onZoomIn: { setZoom(zoom * 1.25) },
@@ -253,15 +237,7 @@ public struct AnnotationEditorWindowView: View {
             model.finishInitialLoading()
         }
         .onChange(of: model.items) { old, _ in
-            guard !isRestoring else { return }
-            model.markModified()
-            // Склеиваем быстрые изменения (перетаскивание, набор текста) в один шаг отмены
-            if Date().timeIntervalSince(lastPushTime) > 0.5 {
-                undoStack.append(old)
-                if undoStack.count > 100 { undoStack.removeFirst() }
-            }
-            lastPushTime = Date()
-            redoStack.removeAll()
+            model.recordStateChange(oldItems: old)
         }
         .onChange(of: model.showBackdrop) { _, _ in model.markModified() }
         .onChange(of: model.backdropPreset) { _, _ in model.markModified() }
