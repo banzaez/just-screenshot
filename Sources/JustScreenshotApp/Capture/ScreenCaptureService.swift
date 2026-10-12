@@ -77,10 +77,13 @@ public final class ScreenCaptureService {
         let excludedWindows = content.windows.filter { excludingWindowIDs.contains(CGWindowID($0.windowID)) }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
+        // Вычисляем точный масштаб отображения для целевого монитора
+        let displayScale: CGFloat = display.frame.width > 0 ? CGFloat(display.width) / CGFloat(display.frame.width) : (NSScreen.main?.backingScaleFactor ?? 2.0)
+        
         let config = SCStreamConfiguration()
         config.sourceRect = rect
-        config.width = Int(rect.width * (NSScreen.main?.backingScaleFactor ?? 2.0))
-        config.height = Int(rect.height * (NSScreen.main?.backingScaleFactor ?? 2.0))
+        config.width = Int(rect.width * displayScale)
+        config.height = Int(rect.height * displayScale)
         config.showsCursor = false
         config.scalesToFit = false
         config.colorSpaceName = CGColorSpace.sRGB

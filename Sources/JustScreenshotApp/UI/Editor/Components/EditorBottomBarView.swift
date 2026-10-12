@@ -62,7 +62,8 @@ public struct EditorBottomBarView: View {
             Button {
                 onSaveToHistory()
                 withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_800_000_000)
                     withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
                 }
             } label: {

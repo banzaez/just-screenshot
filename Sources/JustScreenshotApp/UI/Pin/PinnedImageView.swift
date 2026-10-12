@@ -38,6 +38,12 @@ public struct PinnedImageView: View {
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.35), lineWidth: 1))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.15), value: hovering)
+        .onDrag {
+            if let tempURL = ImageExporter.saveTemporaryPNG(image) {
+                return NSItemProvider(object: tempURL as NSURL)
+            }
+            return NSItemProvider(object: image)
+        }
         .contextMenu {
             Button(L("editor.copy")) { ImageExporter.copyToClipboard(image) }
             Menu(L("pin.opacity")) {

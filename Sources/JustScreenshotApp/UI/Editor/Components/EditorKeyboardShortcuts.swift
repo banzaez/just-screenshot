@@ -18,6 +18,7 @@ struct EditorKeyboardShortcutsModifier: ViewModifier {
                     Button("") { onUndo() }.keyboardShortcut("z", modifiers: [.command])
                     Button("") { onRedo() }.keyboardShortcut("z", modifiers: [.command, .shift])
                     Button("") { onDuplicate() }.keyboardShortcut("d", modifiers: [.command])
+                    Button("") { onDelete() }.keyboardShortcut(.delete, modifiers: [])
                     Button("") { onDelete() }.keyboardShortcut(.delete, modifiers: [.command])
                     Button("") { onDeselect() }.keyboardShortcut(.escape, modifiers: [])
                     Button("") { onFit() }.keyboardShortcut("0", modifiers: [.command])

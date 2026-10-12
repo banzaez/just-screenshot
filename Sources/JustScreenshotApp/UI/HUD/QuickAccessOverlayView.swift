@@ -13,6 +13,7 @@ public struct QuickAccessOverlayView: View {
     public let onHover: (Bool) -> Void
     
     @State private var feedback: String?
+    @State private var feedbackTask: Task<Void, Never>?
     
     public init(
         item: CapturedItem,
@@ -35,9 +36,13 @@ public struct QuickAccessOverlayView: View {
     }
     
     private func flash(_ text: String) {
+        feedbackTask?.cancel()
         feedback = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-            if feedback == text { feedback = nil }
+        feedbackTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_600_000_000)
+            if !Task.isCancelled {
+                feedback = nil
+            }
         }
     }
     
@@ -71,10 +76,8 @@ public struct QuickAccessOverlayView: View {
             .onDrag {
                 if let tempURL = ImageExporter.saveTemporaryPNG(item.image) {
                     return NSItemProvider(object: tempURL as NSURL)
-                } else if let tiff = item.image.tiffRepresentation {
-                    return NSItemProvider(item: tiff as NSSecureCoding, typeIdentifier: "public.tiff")
                 }
-                return NSItemProvider()
+                return NSItemProvider(object: item.image)
             }
             
             VStack(alignment: .leading, spacing: 8) {

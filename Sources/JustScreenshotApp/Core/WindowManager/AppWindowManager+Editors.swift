@@ -104,7 +104,12 @@ extension AppWindowManager {
         window.title = L("video_editor.title", videoURL.lastPathComponent)
         window.minSize = NSSize(width: 720, height: 500)
         window.contentView = NSHostingView(rootView: view)
-        window.center()
+        
+        if videoEditors.isEmpty {
+            window.center()
+            cascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        }
+        cascadePoint = window.cascadeTopLeft(from: cascadePoint)
         
         let managed = ManagedWindow(window: window) { [weak self] closed in
             model.cleanup()
