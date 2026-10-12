@@ -20,7 +20,10 @@ public struct VideoEditorWindowView: View {
                 onExportGIF: { performExport(isGIF: true) }
             )
             
-            // 2. Основная рабочая область (Плеер + Canvas оверлей)
+            // 2. Контекстная панель выбранного элемента (свойства, цвет, поворот, дублирование, удаление)
+            VideoSelectedItemBar(model: model)
+            
+            // 3. Основная рабочая область (Плеер + Canvas оверлей)
             ZStack {
                 Color.black
                 
@@ -96,6 +99,16 @@ public struct VideoEditorWindowView: View {
             }
         }
         .preferredColorScheme(.dark)
+        .onEditorDeleteKey(
+            onDelete: {
+                if let id = model.selectedAnnotationID {
+                    model.removeAnnotation(id: id)
+                }
+            },
+            onEscape: {
+                model.selectedAnnotationID = nil
+            }
+        )
     }
     
     private func performExport(isGIF: Bool) {

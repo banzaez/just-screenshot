@@ -243,6 +243,10 @@ public struct AnnotationEditorWindowView: View {
         .onChange(of: model.backdropPreset) { _, _ in model.markModified() }
         .onChange(of: model.backdropPadding) { _, _ in model.markModified() }
         .onChange(of: model.addShadow) { _, _ in model.markModified() }
+        .onEditorDeleteKey(
+            onDelete: deleteSelected,
+            onEscape: { selectedItemID = nil }
+        )
         .editorKeyboardShortcuts(
             onUndo: undo,
             onRedo: redo,

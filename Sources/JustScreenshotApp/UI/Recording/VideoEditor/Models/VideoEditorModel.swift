@@ -164,4 +164,28 @@ public final class VideoEditorModel: ObservableObject {
             selectedAnnotationID = nil
         }
     }
+    
+    public func duplicateAnnotation(id: UUID) {
+        guard let item = annotations.first(where: { $0.id == id }) else { return }
+        let copy = item
+        let newID = UUID()
+        // Смещаем немного вправо-вниз
+        let offset: CGFloat = 0.03
+        var newRect = copy.rect
+        newRect.origin.x = min(0.9, newRect.origin.x + offset)
+        newRect.origin.y = min(0.9, newRect.origin.y + offset)
+        
+        let duplicated = VideoAnnotationItem(
+            id: newID,
+            type: copy.type,
+            rect: newRect,
+            text: copy.text,
+            color: copy.color,
+            lineWidth: copy.lineWidth,
+            fontSize: copy.fontSize,
+            rotationAngle: copy.rotationAngle
+        )
+        annotations.append(duplicated)
+        selectedAnnotationID = duplicated.id
+    }
 }
