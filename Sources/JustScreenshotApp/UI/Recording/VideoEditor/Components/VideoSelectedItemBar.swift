@@ -9,16 +9,33 @@ public struct VideoSelectedItemBar: View {
         self.model = model
     }
     
-    private var selectedIndex: Int? {
+    private var selectedItem: VideoAnnotationItem? {
         guard let id = model.selectedAnnotationID else { return nil }
-        return model.annotations.firstIndex(where: { $0.id == id })
+        return model.annotations.first(where: { $0.id == id })
+    }
+    
+    private func binding<T>(_ keyPath: WritableKeyPath<VideoAnnotationItem, T>, default defaultValue: T) -> Binding<T> {
+        Binding(
+            get: {
+                guard let id = model.selectedAnnotationID,
+                      let item = model.annotations.first(where: { $0.id == id }) else {
+                    return defaultValue
+                }
+                return item[keyPath: keyPath]
+            },
+            set: { newValue in
+                guard let id = model.selectedAnnotationID,
+                      let idx = model.annotations.firstIndex(where: { $0.id == id }) else {
+                    return
+                }
+                model.annotations[idx][keyPath: keyPath] = newValue
+            }
+        )
     }
     
     public var body: some View {
         HStack(spacing: 0) {
-            if let idx = selectedIndex {
-                let item = model.annotations[idx]
-                
+            if let item = selectedItem {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         Label(item.type.localizedTitle, systemImage: item.type.icon)
@@ -31,22 +48,25 @@ public struct VideoSelectedItemBar: View {
                         if item.type == .text {
                             TextField(
                                 L("editor.selected.text_field"),
-                                text: Binding(
-                                    get: { model.annotations[idx].text },
-                                    set: { model.annotations[idx].text = $0 }
-                                )
+                                text: binding(\.text, default: "")
                             )
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 170)
                             
                             EditorIconButton("textformat.size.smaller", title: L("editor.selected.font_smaller")) {
-                                model.annotations[idx].fontSize = max(10, model.annotations[idx].fontSize - 2)
+                                guard let cur = selectedItem else { return }
+                                if let idx = model.annotations.firstIndex(where: { $0.id == cur.id }) {
+                                    model.annotations[idx].fontSize = max(10, cur.fontSize - 2)
+                                }
                             }
                             Text("\(Int(item.fontSize))")
                                 .font(.callout.monospacedDigit())
                                 .frame(width: 28)
                             EditorIconButton("textformat.size.larger", title: L("editor.selected.font_larger")) {
-                                model.annotations[idx].fontSize = min(96, model.annotations[idx].fontSize + 2)
+                                guard let cur = selectedItem else { return }
+                                if let idx = model.annotations.firstIndex(where: { $0.id == cur.id }) {
+                                    model.annotations[idx].fontSize = min(96, cur.fontSize + 2)
+                                }
                             }
                             
                             Divider().frame(height: 20)
@@ -55,20 +75,14 @@ public struct VideoSelectedItemBar: View {
                         // Цвет элемента (если не blur)
                         if item.type != .blur {
                             ColorDropdown(
-                                selection: Binding(
-                                    get: { model.annotations[idx].color },
-                                    set: { model.annotations[idx].color = $0 }
-                                )
+                                selection: binding(\.color, default: .red)
                             )
                         }
                         
                         // Толщина линии (для рамки и стрелки)
                         if item.type == .rect || item.type == .arrow {
                             WidthDropdown(
-                                selection: Binding(
-                                    get: { model.annotations[idx].lineWidth },
-                                    set: { model.annotations[idx].lineWidth = $0 }
-                                )
+                                selection: binding(\.lineWidth, default: 3)
                             )
                         }
                         
@@ -76,24 +90,27 @@ public struct VideoSelectedItemBar: View {
                         
                         // Поворот угла (Slider + кнопки шага + сброс)
                         EditorIconButton("rotate.left", title: L("editor.selected.rotate_left")) {
-                            var deg = model.annotations[idx].rotationAngle - 15
-                            if deg < -180 { deg += 360 }
-                            model.annotations[idx].rotationAngle = deg
+                            guard let cur = selectedItem else { return }
+                            if let idx = model.annotations.firstIndex(where: { $0.id == cur.id }) {
+                                var deg = cur.rotationAngle - 15
+                                if deg < -180 { deg += 360 }
+                                model.annotations[idx].rotationAngle = deg
+                            }
                         }
                         
                         Slider(
-                            value: Binding(
-                                get: { model.annotations[idx].rotationAngle },
-                                set: { model.annotations[idx].rotationAngle = $0 }
-                            ),
+                            value: binding(\.rotationAngle, default: 0),
                             in: -180...180
                         )
                         .frame(width: 100)
                         
                         EditorIconButton("rotate.right", title: L("editor.selected.rotate_right")) {
-                            var deg = model.annotations[idx].rotationAngle + 15
-                            if deg > 180 { deg -= 360 }
-                            model.annotations[idx].rotationAngle = deg
+                            guard let cur = selectedItem else { return }
+                            if let idx = model.annotations.firstIndex(where: { $0.id == cur.id }) {
+                                var deg = cur.rotationAngle + 15
+                                if deg > 180 { deg -= 360 }
+                                model.annotations[idx].rotationAngle = deg
+                            }
                         }
                         
                         Text("\(Int(item.rotationAngle.rounded()))°")
@@ -101,7 +118,10 @@ public struct VideoSelectedItemBar: View {
                             .frame(width: 36)
                         
                         EditorIconButton("arrow.counterclockwise", title: L("editor.selected.reset_angle")) {
-                            model.annotations[idx].rotationAngle = 0
+                            guard let cur = selectedItem else { return }
+                            if let idx = model.annotations.firstIndex(where: { $0.id == cur.id }) {
+                                model.annotations[idx].rotationAngle = 0
+                            }
                         }
                         
                         Divider().frame(height: 20)
@@ -140,7 +160,7 @@ public struct VideoSelectedItemBar: View {
         }
         .frame(height: 38)
         .frame(maxWidth: .infinity)
-        .background(selectedIndex != nil ? Color.accentColor.opacity(0.12) : Color(NSColor.windowBackgroundColor).opacity(0.7))
+        .background(selectedItem != nil ? Color.accentColor.opacity(0.12) : Color(NSColor.windowBackgroundColor).opacity(0.7))
         .overlay(Divider(), alignment: .bottom)
     }
 }

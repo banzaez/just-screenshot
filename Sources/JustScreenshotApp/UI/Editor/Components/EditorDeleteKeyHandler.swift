@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Класс для надежного отслеживания нажатия клавиш (включая Delete / Backspace, Escape, Cmd+Z, Cmd+D)
+/// Модификатор для безопасного отслеживания нажатия клавиш Delete (Backspace / Forward Delete) и Escape
 public struct KeyDownHandlerModifier: ViewModifier {
     let onDelete: () -> Void
     let onEscape: (() -> Void)?
@@ -26,21 +26,32 @@ public struct KeyDownHandlerModifier: ViewModifier {
     private func setupMonitor() {
         guard monitor == nil else { return }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            // Не перехватываем ввод, если фокус находится в текстовом поле (NSTextView / NSTextField)
-            if let responder = event.window?.firstResponder, responder is NSText || responder is NSTextView || responder is NSTextField {
+            // Срабатывает только для текущего активного ключевого окна
+            guard let keyWin = NSApp.keyWindow, event.window === keyWin else {
                 return event
             }
             
-            // Проверяем клавишу Delete (Backspace - 51) или Forward Delete (117)
+            // Не перехватываем ввод, если фокус находится в текстовом поле или редакторе текста
+            if let responder = event.window?.firstResponder {
+                if responder is NSText || responder is NSTextView || responder is NSTextField {
+                    return event
+                }
+            }
+            
+            // Проверяем клавишу Delete (Backspace: 51, Forward Delete: 117)
             let isDeleteKey = event.keyCode == 51 || event.keyCode == 117
             if isDeleteKey {
-                onDelete()
-                return nil // Поглощаем событие
+                DispatchQueue.main.async {
+                    onDelete()
+                }
+                return nil // Поглощаем событие, чтобы система не издавала системный "бип"
             }
             
             // Escape (keyCode 53)
             if event.keyCode == 53, let onEscape = onEscape {
-                onEscape()
+                DispatchQueue.main.async {
+                    onEscape()
+                }
                 return nil
             }
             

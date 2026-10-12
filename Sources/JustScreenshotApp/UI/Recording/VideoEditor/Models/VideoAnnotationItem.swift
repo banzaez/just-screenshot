@@ -14,7 +14,7 @@ public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {
     public init(
         id: UUID = UUID(),
         type: VideoAnnotationType = .rect,
-        rect: CGRect = CGRect(x: 0.2, y: 0.2, width: 0.3, height: 0.2),
+        rect: CGRect? = nil,
         text: String = "Текст",
         color: Color = .red,
         lineWidth: CGFloat = 3,
@@ -23,7 +23,20 @@ public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {
     ) {
         self.id = id
         self.type = type
-        self.rect = rect
+        if let rect = rect {
+            self.rect = rect
+        } else {
+            switch type {
+            case .text:
+                self.rect = CGRect(x: 0.35, y: 0.45, width: 0.3, height: 0.08)
+            case .arrow:
+                self.rect = CGRect(x: 0.35, y: 0.35, width: 0.3, height: 0.2)
+            case .rect:
+                self.rect = CGRect(x: 0.3, y: 0.3, width: 0.4, height: 0.3)
+            case .blur:
+                self.rect = CGRect(x: 0.35, y: 0.35, width: 0.3, height: 0.2)
+            }
+        }
         self.text = text
         self.color = color
         self.lineWidth = lineWidth
@@ -31,4 +44,3 @@ public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {
         self.rotationAngle = rotationAngle
     }
 }
-

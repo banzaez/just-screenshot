@@ -11,26 +11,39 @@ public struct VideoOverlayCanvasView: View {
     
     public var body: some View {
         GeometryReader { geo in
-            let size = geo.size
+            let containerSize = geo.size
+            let videoRect = model.videoContentRect(in: containerSize)
             
             ZStack(alignment: .topLeading) {
                 // 1. Оверлей кадрирования (Crop) с гарантированным затемнением неактивных областей
                 if model.isCropping {
-                    CropOverlayView(model: model, containerSize: size)
+                    CropOverlayView(
+                        model: model,
+                        containerSize: containerSize,
+                        videoRect: videoRect
+                    )
                 }
                 
-                // 2. Аннотации поверх видео с перемещением, вращением и растягиванием
-                ForEach($model.annotations) { $item in
+                // 2. Аннотации поверх видеокадра
+                ForEach(model.annotations) { item in
                     VideoAnnotationItemView(
-                        item: $item,
-                        containerSize: size,
+                        item: item,
+                        videoRect: videoRect,
+                        containerSize: containerSize,
                         isSelected: model.selectedAnnotationID == item.id,
-                        onSelect: { model.selectedAnnotationID = item.id },
-                        onDelete: { model.removeAnnotation(id: item.id) }
+                        onSelect: {
+                            model.selectedAnnotationID = item.id
+                        },
+                        onUpdate: { updated in
+                            model.updateAnnotation(updated)
+                        },
+                        onDelete: {
+                            model.removeAnnotation(id: item.id)
+                        }
                     )
                 }
             }
-            .frame(width: size.width, height: size.height)
+            .frame(width: containerSize.width, height: containerSize.height)
             .contentShape(Rectangle())
             .onTapGesture {
                 model.selectedAnnotationID = nil
@@ -44,19 +57,21 @@ public struct VideoOverlayCanvasView: View {
 private struct CropOverlayView: View {
     @ObservedObject var model: VideoEditorModel
     let containerSize: CGSize
+    let videoRect: CGRect
     
     @State private var dragInitialCrop: CGRect?
+    @State private var resizeCornerStartCrop: CGRect?
     
     var body: some View {
         let cropPixelRect = CGRect(
-            x: model.cropRect.origin.x * containerSize.width,
-            y: model.cropRect.origin.y * containerSize.height,
-            width: model.cropRect.width * containerSize.width,
-            height: model.cropRect.height * containerSize.height
+            x: videoRect.origin.x + model.cropRect.origin.x * videoRect.width,
+            y: videoRect.origin.y + model.cropRect.origin.y * videoRect.height,
+            width: max(10, model.cropRect.width * videoRect.width),
+            height: max(10, model.cropRect.height * videoRect.height)
         )
         
         ZStack(alignment: .topLeading) {
-            // Надежное затемнение через Path c even-odd правилом (вырезает прямоугольник кадрирования)
+            // Затемнение всей области экрана вокруг вырезанного прямоугольника кадрирования
             Path { path in
                 path.addRect(CGRect(origin: .zero, size: containerSize))
                 path.addRect(cropPixelRect)
@@ -64,9 +79,8 @@ private struct CropOverlayView: View {
             .fill(Color.black.opacity(0.65), style: FillStyle(eoFill: true))
             .allowsHitTesting(false)
             
-            // Центральная интерактивная рамка кадрирования с сеткой третей
+            // Рамка кадрирования с сеткой третей
             ZStack {
-                // Сетка 3x3
                 VStack(spacing: 0) {
                     Spacer()
                     Divider().background(Color.white.opacity(0.4))
@@ -82,7 +96,7 @@ private struct CropOverlayView: View {
                     Spacer()
                 }
             }
-            .frame(width: max(1, cropPixelRect.width), height: max(1, cropPixelRect.height))
+            .frame(width: cropPixelRect.width, height: cropPixelRect.height)
             .overlay(
                 Rectangle()
                     .stroke(Color.white, lineWidth: 2)
@@ -96,9 +110,9 @@ private struct CropOverlayView: View {
                         if dragInitialCrop == nil {
                             dragInitialCrop = model.cropRect
                         }
-                        guard let initial = dragInitialCrop, containerSize.width > 0, containerSize.height > 0 else { return }
-                        let dx = val.translation.width / containerSize.width
-                        let dy = val.translation.height / containerSize.height
+                        guard let initial = dragInitialCrop, videoRect.width > 0, videoRect.height > 0 else { return }
+                        let dx = val.translation.width / videoRect.width
+                        let dy = val.translation.height / videoRect.height
                         
                         let newX = max(0, min(1 - initial.width, initial.origin.x + dx))
                         let newY = max(0, min(1 - initial.height, initial.origin.y + dy))
@@ -109,7 +123,7 @@ private struct CropOverlayView: View {
                     }
             )
             
-            // 4 Угловых маркера изменения размера рамки
+            // 4 Угловых маркера масштабирования рамки
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: true, isTop: true)
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: false, isTop: true)
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: true, isTop: false)
@@ -125,35 +139,46 @@ private struct CropOverlayView: View {
         
         Circle()
             .fill(Color.white)
-            .overlay(Circle().stroke(Color.black.opacity(0.4), lineWidth: 1.5))
+            .overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 1.5))
             .frame(width: handleSize, height: handleSize)
             .shadow(radius: 2)
             .position(x: x, y: y)
             .gesture(
                 DragGesture()
                     .onChanged { val in
-                        guard containerSize.width > 0, containerSize.height > 0 else { return }
-                        let currentNormalizedX = max(0, min(1, val.location.x / containerSize.width))
-                        let currentNormalizedY = max(0, min(1, val.location.y / containerSize.height))
+                        if resizeCornerStartCrop == nil {
+                            resizeCornerStartCrop = model.cropRect
+                        }
+                        guard let initial = resizeCornerStartCrop, videoRect.width > 0, videoRect.height > 0 else { return }
+                        let dx = val.translation.width / videoRect.width
+                        let dy = val.translation.height / videoRect.height
                         
-                        var minX = model.cropRect.minX
-                        var maxX = model.cropRect.maxX
-                        var minY = model.cropRect.minY
-                        var maxY = model.cropRect.maxY
+                        var minX = initial.minX
+                        var maxX = initial.maxX
+                        var minY = initial.minY
+                        var maxY = initial.maxY
                         
                         if isLeft {
-                            minX = min(currentNormalizedX, maxX - 0.05)
+                            minX = min(initial.minX + dx, maxX - 0.05)
                         } else {
-                            maxX = max(currentNormalizedX, minX + 0.05)
+                            maxX = max(initial.maxX + dx, minX + 0.05)
                         }
                         
                         if isTop {
-                            minY = min(currentNormalizedY, maxY - 0.05)
+                            minY = min(initial.minY + dy, maxY - 0.05)
                         } else {
-                            maxY = max(currentNormalizedY, minY + 0.05)
+                            maxY = max(initial.maxY + dy, minY + 0.05)
                         }
                         
+                        minX = max(0, min(1, minX))
+                        maxX = max(0, min(1, maxX))
+                        minY = max(0, min(1, minY))
+                        maxY = max(0, min(1, maxY))
+                        
                         model.cropRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                    }
+                    .onEnded { _ in
+                        resizeCornerStartCrop = nil
                     }
             )
     }
@@ -162,33 +187,34 @@ private struct CropOverlayView: View {
 // MARK: - Video Annotation Item View
 
 private struct VideoAnnotationItemView: View {
-    @Binding var item: VideoAnnotationItem
+    let item: VideoAnnotationItem
+    let videoRect: CGRect
     let containerSize: CGSize
     let isSelected: Bool
     let onSelect: () -> Void
+    let onUpdate: (VideoAnnotationItem) -> Void
     let onDelete: () -> Void
     
     @State private var dragInitialOrigin: CGPoint?
+    @State private var resizeInitialRect: CGRect?
     
     var body: some View {
-        let itemWidth = max(20, item.rect.width * containerSize.width)
-        let itemHeight = max(20, item.rect.height * containerSize.height)
-        let itemCenter = CGPoint(
-            x: (item.rect.origin.x + item.rect.width / 2) * containerSize.width,
-            y: (item.rect.origin.y + item.rect.height / 2) * containerSize.height
-        )
+        let itemWidth = max(24, item.rect.width * videoRect.width)
+        let itemHeight = max(24, item.rect.height * videoRect.height)
+        let itemCenterX = videoRect.origin.x + (item.rect.origin.x + item.rect.width / 2) * videoRect.width
+        let itemCenterY = videoRect.origin.y + (item.rect.origin.y + item.rect.height / 2) * videoRect.height
         
         ZStack {
-            // Отрисовка контента элемента
+            // Отрисовка контента элемента с четким frame
             Group {
                 switch item.type {
                 case .text:
-                    Text(item.text)
+                    Text(item.text.isEmpty ? " " : item.text)
                         .font(.system(size: item.fontSize, weight: .bold))
                         .foregroundColor(item.color)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .frame(width: itemWidth, height: itemHeight)
+                        .background(Color.black.opacity(0.65))
                         .cornerRadius(6)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
@@ -204,8 +230,7 @@ private struct VideoAnnotationItemView: View {
                     Path { p in
                         p.move(to: CGPoint(x: 4, y: itemHeight - 4))
                         p.addLine(to: CGPoint(x: itemWidth - 4, y: 4))
-                        // Наконечник стрелки
-                        let headLength: CGFloat = 14
+                        let headLength: CGFloat = max(12, item.lineWidth * 3)
                         let angle = atan2(-itemHeight + 8, itemWidth - 8)
                         let arrowP1 = CGPoint(
                             x: (itemWidth - 4) - headLength * cos(angle - .pi / 6),
@@ -233,15 +258,17 @@ private struct VideoAnnotationItemView: View {
                         )
                 }
             }
+            .contentShape(Rectangle())
             
-            // Рамка выделения и ручки манипулятора
+            // Рамка выделения и ручки манипулятора строго по размеру элемента
             if isSelected {
-                selectionControls(width: itemWidth, height: itemHeight)
+                selectionControls(width: itemWidth, height: itemHeight, centerX: itemCenterX, centerY: itemCenterY)
             }
         }
+        .frame(width: itemWidth, height: itemHeight)
         .rotationEffect(.degrees(item.rotationAngle))
-        .position(itemCenter)
-        // Перемещение самого элемента через drag delta без дерганий
+        .position(x: itemCenterX, y: itemCenterY)
+        // Плавное перетаскивание всего элемента без скачков
         .gesture(
             DragGesture()
                 .onChanged { val in
@@ -249,13 +276,15 @@ private struct VideoAnnotationItemView: View {
                     if dragInitialOrigin == nil {
                         dragInitialOrigin = item.rect.origin
                     }
-                    guard let initial = dragInitialOrigin, containerSize.width > 0, containerSize.height > 0 else { return }
-                    let dx = val.translation.width / containerSize.width
-                    let dy = val.translation.height / containerSize.height
+                    guard let initial = dragInitialOrigin, videoRect.width > 0, videoRect.height > 0 else { return }
+                    let dx = val.translation.width / videoRect.width
+                    let dy = val.translation.height / videoRect.height
                     
+                    var updated = item
                     let newX = max(0, min(1 - item.rect.width, initial.x + dx))
                     let newY = max(0, min(1 - item.rect.height, initial.y + dy))
-                    item.rect.origin = CGPoint(x: newX, y: newY)
+                    updated.rect.origin = CGPoint(x: newX, y: newY)
+                    onUpdate(updated)
                 }
                 .onEnded { _ in
                     dragInitialOrigin = nil
@@ -267,14 +296,14 @@ private struct VideoAnnotationItemView: View {
     }
     
     @ViewBuilder
-    private func selectionControls(width: CGFloat, height: CGFloat) -> some View {
+    private func selectionControls(width: CGFloat, height: CGFloat, centerX: CGFloat, centerY: CGFloat) -> some View {
         ZStack {
-            // Пунктирная рамка выделения
+            // Пунктирная рамка выделения строго вокруг элемента (без расползания)
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                .padding(-6)
+                .frame(width: width + 10, height: height + 10)
             
-            // Линия и ручка вращения сверху
+            // Компактная ручка вращения сверху со стеблем
             VStack(spacing: 0) {
                 Circle()
                     .fill(Color.accentColor)
@@ -282,33 +311,26 @@ private struct VideoAnnotationItemView: View {
                     .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
                     .shadow(radius: 2)
                     .gesture(
-                        DragGesture()
+                        DragGesture(coordinateSpace: .global)
                             .onChanged { val in
-                                let center = CGPoint(
-                                    x: (item.rect.origin.x + item.rect.width / 2) * containerSize.width,
-                                    y: (item.rect.origin.y + item.rect.height / 2) * containerSize.height
-                                )
-                                let loc = CGPoint(
-                                    x: center.x + val.translation.width,
-                                    y: center.y - height / 2 - 24 + val.translation.height
-                                )
-                                var deg = atan2(loc.y - center.y, loc.x - center.x) * 180 / .pi + 90
+                                let loc = val.location
+                                let centerInWindow = CGPoint(x: centerX, y: centerY)
+                                var deg = atan2(loc.y - centerInWindow.y, loc.x - centerInWindow.x) * 180 / .pi + 90
                                 if deg > 180 { deg -= 360 }
                                 if deg < -180 { deg += 360 }
                                 let snapped = (deg / 15).rounded() * 15
                                 if abs(deg - snapped) < 4 { deg = snapped }
-                                item.rotationAngle = deg
+                                var updated = item
+                                updated.rotationAngle = deg
+                                onUpdate(updated)
                             }
                     )
                 
                 Rectangle()
                     .fill(Color.accentColor)
-                    .frame(width: 1.5, height: 18)
-                
-                Spacer()
+                    .frame(width: 1.5, height: 16)
             }
-            .frame(height: height + 50)
-            .offset(y: -25)
+            .offset(y: -(height / 2 + 18))
             
             // 4 Угловых маркера масштабирования
             if item.type != .text {
@@ -318,12 +340,13 @@ private struct VideoAnnotationItemView: View {
                 resizeHandle(width: width, height: height, isLeft: false, isTop: false)
             }
         }
+        .frame(width: width, height: height)
     }
     
     @ViewBuilder
     private func resizeHandle(width: CGFloat, height: CGFloat, isLeft: Bool, isTop: Bool) -> some View {
-        let xOffset = (isLeft ? -width / 2 : width / 2) + (isLeft ? -6 : 6)
-        let yOffset = (isTop ? -height / 2 : height / 2) + (isTop ? -6 : 6)
+        let xOffset = (isLeft ? -width / 2 : width / 2) + (isLeft ? -5 : 5)
+        let yOffset = (isTop ? -height / 2 : height / 2) + (isTop ? -5 : 5)
         
         Circle()
             .fill(Color.white)
@@ -334,38 +357,46 @@ private struct VideoAnnotationItemView: View {
             .gesture(
                 DragGesture()
                     .onChanged { val in
-                        guard containerSize.width > 0, containerSize.height > 0 else { return }
-                        let dx = val.translation.width / containerSize.width
-                        let dy = val.translation.height / containerSize.height
+                        if resizeInitialRect == nil {
+                            resizeInitialRect = item.rect
+                        }
+                        guard let initial = resizeInitialRect, videoRect.width > 0, videoRect.height > 0 else { return }
+                        let dx = val.translation.width / videoRect.width
+                        let dy = val.translation.height / videoRect.height
                         
-                        var newRect = item.rect
+                        var newRect = initial
                         if isLeft {
-                            let adjustedW = newRect.width - dx
+                            let adjustedW = initial.width - dx
                             if adjustedW > 0.03 {
-                                newRect.origin.x += dx
+                                newRect.origin.x = initial.origin.x + dx
                                 newRect.size.width = adjustedW
                             }
                         } else {
-                            let adjustedW = newRect.width + dx
+                            let adjustedW = initial.width + dx
                             if adjustedW > 0.03 {
                                 newRect.size.width = adjustedW
                             }
                         }
                         
                         if isTop {
-                            let adjustedH = newRect.height - dy
+                            let adjustedH = initial.height - dy
                             if adjustedH > 0.03 {
-                                newRect.origin.y += dy
+                                newRect.origin.y = initial.origin.y + dy
                                 newRect.size.height = adjustedH
                             }
                         } else {
-                            let adjustedH = newRect.height + dy
+                            let adjustedH = initial.height + dy
                             if adjustedH > 0.03 {
                                 newRect.size.height = adjustedH
                             }
                         }
                         
-                        item.rect = newRect
+                        var updated = item
+                        updated.rect = newRect
+                        onUpdate(updated)
+                    }
+                    .onEnded { _ in
+                        resizeInitialRect = nil
                     }
             )
     }

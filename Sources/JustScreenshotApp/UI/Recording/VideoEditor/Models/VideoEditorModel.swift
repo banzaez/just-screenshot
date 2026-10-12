@@ -35,6 +35,9 @@ public final class VideoEditorModel: ObservableObject {
     // Превью-кадры таймлайна (thumbnails)
     @Published public var thumbnails: [NSImage] = []
     
+    // Истинный размер видео (пиксели)
+    @Published public var naturalSize: CGSize = .zero
+    
     private var timeObserverToken: Any?
     private var cancellables = Set<AnyCancellable>()
     
@@ -45,6 +48,18 @@ public final class VideoEditorModel: ObservableObject {
         
         setupPlayerObserver()
         loadVideoMetadata()
+    }
+    
+    public func videoContentRect(in containerSize: CGSize) -> CGRect {
+        guard naturalSize.width > 0, naturalSize.height > 0, containerSize.width > 0, containerSize.height > 0 else {
+            return CGRect(origin: .zero, size: containerSize)
+        }
+        let scale = min(containerSize.width / naturalSize.width, containerSize.height / naturalSize.height)
+        let w = naturalSize.width * scale
+        let h = naturalSize.height * scale
+        let x = (containerSize.width - w) / 2
+        let y = (containerSize.height - h) / 2
+        return CGRect(x: x, y: y, width: w, height: h)
     }
     
     public func cleanup() {
@@ -91,9 +106,21 @@ public final class VideoEditorModel: ObservableObject {
     private func loadVideoMetadata() {
         Task {
             let asset = AVURLAsset(url: videoURL)
+            if let track = try? await asset.loadTracks(withMediaType: .video).first {
+                if let size = try? await track.load(.naturalSize) {
+                    let transform = (try? await track.load(.preferredTransform)) ?? .identity
+                    let isRotated = abs(transform.b) == 1.0 || abs(transform.c) == 1.0
+                    let actualSize = isRotated ? CGSize(width: size.height, height: size.width) : size
+                    await MainActor.run {
+                        self.naturalSize = actualSize
+                    }
+                }
+            }
             if let dur = try? await asset.load(.duration).seconds, dur > 0 {
-                self.duration = dur
-                self.trimEnd = dur
+                await MainActor.run {
+                    self.duration = dur
+                    self.trimEnd = dur
+                }
                 await self.generateThumbnails(asset: asset, count: 10)
             }
         }
@@ -158,11 +185,17 @@ public final class VideoEditorModel: ObservableObject {
         selectedAnnotationID = newItem.id
     }
     
+    public func updateAnnotation(_ item: VideoAnnotationItem) {
+        if let idx = annotations.firstIndex(where: { $0.id == item.id }) {
+            annotations[idx] = item
+        }
+    }
+    
     public func removeAnnotation(id: UUID) {
-        annotations.removeAll { $0.id == id }
         if selectedAnnotationID == id {
             selectedAnnotationID = nil
         }
+        annotations.removeAll { $0.id == id }
     }
     
     public func duplicateAnnotation(id: UUID) {
