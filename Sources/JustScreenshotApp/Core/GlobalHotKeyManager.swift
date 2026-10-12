@@ -3,7 +3,8 @@ import Carbon
 
 /// Глобальный менеджер горячих клавиш (Carbon Events API)
 /// Работает системно даже когда приложение в фоне / менюбаре
-public final class GlobalHotKeyManager: @unchecked Sendable {
+@MainActor
+public final class GlobalHotKeyManager {
     public static let shared = GlobalHotKeyManager()
     
     private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
@@ -14,7 +15,7 @@ public final class GlobalHotKeyManager: @unchecked Sendable {
         installCarbonEventHandler()
     }
     
-    deinit {
+    isolated deinit {
         if let eventHandler = eventHandler {
             RemoveEventHandler(eventHandler)
         }

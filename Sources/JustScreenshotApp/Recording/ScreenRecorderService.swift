@@ -180,7 +180,11 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         }
         
         if let input = videoInput, input.isReadyForMoreMediaData, let adaptor = pixelBufferAdaptor {
-            adaptor.append(imageBuffer, withPresentationTime: adjustedPts)
+            if !adaptor.append(imageBuffer, withPresentationTime: adjustedPts) {
+                if let err = writer.error {
+                    print("ScreenRecorderService frame append error: \(err.localizedDescription)")
+                }
+            }
         }
     }
 }

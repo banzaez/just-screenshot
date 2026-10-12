@@ -1,6 +1,7 @@
 import Cocoa
 
 /// Рендерер аннотаций поверх NSImage через CoreGraphics в оригинальном разрешении 1:1
+@MainActor
 public enum AnnotationRenderer {
     
     /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью

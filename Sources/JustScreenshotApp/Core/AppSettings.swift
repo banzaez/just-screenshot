@@ -22,7 +22,6 @@ public final class AppSettings: ObservableObject {
         static let shortcutRepeatAlt = "settings_shortcut_repeat_alt"
         static let shortcutHistory = "settings_shortcut_history"
         static let shortcutHistoryAlt = "settings_shortcut_history_alt"
-        static let videoFps = "settings_video_fps"
         static let showFloatingBar = "settings_show_floating_bar"
         static let showKeystrokes = "settings_show_keystrokes"
     }

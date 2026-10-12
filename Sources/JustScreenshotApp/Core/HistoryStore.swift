@@ -41,25 +41,36 @@ public final class HistoryStore: ObservableObject {
     }
     
     private func saveIndex() {
-        if let data = try? JSONEncoder().encode(entries) {
-            try? data.write(to: indexURL, options: .atomic)
+        let currentEntries = self.entries
+        let url = self.indexURL
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(currentEntries) {
+                try? data.write(to: url, options: .atomic)
+            }
         }
     }
     
-    /// Добавление снимка в историю (новые — в начале)
+    /// Добавление снимка в историю (новые — в начале) с асинхронной записью файла на диск
     @discardableResult
     public func add(_ image: NSImage, id: UUID = UUID()) -> HistoryEntry? {
         guard let png = ImageExporter.pngData(from: image) else { return nil }
         let entry = HistoryEntry(id: id, date: Date(), width: Int(image.size.width), height: Int(image.size.height))
         let url = fileURL(for: entry)
-        do { try png.write(to: url) } catch { return nil }
+        
+        // Фоновая запись файла без блокировки MainActor UI
+        Task.detached(priority: .utility) {
+            try? png.write(to: url)
+        }
         
         entries.removeAll { $0.id == id }
         entries.insert(entry, at: 0)
         
         while entries.count > maxEntries, let last = entries.popLast() {
-            try? FileManager.default.removeItem(at: fileURL(for: last))
+            let lastURL = fileURL(for: last)
             thumbnails.removeObject(forKey: last.id as NSUUID)
+            Task.detached(priority: .utility) {
+                try? FileManager.default.removeItem(at: lastURL)
+            }
         }
         saveIndex()
         return entry
