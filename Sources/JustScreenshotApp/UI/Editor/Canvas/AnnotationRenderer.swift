@@ -126,8 +126,12 @@ public enum AnnotationRenderer {
         case .roundedRect:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             let path = CGPath(roundedRect: rect, cornerWidth: 10, cornerHeight: 10, transform: nil)
+            let dashLen = max(4.0, item.lineWidth * 2.0)
+            context.saveGState()
+            context.setLineDash(phase: 0, lengths: [dashLen, dashLen])
             context.addPath(path)
             context.strokePath()
+            context.restoreGState()
             
         case .counter:
             let radius: CGFloat = 16

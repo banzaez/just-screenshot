@@ -89,7 +89,9 @@ enum AnnotationCanvasDrawer {
         case .rectangle:
             context.stroke(Path(rect), with: .color(item.color), style: style)
         case .roundedRect:
-            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 10, height: 10)), with: .color(item.color), style: style)
+            let dashLen = max(4.0, item.lineWidth * 2.0)
+            let dashedStyle = StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round, dash: [dashLen, dashLen])
+            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 10, height: 10)), with: .color(item.color), style: dashedStyle)
         case .ellipse:
             context.stroke(Path(ellipseIn: rect), with: .color(item.color), style: style)
         case .counter:
