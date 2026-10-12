@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "按下按键…",
         "settings.hotkeys.click_to_change": "点击修改快捷键",
         "settings.hotkeys.remove_alt": "删除备用快捷键",
+        "settings.hotkeys.add_alt": "添加",
         "settings.recording.params": "录屏参数",
         "settings.recording.show_bar": "录制时显示带有计时器与暂停/停止按钮的悬浮控制条",
         "settings.recording.show_bar_desc": "开启后，录制区域下方将显示便捷的半透明控制面板。",

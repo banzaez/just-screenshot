@@ -30,20 +30,62 @@ public struct ShortcutRecorderView: NSViewRepresentable {
 public final class ShortcutRecorderNSView: NSView {
     var onShortcutRecorded: ((ShortcutKey) -> Void)?
     var onCancel: (() -> Void)?
+    private var localMonitor: Any?
     
     public override var acceptsFirstResponder: Bool { true }
     
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        DispatchQueue.main.async { [weak self] in
-            self?.window?.makeFirstResponder(self)
+        if window != nil {
+            setupLocalMonitor()
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.window?.makeFirstResponder(self)
+            }
+        } else {
+            removeLocalMonitor()
         }
     }
     
+    isolated deinit {
+        removeLocalMonitor()
+    }
+    
+    private func setupLocalMonitor() {
+        guard localMonitor == nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self else { return event }
+            // Если событие предназначается окну, в котором мы находимся
+            guard event.window == self.window else { return event }
+            if self.handleKeyEvent(event) {
+                return nil // Поглощаем событие
+            }
+            return event
+        }
+    }
+    
+    private func removeLocalMonitor() {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+    }
+    
+    public override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
+    
     public override func keyDown(with event: NSEvent) {
+        if !handleKeyEvent(event) {
+            super.keyDown(with: event)
+        }
+    }
+    
+    @discardableResult
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
         if event.keyCode == 53 { // ESC для отмены записи
             onCancel?()
-            return
+            return true
         }
         
         // Преобразуем флаги NSEvent.modifierFlags в Carbon modifiers
@@ -55,21 +97,23 @@ public final class ShortcutRecorderNSView: NSView {
         
         let keyCode = UInt32(event.keyCode)
         
-        // Проверяем, является ли клавиша функциональной (F1-F12)
+        // Проверяем, является ли клавиша функциональной (F1-F20)
         let isFunctionKey = (keyCode >= UInt32(kVK_F1) && keyCode <= UInt32(kVK_F12)) ||
                             keyCode == UInt32(kVK_F13) || keyCode == UInt32(kVK_F14) ||
-                            keyCode == UInt32(kVK_F15) || keyCode == UInt32(kVK_F16)
+                            keyCode == UInt32(kVK_F15) || keyCode == UInt32(kVK_F16) ||
+                            keyCode == UInt32(kVK_F17) || keyCode == UInt32(kVK_F18) ||
+                            keyCode == UInt32(kVK_F19) || keyCode == UInt32(kVK_F20)
         
-        // Если модификаторов нет и это не функциональная клавиша F1-F12 — отклоняем
+        // Если модификаторов нет и это не функциональная клавиша F1-F20 — отклоняем
         if carbonModifiers == 0 && !isFunctionKey {
             NSSound.beep()
-            return
+            return true
         }
         
         // Проверка защиты системных шорткатов (⌘Q, ⌘W, ⌘H, ⌘Tab, ⌘Space и т.д.)
         if ShortcutKey.isProtectedSystemShortcut(keyCode: keyCode, modifiers: carbonModifiers) {
             NSSound.beep()
-            return
+            return true
         }
         
         var keyChar = ""
@@ -87,6 +131,14 @@ public final class ShortcutRecorderNSView: NSView {
             case UInt32(kVK_F10): keyChar = "F10"
             case UInt32(kVK_F11): keyChar = "F11"
             case UInt32(kVK_F12): keyChar = "F12"
+            case UInt32(kVK_F13): keyChar = "F13"
+            case UInt32(kVK_F14): keyChar = "F14"
+            case UInt32(kVK_F15): keyChar = "F15"
+            case UInt32(kVK_F16): keyChar = "F16"
+            case UInt32(kVK_F17): keyChar = "F17"
+            case UInt32(kVK_F18): keyChar = "F18"
+            case UInt32(kVK_F19): keyChar = "F19"
+            case UInt32(kVK_F20): keyChar = "F20"
             default: keyChar = "F"
             }
         } else {
@@ -101,5 +153,6 @@ public final class ShortcutRecorderNSView: NSView {
         )
         
         onShortcutRecorded?(newShortcut)
+        return true
     }
 }

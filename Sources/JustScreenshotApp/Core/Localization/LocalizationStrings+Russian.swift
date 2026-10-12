@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "Нажмите клавиши…",
         "settings.hotkeys.click_to_change": "Кликните для изменения сочетания клавиш",
         "settings.hotkeys.remove_alt": "Удалить этот альтернативный шорткат",
+        "settings.hotkeys.add_alt": "Добавить",
         "settings.recording.params": "Параметры видео",
         "settings.recording.show_bar": "Показывать плавающую панель со временем и кнопками паузы/стоп",
         "settings.recording.show_bar_desc": "Когда флажок включен, внизу записываемой области отображается стильный пульт управления.",

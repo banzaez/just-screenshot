@@ -55,6 +55,7 @@ public enum LocKey: String, Sendable {
     case settingsHotkeysPressKeys = "settings.hotkeys.press_keys"
     case settingsHotkeysClickToChange = "settings.hotkeys.click_to_change"
     case settingsHotkeysRemoveAlt = "settings.hotkeys.remove_alt"
+    case settingsHotkeysAddAlt = "settings.hotkeys.add_alt"
     case settingsRecordingParams = "settings.recording.params"
     case settingsRecordingShowBar = "settings.recording.show_bar"
     case settingsRecordingShowBarDesc = "settings.recording.show_bar_desc"

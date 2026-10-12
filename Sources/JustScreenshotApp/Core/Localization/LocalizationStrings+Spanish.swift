@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "Pulse las teclas…",
         "settings.hotkeys.click_to_change": "Haga clic para cambiar atajo",
         "settings.hotkeys.remove_alt": "Eliminar atajo secundario",
+        "settings.hotkeys.add_alt": "Añadir",
         "settings.recording.params": "Parámetros de vídeo",
         "settings.recording.show_bar": "Mostrar barra flotante con temporizador y controles",
         "settings.recording.show_bar_desc": "Muestra una barra de control elegante bajo la zona de grabación.",

@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "Appuyez sur les touches…",
         "settings.hotkeys.click_to_change": "Cliquer pour modifier le raccourci",
         "settings.hotkeys.remove_alt": "Supprimer le raccourci secondaire",
+        "settings.hotkeys.add_alt": "Ajouter",
         "settings.recording.params": "Paramètres vidéo",
         "settings.recording.show_bar": "Afficher la barre flottante avec le chronomètre et les boutons pause/arrêt",
         "settings.recording.show_bar_desc": "Si activé, une élégante barre de contrôle s'affiche sous la zone d'enregistrement.",

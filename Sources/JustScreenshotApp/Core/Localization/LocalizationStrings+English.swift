@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "Press shortcut…",
         "settings.hotkeys.click_to_change": "Click to change shortcut",
         "settings.hotkeys.remove_alt": "Remove alternate shortcut",
+        "settings.hotkeys.add_alt": "Add",
         "settings.recording.params": "Video Settings",
         "settings.recording.show_bar": "Show floating control bar with timer and pause/stop buttons",
         "settings.recording.show_bar_desc": "When enabled, a sleek control pill floats below the active recording area.",

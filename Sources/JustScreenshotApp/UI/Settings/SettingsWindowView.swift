@@ -64,7 +64,7 @@ public struct SettingsWindowView: View {
                 .padding(24)
             }
         }
-        .frame(width: 560)
+        .frame(width: 620)
         .frame(minHeight: 620)
     }
 
@@ -79,15 +79,12 @@ public struct SettingsWindowView: View {
                 HStack(spacing: 12) {
                     Picker("", selection: $settings.language) {
                         ForEach(AppLanguage.allCases) { lang in
-                            HStack(spacing: 6) {
-                                Text(lang.flagIcon)
-                                Text(lang.localizedName)
-                            }
-                            .tag(lang)
+                            Text("\(lang.flagIcon)  \(lang.localizedName)")
+                                .tag(lang)
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 200)
+                    .frame(width: 220)
 
                     Text(L("settings.language.description"))
                         .font(.caption)
@@ -280,77 +277,72 @@ public struct SettingsWindowView: View {
 
             Spacer()
 
-            // 1. Основной шорткат
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(L("settings.hotkeys.primary"))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.secondary)
-                singleShortcutPill(
-                    target: .primary(id),
-                    shortcut: primaryBinding.wrappedValue,
-                    onRecord: { newKey in
-                        primaryBinding.wrappedValue = newKey
-                        AppWindowManager.shared.reloadGlobalHotkeys()
-                    },
-                    onClear: nil
-                )
-            }
-
-            // 2. Альтернативный шорткат
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(L("settings.hotkeys.secondary"))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.secondary)
-                if let alt = altBinding.wrappedValue {
+            // Сетка двух слотов фиксированной одинаковой ширины для ровных колонок
+            HStack(spacing: 14) {
+                // 1. Основной шорткат
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(L("settings.hotkeys.primary"))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
                     singleShortcutPill(
-                        target: .alternate(id),
-                        shortcut: alt,
+                        target: .primary(id),
+                        shortcut: primaryBinding.wrappedValue,
                         onRecord: { newKey in
-                            altBinding.wrappedValue = newKey
+                            primaryBinding.wrappedValue = newKey
                             AppWindowManager.shared.reloadGlobalHotkeys()
                         },
-                        onClear: {
-                            altBinding.wrappedValue = nil
+                        onClear: nil
+                    )
+                }
+                .frame(width: 128, alignment: .trailing)
+
+                // 2. Альтернативный шорткат
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(L("settings.hotkeys.secondary"))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.secondary)
+                    if recordingTarget == .alternate(id) {
+                        recordingPill(target: .alternate(id)) { newKey in
+                            altBinding.wrappedValue = newKey
                             AppWindowManager.shared.reloadGlobalHotkeys()
                         }
-                    )
-                } else {
-                    Button {
-                        recordingTarget = .alternate(id)
-                    } label: {
-                        Text("+ " + L("editor.add_point"))
-                            .font(.system(size: 11, weight: .medium))
+                    } else if let alt = altBinding.wrappedValue {
+                        singleShortcutPill(
+                            target: .alternate(id),
+                            shortcut: alt,
+                            onRecord: { newKey in
+                                altBinding.wrappedValue = newKey
+                                AppWindowManager.shared.reloadGlobalHotkeys()
+                            },
+                            onClear: {
+                                altBinding.wrappedValue = nil
+                                AppWindowManager.shared.reloadGlobalHotkeys()
+                            }
+                        )
+                    } else {
+                        Button {
+                            recordingTarget = .alternate(id)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 10, weight: .bold))
+                                Text(L("settings.hotkeys.add_alt"))
+                                    .font(.system(size: 11, weight: .medium))
+                            }
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 4)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
                                     .stroke(
-                                        Color.secondary.opacity(0.3),
+                                        Color.secondary.opacity(0.35),
                                         style: StrokeStyle(lineWidth: 1, dash: [3]))
                             )
-                    }
-                    .buttonStyle(.plain)
-                    .background(
-                        Group {
-                            if recordingTarget == .alternate(id) {
-                                ShortcutRecorderView(
-                                    shortcut: Binding(
-                                        get: { ShortcutKey(keyCode: 0, keyChar: "") },
-                                        set: { newKey in
-                                            altBinding.wrappedValue = newKey
-                                            AppWindowManager.shared.reloadGlobalHotkeys()
-                                        }
-                                    )
-                                ) {
-                                    recordingTarget = nil
-                                }
-                                .frame(width: 1, height: 1)
-                                .opacity(0.01)
-                            }
                         }
-                    )
+                        .buttonStyle(.plain)
+                    }
                 }
+                .frame(width: 128, alignment: .trailing)
             }
         }
         .padding(10)
@@ -359,6 +351,44 @@ public struct SettingsWindowView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        )
+    }
+
+    private func recordingPill(
+        target: HotkeyTarget,
+        onRecord: @escaping (ShortcutKey) -> Void
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(L("settings.hotkeys.press_keys"))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.blue)
+
+            Button("✕") {
+                recordingTarget = nil
+            }
+            .font(.system(size: 10, weight: .bold))
+            .buttonStyle(.plain)
+            .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.blue, lineWidth: 1.5)
+        )
+        .background(
+            ShortcutRecorderView(
+                shortcut: Binding(
+                    get: { ShortcutKey(keyCode: 0, keyChar: "") },
+                    set: { newKey in
+                        onRecord(newKey)
+                    }
+                )
+            ) {
+                recordingTarget = nil
+            }
+            .frame(width: 1, height: 1)
+            .opacity(0.01)
         )
     }
 

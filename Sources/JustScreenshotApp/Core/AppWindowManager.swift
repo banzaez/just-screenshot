@@ -433,12 +433,12 @@ public final class AppWindowManager: ObservableObject {
         }
         let view = SettingsWindowView()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 580, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 620, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         window.title = L("settings.title")
-        window.minSize = NSSize(width: 520, height: 600)
+        window.minSize = NSSize(width: 580, height: 600)
         window.contentView = NSHostingView(rootView: view)
         window.center()
         

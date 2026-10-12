@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "Tasten drücken…",
         "settings.hotkeys.click_to_change": "Klicken zum Ändern",
         "settings.hotkeys.remove_alt": "Sekundäres Kürzel entfernen",
+        "settings.hotkeys.add_alt": "Hinzufügen",
         "settings.recording.params": "Videoeinstellungen",
         "settings.recording.show_bar": "Schwebende Steuerleiste mit Timer und Pause/Stopp-Tasten anzeigen",
         "settings.recording.show_bar_desc": "Wenn aktiviert, wird eine Leiste unter dem Aufnahmebereich angezeigt.",

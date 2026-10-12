@@ -56,6 +56,7 @@ extension LocalizationCatalog {
         "settings.hotkeys.press_keys": "キーを入力…",
         "settings.hotkeys.click_to_change": "クリックしてショートカットを変更",
         "settings.hotkeys.remove_alt": "副ショートカットを削除",
+        "settings.hotkeys.add_alt": "追加",
         "settings.recording.params": "動画設定",
         "settings.recording.show_bar": "タイマーと一時停止/停止ボタン付きフローティングバーを表示",
         "settings.recording.show_bar_desc": "有効にすると、録画領域の下部にコントロールバーが表示されます。",
