@@ -267,23 +267,15 @@ public struct AnnotationEditorWindowView: View {
         .onChange(of: model.backdropPreset) { _, _ in model.markModified() }
         .onChange(of: model.backdropPadding) { _, _ in model.markModified() }
         .onChange(of: model.addShadow) { _, _ in model.markModified() }
-        .background(shortcuts)
-    }
-    
-    /// Скрытые горячие клавиши редактора
-    private var shortcuts: some View {
-        Group {
-            Button("") { undo() }.keyboardShortcut("z", modifiers: [.command])
-            Button("") { redo() }.keyboardShortcut("z", modifiers: [.command, .shift])
-            Button("") { duplicateSelected() }.keyboardShortcut("d", modifiers: [.command])
-            Button("") { deleteSelected() }.keyboardShortcut(.delete, modifiers: [.command])
-            Button("") { selectedItemID = nil }.keyboardShortcut(.escape, modifiers: [])
-            Button("") { fitMode = true }.keyboardShortcut("0", modifiers: [.command])
-            Button("") { setZoom(zoom * 1.25) }.keyboardShortcut("=", modifiers: [.command])
-            Button("") { setZoom(zoom / 1.25) }.keyboardShortcut("-", modifiers: [.command])
-        }
-        .opacity(0)
-        .frame(width: 0, height: 0)
-        .allowsHitTesting(false)
+        .editorKeyboardShortcuts(
+            onUndo: undo,
+            onRedo: redo,
+            onDuplicate: duplicateSelected,
+            onDelete: deleteSelected,
+            onDeselect: { selectedItemID = nil },
+            onFit: { fitMode = true },
+            onZoomIn: { setZoom(zoom * 1.25) },
+            onZoomOut: { setZoom(zoom / 1.25) }
+        )
     }
 }

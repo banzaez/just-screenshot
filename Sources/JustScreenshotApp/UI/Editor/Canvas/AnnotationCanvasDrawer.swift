@@ -1,0 +1,145 @@
+import SwiftUI
+import AppKit
+
+/// Отрисовка элементов аннотаций, рамки выделения и маркеров внутри SwiftUI GraphicsContext
+enum AnnotationCanvasDrawer {
+    static func applyRotation(of item: AnnotationItem, to ctx: inout GraphicsContext) {
+        guard item.rotationAngle != 0, !item.isLineLike else { return }
+        let c = item.center
+        ctx.translateBy(x: c.x, y: c.y)
+        ctx.rotate(by: Angle(degrees: item.rotationAngle))
+        ctx.translateBy(x: -c.x, y: -c.y)
+    }
+
+    static func drawSelection(
+        _ item: AnnotationItem,
+        in base: GraphicsContext,
+        zoomScale: CGFloat,
+        interactions: AnnotationCanvasInteractions
+    ) {
+        let z = max(zoomScale, 0.05)
+        let px = 1 / z
+        let dash: [CGFloat] = [3 * px, 3 * px]
+        let accent = Color.accentColor
+        var ctx = base
+        
+        if item.isLineLike {
+            // Аккуратная повёрнутая рамка вдоль отрезка
+            let c = item.center
+            let angle = atan2(item.endPoint.y - item.startPoint.y, item.endPoint.x - item.startPoint.x)
+            let len = hypot(item.endPoint.x - item.startPoint.x, item.endPoint.y - item.startPoint.y)
+            let pad = item.lineHalfThickness + 5 * px
+            ctx.translateBy(x: c.x, y: c.y)
+            ctx.rotate(by: .radians(angle))
+            let rect = CGRect(x: -len / 2 - pad, y: -pad, width: len + pad * 2, height: pad * 2)
+            ctx.stroke(Path(roundedRect: rect, cornerRadius: pad), with: .color(accent.opacity(0.9)),
+                       style: StrokeStyle(lineWidth: px, dash: dash))
+        } else {
+            applyRotation(of: item, to: &ctx)
+            let box = item.boundingBox
+            ctx.stroke(Path(roundedRect: box, cornerRadius: 2 * px), with: .color(accent.opacity(0.9)),
+                       style: StrokeStyle(lineWidth: px, dash: dash))
+            if item.supportsRotation {
+                let rotateOffset: CGFloat = 26 / z
+                let top = CGPoint(x: box.midX, y: box.minY)
+                let knob = CGPoint(x: box.midX, y: box.minY - rotateOffset)
+                var line = Path()
+                line.move(to: top)
+                line.addLine(to: knob)
+                ctx.stroke(line, with: .color(accent.opacity(0.9)), lineWidth: px)
+            }
+        }
+        
+        // Ручки (одинакового экранного размера независимо от зума)
+        var handleCtx = base
+        if !item.isLineLike { applyRotation(of: item, to: &handleCtx) }
+        let r = 5 * px
+        for (h, pos) in interactions.handlePositions(of: item) {
+            let rect = CGRect(x: pos.x - r, y: pos.y - r, width: r * 2, height: r * 2)
+            let path = Path(ellipseIn: rect)
+            if h == .rotate {
+                handleCtx.fill(path, with: .color(accent))
+                let ring = Path(ellipseIn: rect.insetBy(dx: -2 * px, dy: -2 * px))
+                handleCtx.stroke(ring, with: .color(.white), lineWidth: px * 1.5)
+            } else {
+                handleCtx.fill(path, with: .color(.white))
+                handleCtx.stroke(path, with: .color(accent), lineWidth: 1.5 * px)
+            }
+        }
+    }
+
+    static func drawItem(
+        _ item: AnnotationItem,
+        in context: inout GraphicsContext,
+        blurredImage: NSImage?
+    ) {
+        let rect = CGRect(
+            x: min(item.startPoint.x, item.endPoint.x), y: min(item.startPoint.y, item.endPoint.y),
+            width: abs(item.startPoint.x - item.endPoint.x), height: abs(item.startPoint.y - item.endPoint.y)
+        )
+        let style = StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round)
+        
+        switch item.tool {
+        case .select:
+            break
+        case .arrow:
+            var p = Path()
+            drawArrow(from: item.startPoint, to: item.endPoint, path: &p, headLength: max(14, item.lineWidth * 3.2))
+            context.stroke(p, with: .color(item.color), style: style)
+        case .rectangle:
+            context.stroke(Path(rect), with: .color(item.color), style: style)
+        case .roundedRect:
+            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 10, height: 10)), with: .color(item.color), style: style)
+        case .ellipse:
+            context.stroke(Path(ellipseIn: rect), with: .color(item.color), style: style)
+        case .counter:
+            let c = item.startPoint
+            let path = Path(ellipseIn: CGRect(x: c.x - 16, y: c.y - 16, width: 32, height: 32))
+            context.fill(path, with: .color(item.color))
+            context.draw(Text("\(item.counterNumber)").font(.system(size: 15, weight: .bold)).foregroundColor(.white), at: c)
+        case .blur:
+            if let blurred = blurredImage {
+                var clipped = context
+                clipped.clip(to: Path(rect))
+                clipped.draw(Image(nsImage: blurred), in: CGRect(origin: .zero, size: blurred.size))
+            } else {
+                context.fill(Path(rect), with: .color(Color.gray.opacity(0.7)))
+            }
+            context.stroke(Path(rect), with: .color(.white.opacity(0.35)), lineWidth: 1)
+        case .highlighter:
+            var p = Path()
+            p.move(to: item.startPoint)
+            p.addLine(to: item.endPoint)
+            context.stroke(p, with: .color(item.color.opacity(0.45)),
+                           style: StrokeStyle(lineWidth: item.lineWidth * 4, lineCap: .round, lineJoin: .round))
+        case .magnifier:
+            let radius = max(min(rect.width, rect.height) / 2, 16)
+            let circleRect = CGRect(x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2)
+            let circlePath = Path(ellipseIn: circleRect)
+            
+            // Полупрозрачный блик линзы и рамка
+            context.fill(circlePath, with: .color(.white.opacity(0.18)))
+            context.stroke(circlePath, with: .color(.white), lineWidth: 3.5)
+            context.stroke(Path(ellipseIn: circleRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(.black.opacity(0.35)), lineWidth: 1.0)
+            
+            let label = Text("2x").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white)
+            context.draw(label, at: CGPoint(x: rect.midX, y: circleRect.maxY - 14))
+        case .text:
+            let t = Text(item.text.isEmpty ? "Текст" : item.text)
+                .font(.system(size: item.fontSize, weight: .bold))
+                .foregroundColor(item.color)
+            context.draw(t, at: item.startPoint, anchor: .topLeading)
+        }
+    }
+    
+    private static func drawArrow(from start: CGPoint, to end: CGPoint, path: inout Path, headLength: CGFloat) {
+        path.move(to: start)
+        path.addLine(to: end)
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let spread: CGFloat = .pi / 6
+        path.move(to: end)
+        path.addLine(to: CGPoint(x: end.x - headLength * cos(angle - spread), y: end.y - headLength * sin(angle - spread)))
+        path.move(to: end)
+        path.addLine(to: CGPoint(x: end.x - headLength * cos(angle + spread), y: end.y - headLength * sin(angle + spread)))
+    }
+}

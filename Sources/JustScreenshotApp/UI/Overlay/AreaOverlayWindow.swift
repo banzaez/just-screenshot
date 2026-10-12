@@ -3,6 +3,8 @@ import ScreenCaptureKit
 
 /// Представление полноэкранного окна оверлея
 public final class AreaOverlayWindow: NSWindow {
+    private let onCancel: () -> Void
+
     public init(
         screen: NSScreen,
         mode: OverlayMode,
@@ -12,6 +14,7 @@ public final class AreaOverlayWindow: NSWindow {
         onCompleteWindow: @escaping (SCWindow) -> Void,
         onCancel: @escaping () -> Void
     ) {
+        self.onCancel = onCancel
         super.init(
             contentRect: screen.frame,
             styleMask: [.borderless],
@@ -41,4 +44,16 @@ public final class AreaOverlayWindow: NSWindow {
     
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
+
+    public override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown && event.keyCode == 53 { // ESC key
+            onCancel()
+            return
+        }
+        super.sendEvent(event)
+    }
+    
+    public override func cancelOperation(_ sender: Any?) {
+        onCancel()
+    }
 }

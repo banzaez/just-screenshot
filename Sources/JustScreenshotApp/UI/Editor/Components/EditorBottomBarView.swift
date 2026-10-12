@@ -91,53 +91,42 @@ public struct EditorBottomBarView: View {
     
     private var backdropControlGroup: some View {
         HStack(spacing: 8) {
-            // Переключатель фона
-            Toggle(isOn: $showBackdrop) {
-                Label(L("editor.backdrop"), systemImage: "photo.artframe")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.bordered)
-            .tint(showBackdrop ? .accentColor : nil)
-            .controlSize(.small)
+            // Переключатель фона (галочка / checkbox)
+            Toggle(L("editor.backdrop"), isOn: $showBackdrop)
+                .toggleStyle(.checkbox)
+                .font(.system(size: 12, weight: .medium))
             
             if showBackdrop {
-                // Выпадающее меню выбора градиента/фона
-                Menu {
-                    Text(L("editor.gradient_presets")).font(.caption)
+                // Выбор пресета градиента/фона исключительно цветами (кружки-свотчи)
+                HStack(spacing: 6) {
                     ForEach(BackdropPreset.allCases) { preset in
                         Button {
                             backdropPreset = preset
                         } label: {
-                            HStack {
-                                Text(preset.localizedName)
-                                if backdropPreset == preset {
+                            Circle()
+                                .fill(preset.gradient)
+                                .frame(width: 20, height: 20)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.primary.opacity(backdropPreset == preset ? 0.9 : 0.25), lineWidth: backdropPreset == preset ? 2 : 0.8)
+                                )
+                                .overlay(
                                     Image(systemName: "checkmark")
-                                }
-                            }
+                                        .font(.system(size: 9, weight: .black))
+                                        .foregroundColor(.white)
+                                        .shadow(color: .black.opacity(0.6), radius: 1, x: 0, y: 1)
+                                        .opacity(backdropPreset == preset ? 1 : 0)
+                                )
                         }
+                        .buttonStyle(.plain)
+                        .help(preset.rawValue)
                     }
-                } label: {
-                    HStack(spacing: 6) {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(backdropPreset.gradient)
-                            .frame(width: 14, height: 14)
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.primary.opacity(0.2), lineWidth: 0.5))
-                        Text(backdropPreset.localizedName)
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .padding(.horizontal, 4)
                 }
-                .menuStyle(.borderlessButton)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.06))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        .fill(Color.primary.opacity(0.04))
                 )
                 
                 Divider()
