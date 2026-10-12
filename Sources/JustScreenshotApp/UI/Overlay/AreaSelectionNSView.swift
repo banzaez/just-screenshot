@@ -3,6 +3,7 @@ import ScreenCaptureKit
 
 /// Интерактивное NSView отображения затемнения, окна hover и рамки выделения
 final class AreaSelectionNSView: NSView {
+    private let screen: NSScreen
     private let mode: OverlayMode
     private let visibleWindows: [SCWindow]
     private let onCompleteRect: (CGRect) -> Void
@@ -19,6 +20,7 @@ final class AreaSelectionNSView: NSView {
     
     init(
         frame: NSRect,
+        screen: NSScreen,
         mode: OverlayMode,
         visibleWindows: [SCWindow],
         backgroundImage: CGImage? = nil,
@@ -26,6 +28,7 @@ final class AreaSelectionNSView: NSView {
         onCompleteWindow: @escaping (SCWindow) -> Void,
         onCancel: @escaping () -> Void
     ) {
+        self.screen = screen
         self.mode = mode
         self.visibleWindows = visibleWindows
         self.sampler = ScreenPixelSampler(image: backgroundImage)
@@ -35,10 +38,19 @@ final class AreaSelectionNSView: NSView {
         super.init(frame: frame)
         self.wantsLayer = true
         
-        // Сразу берем текущее положение курсора, чтобы прицел не ждал первого движения мыши
+        // Показываем прицел сразу, если курсор мыши находится на этом экране
         let mouseLoc = NSEvent.mouseLocation
-        let windowPoint = NSPoint(x: mouseLoc.x - frame.origin.x, y: mouseLoc.y - frame.origin.y)
-        self.currentPoint = windowPoint
+        if NSMouseInRect(mouseLoc, screen.frame, false) {
+            let windowPoint = NSPoint(x: mouseLoc.x - screen.frame.origin.x, y: mouseLoc.y - screen.frame.origin.y)
+            self.currentPoint = windowPoint
+        } else {
+            self.currentPoint = nil
+        }
+    }
+    
+    func updateSampler(_ sampler: ScreenPixelSampler) {
+        self.sampler = sampler
+        needsDisplay = true
     }
     
     func updateBackgroundImage(_ image: CGImage) {
@@ -157,10 +169,12 @@ final class AreaSelectionNSView: NSView {
             needsDisplay = true
             
             if rect.width > 5 && rect.height > 5 {
-                let screenHeight = bounds.height
+                let globalAppKitX = screen.frame.origin.x + rect.origin.x
+                let globalAppKitY = screen.frame.origin.y + rect.origin.y
+                let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
                 let scRect = CGRect(
-                    x: rect.origin.x,
-                    y: screenHeight - rect.origin.y - rect.height,
+                    x: globalAppKitX,
+                    y: primaryHeight - globalAppKitY - rect.height,
                     width: rect.width,
                     height: rect.height
                 )
@@ -176,13 +190,31 @@ final class AreaSelectionNSView: NSView {
         onCancel()
     }
     
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        let loc = convert(event.locationInWindow, from: nil)
+        currentPoint = loc
+        needsDisplay = true
+    }
+    
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        if !isDragging {
+            currentPoint = nil
+            hoveredWindow = nil
+            needsDisplay = true
+        }
+    }
+    
     override func mouseMoved(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         currentPoint = loc
         
         if mode == .windowOnly {
-            let screenHeight = bounds.height
-            let mouseInScreenCoords = CGPoint(x: loc.x, y: screenHeight - loc.y)
+            let globalAppKitX = screen.frame.origin.x + loc.x
+            let globalAppKitY = screen.frame.origin.y + loc.y
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+            let mouseInScreenCoords = CGPoint(x: globalAppKitX, y: primaryHeight - globalAppKitY)
             
             hoveredWindow = visibleWindows.first(where: { win in
                 win.frame.contains(mouseInScreenCoords)

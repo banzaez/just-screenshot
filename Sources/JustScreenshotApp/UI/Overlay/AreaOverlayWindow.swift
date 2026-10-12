@@ -23,6 +23,7 @@ public final class AreaOverlayWindow: NSWindow {
         )
         
         self.level = .screenSaver
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.isOpaque = false
         self.isReleasedWhenClosed = false
         self.backgroundColor = .clear
@@ -32,6 +33,7 @@ public final class AreaOverlayWindow: NSWindow {
         
         let overlayView = AreaSelectionNSView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
+            screen: screen,
             mode: mode,
             visibleWindows: visibleWindows,
             backgroundImage: backgroundImage,
@@ -40,6 +42,10 @@ public final class AreaOverlayWindow: NSWindow {
             onCancel: onCancel
         )
         self.contentView = overlayView
+    }
+    
+    public func updateSampler(_ sampler: ScreenPixelSampler) {
+        (contentView as? AreaSelectionNSView)?.updateSampler(sampler)
     }
     
     public func updateBackgroundImage(_ image: CGImage) {

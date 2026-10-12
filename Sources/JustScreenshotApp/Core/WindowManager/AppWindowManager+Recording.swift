@@ -9,26 +9,36 @@ extension AppWindowManager {
     }
     
     public func startScreenRecording() {
-        Task { [weak self] in
-            guard let self else { return }
-            let hasPerm = await ScreenCaptureService.shared.ensurePermission()
-            guard hasPerm else { return }
-            
-            self.closeAllOverlays()
-            guard let screen = NSScreen.main else { return }
-            self.overlayToken = UUID()
-            self.presentOverlay(
-                AreaOverlayWindow(
-                    screen: screen, mode: .recordingArea, visibleWindows: [],
-                    onCompleteRect: { [weak self] rect in
-                        self?.closeAllOverlays()
-                        Task { [weak self] in await self?.beginRecordingArea(rect: rect) }
-                    },
-                    onCompleteWindow: { _ in },
-                    onCancel: { [weak self] in self?.closeAllOverlays() }
-                )
+        if !ScreenCaptureService.shared.hasScreenCapturePermission() {
+            Task { [weak self] in
+                guard let self else { return }
+                let granted = await ScreenCaptureService.shared.checkAndRequestPermissions()
+                if !granted {
+                    ScreenCaptureService.shared.showPermissionAlert()
+                    return
+                }
+                self.startScreenRecording()
+            }
+            return
+        }
+        
+        self.closeAllOverlays()
+        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        guard !screens.isEmpty else { return }
+        
+        self.overlayToken = UUID()
+        let overlays = screens.map { screen in
+            AreaOverlayWindow(
+                screen: screen, mode: .recordingArea, visibleWindows: [],
+                onCompleteRect: { [weak self] rect in
+                    self?.closeAllOverlays()
+                    Task { [weak self] in await self?.beginRecordingArea(rect: rect) }
+                },
+                onCompleteWindow: { _ in },
+                onCancel: { [weak self] in self?.closeAllOverlays() }
             )
         }
+        self.presentOverlays(overlays)
     }
     
     func beginRecordingArea(rect: CGRect) async {
@@ -45,10 +55,10 @@ extension AppWindowManager {
             }
             
             // Преобразуем координаты ScreenCaptureKit (origin вверху основного экрана) в координаты AppKit
-            let screenHeight = NSScreen.main?.frame.height ?? 900
+            let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 900
             let appKitRect = NSRect(
                 x: rect.origin.x,
-                y: screenHeight - rect.origin.y - rect.height,
+                y: primaryScreenHeight - rect.origin.y - rect.height,
                 width: rect.width,
                 height: rect.height
             )
@@ -65,10 +75,11 @@ extension AppWindowManager {
                 if barCenter.y < 40 {
                     barCenter.y = appKitRect.minY + 35
                 }
-                // Предотвращаем выход за левый и правый края
-                let minX: CGFloat = 160
-                let maxX: CGFloat = (NSScreen.main?.frame.width ?? 1440) - 160
-                barCenter.x = max(minX, min(maxX, barCenter.x))
+                // Предотвращаем выход за левый и правый края текущего экрана
+                let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(barCenter, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+                let screenMinX = (targetScreen?.frame.minX ?? 0) + 160
+                let screenMaxX = (targetScreen?.frame.maxX ?? 1440) - 160
+                barCenter.x = max(screenMinX, min(screenMaxX, barCenter.x))
                 
                 let barWin = RecordingControlBarWindow(
                     initialPosition: barCenter,

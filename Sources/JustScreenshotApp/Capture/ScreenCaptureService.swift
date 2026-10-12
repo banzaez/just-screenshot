@@ -61,7 +61,7 @@ public final class ScreenCaptureService {
     /// Захват определенной области экрана
     public func captureRect(_ rect: CGRect, excludingWindowIDs: [CGWindowID] = []) async throws -> NSImage {
         // Проверяем доступный контент через ScreenCaptureKit
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         
         guard let display = content.displays.first(where: { disp in
             let dispRect = CGRect(x: CGFloat(disp.frame.origin.x),
@@ -80,8 +80,16 @@ public final class ScreenCaptureService {
         // Вычисляем точный масштаб отображения для целевого монитора
         let displayScale: CGFloat = display.frame.width > 0 ? CGFloat(display.width) / CGFloat(display.frame.width) : (NSScreen.main?.backingScaleFactor ?? 2.0)
         
+        // Приводим rect к локальной системе координат выбранного монитора
+        let localRect = CGRect(
+            x: rect.origin.x - CGFloat(display.frame.origin.x),
+            y: rect.origin.y - CGFloat(display.frame.origin.y),
+            width: rect.width,
+            height: rect.height
+        )
+        
         let config = SCStreamConfiguration()
-        config.sourceRect = rect
+        config.sourceRect = localRect
         config.width = Int(rect.width * displayScale)
         config.height = Int(rect.height * displayScale)
         config.showsCursor = false
@@ -96,7 +104,7 @@ public final class ScreenCaptureService {
     
     /// Захват экрана целиком через современный ScreenCaptureKit (SCScreenshotManager)
     public func captureScreenWithSCK(screen: NSScreen) async throws -> CGImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
             let frame = CGRect(x: CGFloat(disp.frame.origin.x),
                                y: CGFloat(disp.frame.origin.y),

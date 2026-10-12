@@ -5,22 +5,32 @@ extension AppWindowManager {
     // MARK: - Оверлеи выбора
     
     public func startWindowCapture() {
+        if !ScreenCaptureService.shared.hasScreenCapturePermission() {
+            Task { [weak self] in
+                guard let self else { return }
+                let granted = await ScreenCaptureService.shared.checkAndRequestPermissions()
+                if !granted {
+                    ScreenCaptureService.shared.showPermissionAlert()
+                    return
+                }
+                self.startWindowCapture()
+            }
+            return
+        }
+        
         Task { [weak self] in
             guard let self else { return }
-            let hasPerm = await ScreenCaptureService.shared.ensurePermission()
-            guard hasPerm else { return }
-            
             self.closeAllOverlays()
-            guard let screen = NSScreen.main else { return }
+            let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+            guard !screens.isEmpty else { return }
             let token = UUID()
             self.overlayToken = token
             
             let windows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
-            // Если за время загрузки запущен другой захват — этот оверлей уже не нужен (иначе окна копятся)
             guard self.overlayToken == token else { return }
             self.closeAllOverlays()
             
-            self.presentOverlay(
+            let overlays = screens.map { screen in
                 AreaOverlayWindow(
                     screen: screen, mode: .windowOnly, visibleWindows: windows,
                     onCompleteRect: { _ in },
@@ -30,7 +40,8 @@ extension AppWindowManager {
                     },
                     onCancel: { [weak self] in self?.closeAllOverlays() }
                 )
-            )
+            }
+            self.presentOverlays(overlays)
         }
     }
     
@@ -43,17 +54,29 @@ extension AppWindowManager {
             return
         }
         
-        Task { [weak self] in
-            guard let self else { return }
-            let hasPerm = await ScreenCaptureService.shared.ensurePermission()
-            guard hasPerm else { return }
-            
-            self.closeAllOverlays()
-            guard let screen = NSScreen.main else { return }
-            let token = UUID()
-            self.overlayToken = token
-            
-            let overlay = AreaOverlayWindow(
+        // Быстрая синхронная проверка разрешений без задержек и переходов Task
+        if !ScreenCaptureService.shared.hasScreenCapturePermission() {
+            Task { [weak self] in
+                guard let self else { return }
+                let granted = await ScreenCaptureService.shared.checkAndRequestPermissions()
+                if !granted {
+                    ScreenCaptureService.shared.showPermissionAlert()
+                    return
+                }
+                self.startAreaCapture(delaySeconds: 0)
+            }
+            return
+        }
+        
+        self.closeAllOverlays()
+        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        guard !screens.isEmpty else { return }
+        
+        let token = UUID()
+        self.overlayToken = token
+        
+        let overlays = screens.map { screen in
+            AreaOverlayWindow(
                 screen: screen, mode: .areaOnly, visibleWindows: [],
                 backgroundImage: nil,
                 onCompleteRect: { [weak self] rect in
@@ -63,13 +86,23 @@ extension AppWindowManager {
                 onCompleteWindow: { _ in },
                 onCancel: { [weak self] in self?.closeAllOverlays() }
             )
-            self.presentOverlay(overlay)
+        }
+        self.presentOverlays(overlays)
+        
+        // Фоновый захват экрана для лупы/пипетки на экране с курсором мыши без задержки отображения
+        let mouseLoc = NSEvent.mouseLocation
+        let activeScreen = screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? screens.first!
+        let activeOverlay = overlays.first(where: { $0.frame == activeScreen.frame })
+        
+        Task { [weak self, weak activeOverlay] in
+            let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: activeScreen)
+            guard let self, self.overlayToken == token, let bgImage, let activeOverlay else { return }
             
-            // Фоновый захват экрана для лупы/пипетки без задержки отображения оверлея
-            Task { [weak self, weak overlay] in
-                let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen)
-                guard let self, self.overlayToken == token, let bgImage, let overlay else { return }
-                overlay.updateBackgroundImage(bgImage)
+            Task.detached(priority: .userInitiated) {
+                let sampler = ScreenPixelSampler(image: bgImage)
+                await MainActor.run { [weak activeOverlay] in
+                    activeOverlay?.updateSampler(sampler)
+                }
             }
         }
     }
@@ -89,19 +122,31 @@ extension AppWindowManager {
         }
     }
     
+    func presentOverlays(_ windows: [AreaOverlayWindow]) {
+        self.overlayWindows = windows
+        for window in windows {
+            window.isReleasedWhenClosed = false
+            window.orderFrontRegardless()
+        }
+        let mouseLoc = NSEvent.mouseLocation
+        if let targetWin = windows.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? windows.first {
+            targetWin.makeKey()
+        }
+        NSApp.activate()
+    }
+    
     func presentOverlay(_ window: AreaOverlayWindow) {
-        window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        overlayWindow = window
+        presentOverlays([window])
     }
     
     func closeAllOverlays() {
-        guard let w = overlayWindow else { return }
-        overlayWindow = nil
-        w.orderOut(nil)
-        w.contentView = nil
-        w.close()
+        let windows = overlayWindows
+        overlayWindows.removeAll()
+        for w in windows {
+            w.orderOut(nil)
+            w.contentView = nil
+            w.close()
+        }
     }
     
     // MARK: - Захват

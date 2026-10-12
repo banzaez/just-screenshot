@@ -30,15 +30,30 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     public func startRecording(rect: CGRect, destinationURL: URL) async throws {
         self.outputURL = destinationURL
         
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-        guard let display = content.displays.first else {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        guard let display = content.displays.first(where: { disp in
+            let dispRect = CGRect(x: CGFloat(disp.frame.origin.x),
+                                  y: CGFloat(disp.frame.origin.y),
+                                  width: CGFloat(disp.frame.width),
+                                  height: CGFloat(disp.frame.height))
+            return dispRect.intersects(rect)
+        }) ?? content.displays.first else {
             throw NSError(domain: "ScreenRecorder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
         }
         
         let filter = SCContentFilter(display: display, excludingWindows: [])
+        
+        // Преобразуем глобальные координаты в локальные координаты выбранного монитора
+        let localRect = CGRect(
+            x: rect.origin.x - CGFloat(display.frame.origin.x),
+            y: rect.origin.y - CGFloat(display.frame.origin.y),
+            width: rect.width,
+            height: rect.height
+        )
+        
+        let scale: CGFloat = display.frame.width > 0 ? CGFloat(display.width) / CGFloat(display.frame.width) : 2.0
         let config = SCStreamConfiguration()
-        config.sourceRect = rect
-        let scale = await MainActor.run { NSScreen.main?.backingScaleFactor ?? 2.0 }
+        config.sourceRect = localRect
         let targetWidth = Int(rect.width * scale)
         let targetHeight = Int(rect.height * scale)
         // Размеры должны быть четными для H.264

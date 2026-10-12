@@ -11,7 +11,17 @@ public final class AppWindowManager: ObservableObject {
     @Published public var isRecordingPaused: Bool = false
     @Published public var recordingDuration: TimeInterval = 0
     
-    var overlayWindow: AreaOverlayWindow?
+    var overlayWindows: [AreaOverlayWindow] = []
+    var overlayWindow: AreaOverlayWindow? {
+        get { overlayWindows.first }
+        set {
+            if let newValue {
+                overlayWindows = [newValue]
+            } else {
+                overlayWindows = []
+            }
+        }
+    }
     var overlayToken = UUID()
     var recordingFrameWindow: RecordingFrameWindow?
     var recordingBarWindow: RecordingControlBarWindow?
