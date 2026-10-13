@@ -4,6 +4,8 @@ import ScreenCaptureKit
 /// Представление полноэкранного окна оверлея
 public final class AreaOverlayWindow: NSWindow {
     private let onCancel: () -> Void
+    private var localKeyMonitor: Any?
+    private var globalKeyMonitor: Any?
 
     public init(
         screen: NSScreen,
@@ -43,7 +45,38 @@ public final class AreaOverlayWindow: NSWindow {
             onCancel: onCancel
         )
         self.contentView = overlayView
+        installEscMonitors()
     }
+
+    private func installEscMonitors() {
+        let cancel = onCancel
+        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {
+                DispatchQueue.main.async { cancel() }
+                return nil
+            }
+            return event
+        }
+        // Фолбэк, если приложение не стало активным и окно не получает клавиши
+        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            if event.keyCode == 53 {
+                DispatchQueue.main.async { cancel() }
+            }
+        }
+    }
+
+    private func removeEscMonitors() {
+        if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
+        localKeyMonitor = nil
+        globalKeyMonitor = nil
+    }
+
+    public override func close() {
+        removeEscMonitors()
+        super.close()
+    }
+
     
     public func updateSampler(_ sampler: ScreenPixelSampler) {
         (contentView as? AreaSelectionNSView)?.updateSampler(sampler)

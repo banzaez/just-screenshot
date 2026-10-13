@@ -144,6 +144,7 @@ extension AppWindowManager {
     }
     
     func closeAllOverlays() {
+        overlayToken = UUID() // отменяет отложенные презентации оверлея
         let windows = overlayWindows
         overlayWindows.removeAll()
         for w in windows {
