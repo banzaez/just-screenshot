@@ -26,13 +26,9 @@ extension AppWindowManager {
             let token = UUID()
             self.overlayToken = token
             
-            let windows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
-            guard self.overlayToken == token else { return }
-            self.closeAllOverlays()
-            
             let overlays = screens.map { screen in
                 AreaOverlayWindow(
-                    screen: screen, mode: .windowOnly, visibleWindows: windows,
+                    screen: screen, mode: .windowOnly, visibleWindows: [],
                     onCompleteRect: { _ in },
                     onCompleteWindow: { [weak self] scWindow in
                         self?.closeAllOverlays()
@@ -42,6 +38,11 @@ extension AppWindowManager {
                 )
             }
             self.presentOverlays(overlays)
+            
+            // Окна подгружаются асинхронно — оверлей появляется мгновенно
+            let windows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
+            guard self.overlayToken == token else { return }
+            for overlay in overlays { overlay.updateVisibleWindows(windows) }
         }
     }
     
@@ -94,19 +95,20 @@ extension AppWindowManager {
         self.presentOverlays(overlays)
         
         // Фоновый захват экрана для лупы/пипетки на экране с курсором мыши без задержки отображения
+        // Сначала экран с курсором, затем остальные
         let mouseLoc = NSEvent.mouseLocation
-        let activeScreen = screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? screens.first!
-        let activeOverlay = overlays.first(where: { $0.frame == activeScreen.frame })
+        let ordered = overlays.sorted { a, _ in NSMouseInRect(mouseLoc, a.frame, false) }
         
-        Task { [weak self, weak activeOverlay] in
-            let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: activeScreen)
-            guard let self, self.overlayToken == token, let bgImage, let activeOverlay else { return }
-            
-            Task.detached(priority: .userInitiated) {
-                let sampler = ScreenPixelSampler(image: bgImage)
-                await MainActor.run { [weak activeOverlay] in
-                    activeOverlay?.updateSampler(sampler)
-                }
+        for overlay in ordered {
+            guard let screen = overlay.screen else { continue }
+            Task { [weak self, weak overlay] in
+                guard let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen) else { return }
+                guard let self, self.overlayToken == token else { return }
+                let sampler = await Task.detached(priority: .userInitiated) {
+                    ScreenPixelSampler(image: bgImage)
+                }.value
+                guard self.overlayToken == token else { return }
+                overlay?.updateSampler(sampler)
             }
         }
     }

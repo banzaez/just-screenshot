@@ -4,8 +4,8 @@ import ScreenCaptureKit
 /// Представление полноэкранного окна оверлея
 public final class AreaOverlayWindow: NSWindow {
     private let onCancel: () -> Void
-    private var localKeyMonitor: Any?
-    private var globalKeyMonitor: Any?
+    nonisolated(unsafe) private var localKeyMonitor: Any?
+    nonisolated(unsafe) private var globalKeyMonitor: Any?
 
     public init(
         screen: NSScreen,
@@ -25,7 +25,7 @@ public final class AreaOverlayWindow: NSWindow {
         )
         
         self.title = "JustScreenshotAreaOverlay"
-        self.level = .screenSaver
+        self.level = .statusBar
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.isOpaque = false
         self.isReleasedWhenClosed = false
@@ -72,6 +72,11 @@ public final class AreaOverlayWindow: NSWindow {
         globalKeyMonitor = nil
     }
 
+    deinit {
+        if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
+        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
+    }
+
     public override func close() {
         removeEscMonitors()
         super.close()
@@ -82,6 +87,10 @@ public final class AreaOverlayWindow: NSWindow {
         (contentView as? AreaSelectionNSView)?.updateSampler(sampler)
     }
     
+    public func updateVisibleWindows(_ windows: [SCWindow]) {
+        (contentView as? AreaSelectionNSView)?.updateVisibleWindows(windows)
+    }
+    
     public func updateBackgroundImage(_ image: CGImage) {
         (contentView as? AreaSelectionNSView)?.updateBackgroundImage(image)
     }
@@ -89,14 +98,6 @@ public final class AreaOverlayWindow: NSWindow {
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
 
-    public override func sendEvent(_ event: NSEvent) {
-        if event.type == .keyDown && event.keyCode == 53 { // ESC key
-            onCancel()
-            return
-        }
-        super.sendEvent(event)
-    }
-    
     public override func cancelOperation(_ sender: Any?) {
         onCancel()
     }

@@ -5,7 +5,7 @@ import ScreenCaptureKit
 final class AreaSelectionNSView: NSView {
     private let screen: NSScreen
     private let mode: OverlayMode
-    private let visibleWindows: [SCWindow]
+    private var visibleWindows: [SCWindow]
     private let onCompleteRect: (CGRect) -> Void
     private let onCompleteWindow: (SCWindow) -> Void
     private let onCancel: () -> Void
@@ -51,6 +51,10 @@ final class AreaSelectionNSView: NSView {
     func updateSampler(_ sampler: ScreenPixelSampler) {
         self.sampler = sampler
         needsDisplay = true
+    }
+    
+    func updateVisibleWindows(_ windows: [SCWindow]) {
+        self.visibleWindows = windows
     }
     
     func updateBackgroundImage(_ image: CGImage) {
