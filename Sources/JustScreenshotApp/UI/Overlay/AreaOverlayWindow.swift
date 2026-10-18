@@ -25,7 +25,9 @@ public final class AreaOverlayWindow: NSWindow {
         )
         
         self.title = "JustScreenshotAreaOverlay"
-        self.level = .statusBar
+        // Выше обычных окон и меню, чтобы клики доходили сразу, не дожидаясь активации приложения.
+        self.level = .screenSaver
+        self.animationBehavior = .none
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         self.isOpaque = false
         self.isReleasedWhenClosed = false

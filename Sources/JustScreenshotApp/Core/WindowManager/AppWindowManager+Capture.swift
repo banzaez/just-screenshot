@@ -18,30 +18,29 @@ extension AppWindowManager {
             return
         }
         
+        closeAllOverlays()
+        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        guard !screens.isEmpty else { return }
+        let token = UUID()
+        overlayToken = token
+        
+        let overlays = screens.map { screen in
+            AreaOverlayWindow(
+                screen: screen, mode: .windowOnly, visibleWindows: [],
+                onCompleteRect: { _ in },
+                onCompleteWindow: { [weak self] scWindow in
+                    self?.closeAllOverlays()
+                    Task { [weak self] in await self?.captureWindowAndShowHUD(scWindow: scWindow) }
+                },
+                onCancel: { [weak self] in self?.closeAllOverlays() }
+            )
+        }
+        presentOverlays(overlays)
+        
+        // Список окон запрашивается вне главного потока, чтобы оверлей не замирал на время SCShareableContent.
         Task { [weak self] in
-            guard let self else { return }
-            self.closeAllOverlays()
-            let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
-            guard !screens.isEmpty else { return }
-            let token = UUID()
-            self.overlayToken = token
-            
-            let overlays = screens.map { screen in
-                AreaOverlayWindow(
-                    screen: screen, mode: .windowOnly, visibleWindows: [],
-                    onCompleteRect: { _ in },
-                    onCompleteWindow: { [weak self] scWindow in
-                        self?.closeAllOverlays()
-                        Task { [weak self] in await self?.captureWindowAndShowHUD(scWindow: scWindow) }
-                    },
-                    onCancel: { [weak self] in self?.closeAllOverlays() }
-                )
-            }
-            self.presentOverlays(overlays)
-            
-            // Окна подгружаются асинхронно — оверлей появляется мгновенно
             let windows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
-            guard self.overlayToken == token else { return }
+            guard let self, self.overlayToken == token else { return }
             for overlay in overlays { overlay.updateVisibleWindows(windows) }
         }
     }
@@ -130,15 +129,18 @@ extension AppWindowManager {
     
     func presentOverlays(_ windows: [AreaOverlayWindow]) {
         self.overlayWindows = windows
+        // Активация до makeKey, иначе первый жест уходит на пробуждение приложения.
+        NSApp.activate()
+        let mouseLoc = NSEvent.mouseLocation
         for window in windows {
             window.isReleasedWhenClosed = false
+            window.alphaValue = 1
             window.orderFrontRegardless()
         }
-        let mouseLoc = NSEvent.mouseLocation
         if let targetWin = windows.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? windows.first {
             targetWin.makeKey()
+            targetWin.makeFirstResponder(targetWin.contentView)
         }
-        NSApp.activate()
     }
     
     func presentOverlay(_ window: AreaOverlayWindow) {
@@ -155,7 +157,6 @@ extension AppWindowManager {
             w.contentView = nil
             w.close()
         }
-        CATransaction.flush()
     }
     
     // MARK: - Захват

@@ -118,15 +118,24 @@ public final class ScreenCaptureService {
         return nsImage
     }
     
-    /// Захват экрана целиком через современный ScreenCaptureKit (SCScreenshotManager)
+    /// Захват экрана целиком через современный ScreenCaptureKit (SCScreenshotManager).
+    /// Сам снимок выполняется вне главного актора: SCShareableContent на нём надолго блокирует оверлей.
     public func captureScreenWithSCK(screen: NSScreen) async throws -> CGImage {
+        let frame = screen.frame
+        let scale = screen.backingScaleFactor
+        return try await Task.detached(priority: .userInitiated) {
+            try await Self.captureDisplayImage(frame: frame, scale: scale)
+        }.value
+    }
+
+    nonisolated private static func captureDisplayImage(frame: CGRect, scale: CGFloat) async throws -> CGImage {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
-            let frame = CGRect(x: CGFloat(disp.frame.origin.x),
-                                y: CGFloat(disp.frame.origin.y),
-                                width: CGFloat(disp.frame.width),
-                                height: CGFloat(disp.frame.height))
-            return frame.intersects(screen.frame)
+            let displayFrame = CGRect(x: CGFloat(disp.frame.origin.x),
+                                       y: CGFloat(disp.frame.origin.y),
+                                       width: CGFloat(disp.frame.width),
+                                       height: CGFloat(disp.frame.height))
+            return displayFrame.intersects(frame)
         }) ?? content.displays.first else {
             throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
         }
@@ -144,8 +153,8 @@ public final class ScreenCaptureService {
         }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         let config = SCStreamConfiguration()
-        config.width = Int(screen.frame.width * screen.backingScaleFactor)
-        config.height = Int(screen.frame.height * screen.backingScaleFactor)
+        config.width = Int(frame.width * scale)
+        config.height = Int(frame.height * scale)
         config.showsCursor = false
         config.scalesToFit = false
         config.colorSpaceName = CGColorSpace.sRGB
@@ -172,16 +181,35 @@ public final class ScreenCaptureService {
         return NSImage(cgImage: cgImage, size: NSSize(width: scWindow.frame.width, height: scWindow.frame.height))
     }
     
-    /// Получение списка активных окон для hover-подсветки
+    /// Получение списка активных окон для hover-подсветки.
+    /// Запрос уходит с главного актора, иначе оверлей выбора окна не принимает мышь, пока ScreenCaptureKit отвечает.
     public func getVisibleWindows() async throws -> [SCWindow] {
+        try await Task.detached(priority: .userInitiated) {
+            WindowSnapshot(windows: try await Self.fetchVisibleWindows())
+        }.value.windows
+    }
+
+    nonisolated private static func fetchVisibleWindows() async throws -> [SCWindow] {
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let currentPID = ProcessInfo.processInfo.processIdentifier
         return content.windows.filter { win in
+            if win.owningApplication?.processID == currentPID {
+                if win.title == "JustScreenshotAreaOverlay" ||
+                   win.title == "JustScreenshotCountdownOverlay" ||
+                   win.windowLayer >= 1000 {
+                    return false
+                }
+            }
             guard win.frame.width > 50 && win.frame.height > 50 else { return false }
             guard let title = win.title, !title.isEmpty else {
-                // Если заголовка нет, проверяем имя приложения
                 return win.owningApplication != nil
             }
             return true
         }
     }
+}
+
+/// SCWindow не помечен Sendable, но это неизменяемый снимок списка окон.
+private struct WindowSnapshot: @unchecked Sendable {
+    let windows: [SCWindow]
 }

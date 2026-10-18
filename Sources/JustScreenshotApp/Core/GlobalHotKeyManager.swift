@@ -87,8 +87,13 @@ public final class GlobalHotKeyManager {
             )
             
             if err == noErr {
-                Task { @MainActor in
-                    GlobalHotKeyManager.shared.handlers[hotKeyID.id]?()
+                let hotKeyNumber = hotKeyID.id
+                // Выходим из Carbon-обработчика и ставим действие в очередь главного потока
+                // с приоритетом UI. Task { @MainActor } отсюда легко опаздывает на несколько кадров.
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        GlobalHotKeyManager.shared.handlers[hotKeyNumber]?()
+                    }
                 }
                 return noErr
             }

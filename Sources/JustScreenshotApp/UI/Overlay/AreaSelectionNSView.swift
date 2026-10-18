@@ -17,6 +17,8 @@ final class AreaSelectionNSView: NSView {
     private var trackingArea: NSTrackingArea?
     
     private var sampler: ScreenPixelSampler
+    /// Области, уже нарисованные на экране. Перерисовывается только их разница с новым кадром.
+    private var paintedRegions: [CGRect] = []
     
     init(
         frame: NSRect,
@@ -36,7 +38,9 @@ final class AreaSelectionNSView: NSView {
         self.onCompleteWindow = onCompleteWindow
         self.onCancel = onCancel
         super.init(frame: frame)
-        self.wantsLayer = true
+        // Без layer-backed view грязные прямоугольники реально остаются полосками,
+        // а не перезаливают весь экран на каждый mouseMoved.
+        self.wantsLayer = false
         
         // Показываем прицел сразу, если курсор мыши находится на этом экране
         let mouseLoc = NSEvent.mouseLocation
@@ -46,20 +50,28 @@ final class AreaSelectionNSView: NSView {
         } else {
             self.currentPoint = nil
         }
+        paintedRegions = currentDamageRegions()
     }
     
     func updateSampler(_ sampler: ScreenPixelSampler) {
         self.sampler = sampler
-        needsDisplay = true
+        guard mode != .windowOnly, !isDragging else { return }
+        syncPaint()
     }
     
     func updateVisibleWindows(_ windows: [SCWindow]) {
         self.visibleWindows = windows
+        guard mode == .windowOnly else { return }
+        if let loc = currentPoint {
+            hoveredWindow = windowUnderCursor(at: loc)
+        }
+        syncPaint()
     }
     
     func updateBackgroundImage(_ image: CGImage) {
-        self.sampler = ScreenPixelSampler(image: image)
-        needsDisplay = true
+        sampler = ScreenPixelSampler(image: image)
+        guard mode != .windowOnly, !isDragging else { return }
+        syncPaint()
     }
     
     required init?(coder: NSCoder) {
@@ -82,6 +94,9 @@ final class AreaSelectionNSView: NSView {
     }
     
     override var acceptsFirstResponder: Bool { true }
+
+    /// Первый клик по ещё неактивному окну сразу начинает выделение, а не только активирует приложение.
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -102,11 +117,6 @@ final class AreaSelectionNSView: NSView {
         }
     }
     
-    override func flagsChanged(with event: NSEvent) {
-        super.flagsChanged(with: event)
-        needsDisplay = true
-    }
-    
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         
@@ -125,21 +135,25 @@ final class AreaSelectionNSView: NSView {
         startPoint = loc
         currentPoint = loc
         isDragging = false
-        needsDisplay = true
+        syncPaint()
     }
     
     override func mouseDragged(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
+        if mode == .windowOnly {
+            moveCursor(to: loc)
+            return
+        }
         currentPoint = loc
         
-        if mode != .windowOnly, let start = startPoint {
+        if let start = startPoint {
             let dist = hypot(loc.x - start.x, loc.y - start.y)
             if dist > 3 {
                 isDragging = true
                 hoveredWindow = nil
             }
         }
-        needsDisplay = true
+        syncPaint()
     }
     
     override func mouseUp(with event: NSEvent) {
@@ -150,7 +164,6 @@ final class AreaSelectionNSView: NSView {
             if let hovered = hoveredWindow {
                 startPoint = nil
                 currentPoint = nil
-                needsDisplay = true
                 onCompleteWindow(hovered)
                 return
             }
@@ -170,7 +183,6 @@ final class AreaSelectionNSView: NSView {
             startPoint = nil
             currentPoint = nil
             isDragging = false
-            needsDisplay = true
             
             if rect.width > 5 && rect.height > 5 {
                 let globalAppKitX = screen.frame.origin.x + rect.origin.x
@@ -193,61 +205,133 @@ final class AreaSelectionNSView: NSView {
         startPoint = nil
         currentPoint = nil
         isDragging = false
-        needsDisplay = true
         onCancel()
     }
     
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        let loc = convert(event.locationInWindow, from: nil)
-        currentPoint = loc
-        needsDisplay = true
+        moveCursor(to: convert(event.locationInWindow, from: nil))
     }
     
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        if !isDragging {
-            currentPoint = nil
-            hoveredWindow = nil
-            needsDisplay = true
-        }
+        guard !isDragging else { return }
+        currentPoint = nil
+        hoveredWindow = nil
+        syncPaint()
     }
     
     override func mouseMoved(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-        currentPoint = loc
-        
+        moveCursor(to: convert(event.locationInWindow, from: nil))
+    }
+
+    private func moveCursor(to loc: CGPoint) {
         if mode == .windowOnly {
-            let globalAppKitX = screen.frame.origin.x + loc.x
-            let globalAppKitY = screen.frame.origin.y + loc.y
-            let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-            let mouseInScreenCoords = CGPoint(x: globalAppKitX, y: primaryHeight - globalAppKitY)
-            
-            hoveredWindow = visibleWindows.first(where: { win in
-                win.frame.contains(mouseInScreenCoords)
-            })
+            let next = windowUnderCursor(at: loc)
+            let sameWindow = next?.windowID == hoveredWindow?.windowID
+            currentPoint = loc
+            guard !sameWindow else { return }
+            hoveredWindow = next
+            syncPaint()
+            return
         }
-        
-        needsDisplay = true
+        if let currentPoint, abs(currentPoint.x - loc.x) < 0.5, abs(currentPoint.y - loc.y) < 0.5 {
+            return
+        }
+        currentPoint = loc
+        syncPaint()
+    }
+
+    private func windowUnderCursor(at loc: CGPoint) -> SCWindow? {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? bounds.height
+        let mouse = CGPoint(
+            x: screen.frame.origin.x + loc.x,
+            y: primaryHeight - (screen.frame.origin.y + loc.y)
+        )
+        return visibleWindows.first { $0.frame.contains(mouse) }
+    }
+
+    private func appKitRect(for winFrame: CGRect) -> CGRect {
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? bounds.height
+        let appKitGlobalY = primaryHeight - winFrame.origin.y - winFrame.height
+        return CGRect(
+            x: winFrame.origin.x - screen.frame.origin.x,
+            y: appKitGlobalY - screen.frame.origin.y,
+            width: winFrame.width,
+            height: winFrame.height
+        )
+    }
+
+    private func selectionRect(from start: CGPoint, to current: CGPoint) -> CGRect {
+        CGRect(
+            x: min(start.x, current.x),
+            y: min(start.y, current.y),
+            width: abs(start.x - current.x),
+            height: abs(start.y - current.y)
+        )
+    }
+
+    private func syncPaint() {
+        let next = currentDamageRegions()
+        guard next != paintedRegions else { return }
+        for rect in paintedRegions where !rect.isEmpty {
+            setNeedsDisplay(rect)
+        }
+        for rect in next where !rect.isEmpty {
+            setNeedsDisplay(rect)
+        }
+        paintedRegions = next
+    }
+
+    private func currentDamageRegions() -> [CGRect] {
+        if mode == .windowOnly, let hovered = hoveredWindow {
+            let rect = appKitRect(for: hovered.frame)
+            let title = hovered.owningApplication?.applicationName ?? (hovered.title ?? L("overlay.window_fallback"))
+            let badge = AreaOverlayBadgeRenderer.badgeRect(for: L("overlay.window_badge", title), near: rect)
+            return [rect.insetBy(dx: -4, dy: -4), badge.insetBy(dx: -2, dy: -2)]
+        }
+        if isDragging, let start = startPoint, let current = currentPoint {
+            let rect = selectionRect(from: start, to: current)
+            let prefix = mode == .recordingArea ? "🎥 Запись: " : ""
+            let badge = AreaOverlayBadgeRenderer.badgeRect(
+                for: "\(prefix)\(Int(rect.width)) × \(Int(rect.height)) px",
+                near: rect
+            )
+            return [rect.insetBy(dx: -3, dy: -3), badge.insetBy(dx: -2, dy: -2)]
+        }
+        guard mode != .windowOnly, let current = currentPoint else { return [] }
+        let badge = AreaOverlayBadgeRenderer.crosshairBadgeRect(point: current, bounds: bounds, sampler: sampler)
+        return [
+            CGRect(x: 0, y: current.y - 2, width: max(bounds.width, 1), height: 4),
+            CGRect(x: current.x - 2, y: 0, width: 4, height: max(bounds.height, 1)),
+            badge.insetBy(dx: -2, dy: -2)
+        ]
+    }
+
+    private func rectsBeingDrawn(fallback: NSRect) -> [NSRect] {
+        var pointer: UnsafePointer<NSRect>?
+        var count = 0
+        getRectsBeingDrawn(&pointer, count: &count)
+        guard let pointer, count > 0 else { return [fallback] }
+        return (0..<count).map { pointer[$0] }
     }
     
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let screenHeight = bounds.height
+        let dirtyRects = rectsBeingDrawn(fallback: dirtyRect)
         
-        // Затемнение экрана
+        // Затемняется только повреждённый кусок, иначе каждый mouseMoved
+        // перезаливает кадр всего монитора и оверлей перестаёт успевать за курсором.
+        context.setBlendMode(.copy)
         context.setFillColor(CGColor(gray: 0, alpha: 0.35))
-        context.fill(bounds)
+        for rect in dirtyRects {
+            context.fill(rect)
+        }
+        context.setBlendMode(.normal)
         
         // 1. Отрисовка подсветки окна
         if mode == .windowOnly, let hovered = hoveredWindow {
-            let winFrame = hovered.frame
-            let appKitRect = NSRect(
-                x: winFrame.origin.x,
-                y: screenHeight - winFrame.origin.y - winFrame.height,
-                width: winFrame.width,
-                height: winFrame.height
-            )
+            let appKitRect = self.appKitRect(for: hovered.frame)
             
             context.saveGState()
             context.setBlendMode(.clear)
@@ -265,12 +349,7 @@ final class AreaSelectionNSView: NSView {
         }
         // 2. Отрисовка рамки произвольного размера
         else if isDragging, let start = startPoint, let current = currentPoint {
-            let rect = CGRect(
-                x: min(start.x, current.x),
-                y: min(start.y, current.y),
-                width: abs(start.x - current.x),
-                height: abs(start.y - current.y)
-            )
+            let rect = selectionRect(from: start, to: current)
             
             context.saveGState()
             context.setBlendMode(.clear)
@@ -300,6 +379,9 @@ final class AreaSelectionNSView: NSView {
             AreaOverlayBadgeRenderer.drawCrosshairBadge(point: current, bounds: bounds, sampler: sampler, in: context)
         }
         
-        AreaOverlayBadgeRenderer.drawTopTip(mode: mode, bounds: bounds, in: context)
+        let tipRect = AreaOverlayBadgeRenderer.topTipRect(mode: mode, bounds: bounds)
+        if dirtyRects.contains(where: { $0.intersects(tipRect) }) {
+            AreaOverlayBadgeRenderer.drawTopTip(mode: mode, bounds: bounds, in: context)
+        }
     }
 }
