@@ -8,13 +8,6 @@ public struct AnnotationEditorWindowView: View {
     public let onSaveToHistory: ((NSImage) -> Void)?
     public let onClose: () -> Void
     
-    @State private var selectedItemID: UUID? = nil
-    
-    @State private var selectedTool: AnnotationTool = .select
-    @State private var selectedColor: Color = .red
-    @State private var lineWidth: CGFloat = 4.0
-    @State private var textInputString: String = "Текст заметки"
-    
     @State private var fitMode: Bool = true
     @State private var manualZoom: CGFloat = 1.0
     @State private var fitScale: CGFloat = 1.0
@@ -37,11 +30,6 @@ public struct AnnotationEditorWindowView: View {
     private var imgSize: CGSize { capturedItem.image.size }
     private var extraPad: CGFloat { model.showBackdrop ? model.backdropPadding : 0 }
     
-    private var selectedItemIndex: Int? {
-        guard let id = selectedItemID else { return nil }
-        return model.items.firstIndex(where: { $0.id == id })
-    }
-    
     private func computeFit(for size: CGSize) -> CGFloat {
         let margin: CGFloat = 32
         let w = max(size.width - margin, 80)
@@ -49,7 +37,8 @@ public struct AnnotationEditorWindowView: View {
         let contentW = imgSize.width + extraPad * 2
         let contentH = imgSize.height + extraPad * 2
         guard contentW > 0, contentH > 0 else { return 1 }
-        return max(0.05, min(w / contentW, h / contentH, 1.0))
+        // Разрешаем upscale, чтобы мелкий скрин заполнял окно
+        return max(0.05, min(w / contentW, h / contentH, 4.0))
     }
     
     private func setZoom(_ value: CGFloat) {
@@ -57,59 +46,20 @@ public struct AnnotationEditorWindowView: View {
         fitMode = false
     }
     
-    private func undo() {
-        model.undo()
-        selectedItemID = nil
-    }
-    
-    private func redo() {
-        model.redo()
-        selectedItemID = nil
-    }
-    
-    private func finalImage() -> NSImage {
-        model.renderFinalImage()
-    }
-    
-    private func duplicateSelected() {
-        guard let idx = selectedItemIndex else { return }
-        let o = model.items[idx]
-        let copy = AnnotationItem(
-            tool: o.tool,
-            startPoint: CGPoint(x: o.startPoint.x + 24, y: o.startPoint.y + 24),
-            endPoint: CGPoint(x: o.endPoint.x + 24, y: o.endPoint.y + 24),
-            color: o.color, lineWidth: o.lineWidth, text: o.text,
-            counterNumber: o.counterNumber + 1, fontSize: o.fontSize,
-            rotationAngle: o.rotationAngle, scaleFactor: o.scaleFactor
-        )
-        model.items.append(copy)
-        model.markModified()
-        selectedItemID = copy.id
-    }
-    
-    private func deleteSelected() {
-        guard let idx = selectedItemIndex else { return }
-        model.items.remove(at: idx)
-        model.markModified()
-        selectedItemID = nil
-    }
-    
     private func autoRedactSensitiveData() {
         Task { @MainActor in
             let regions = await TextRecognizer.findSensitiveRegions(in: capturedItem.image)
             guard !regions.isEmpty else { return }
             
-            model.pushExplicitUndoCheckpoint()
-            
-            for rect in regions {
-                let blurItem = AnnotationItem(
-                    tool: .blur,
-                    startPoint: CGPoint(x: rect.minX, y: rect.minY),
-                    endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
-                )
-                model.items.append(blurItem)
+            model.commitItemsMutation { list in
+                for rect in regions {
+                    list.append(AnnotationItem(
+                        tool: .blur,
+                        startPoint: CGPoint(x: rect.minX, y: rect.minY),
+                        endPoint: CGPoint(x: rect.maxX, y: rect.maxY)
+                    ))
+                }
             }
-            model.markModified()
         }
     }
     
@@ -117,16 +67,19 @@ public struct AnnotationEditorWindowView: View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 EditorToolbarView(
-                    selectedTool: $selectedTool,
-                    selectedColor: $selectedColor,
-                    lineWidth: $lineWidth,
-                    textInputString: $textInputString,
+                    selectedTool: Binding(
+                        get: { model.selectedTool },
+                        set: { model.selectTool($0) }
+                    ),
+                    selectedColor: $model.selectedColor,
+                    lineWidth: $model.lineWidth,
+                    textInputString: $model.textInputString,
                     zoomPercent: Int((zoom * 100).rounded()),
                     isFitMode: fitMode,
                     canUndo: model.canUndo,
                     canRedo: model.canRedo,
-                    onUndo: undo,
-                    onRedo: redo,
+                    onUndo: { model.undo() },
+                    onRedo: { model.redo() },
                     onZoomIn: { setZoom(zoom * 1.25) },
                     onZoomOut: { setZoom(zoom / 1.25) },
                     onFit: { fitMode = true },
@@ -141,16 +94,19 @@ public struct AnnotationEditorWindowView: View {
             Divider()
             
             EditorSelectedItemBar(
-                item: selectedItemIndex.map { model.items[$0] },
-                onTextChange: { val in if let idx = selectedItemIndex { model.items[idx].text = val; model.markModified() } },
-                onFontSizeChange: { val in if let idx = selectedItemIndex { model.items[idx].fontSize = val; model.markModified() } },
-                onLineWidthChange: { val in if let idx = selectedItemIndex { model.items[idx].lineWidth = val; model.markModified() } },
-                onCounterChange: { val in if let idx = selectedItemIndex { model.items[idx].counterNumber = val; model.markModified() } },
-                onSetAngle: { val in if let idx = selectedItemIndex { model.items[idx].setAngle(val); model.markModified() } },
-                onColorChange: { val in if let idx = selectedItemIndex { model.items[idx].color = val; model.markModified() } },
-                onDuplicate: duplicateSelected,
-                onDelete: deleteSelected,
-                onDeselect: { selectedItemID = nil }
+                item: model.selectedItem,
+                focusTextField: model.shouldFocusTextEditor,
+                onTextChange: { val in model.liveUpdateSelected { $0.text = val } },
+                onFontSizeChange: { val in model.updateSelected { $0.fontSize = val } },
+                onLineWidthChange: { val in model.updateSelected { $0.lineWidth = val } },
+                onCounterChange: { val in model.updateSelected { $0.counterNumber = val } },
+                onSetAngle: { val in model.liveUpdateSelected { $0.setAngle(val) } },
+                onColorChange: { val in model.updateSelected { $0.color = val } },
+                onScaleChange: { val in model.liveUpdateSelected { $0.scaleFactor = val } },
+                onDuplicate: { model.duplicateSelected() },
+                onDelete: { model.deleteSelected() },
+                onDeselect: { model.selectItem(id: nil) },
+                onTextFocusConsumed: { model.consumeTextFocusRequest() }
             )
             
             Divider()
@@ -171,12 +127,8 @@ public struct AnnotationEditorWindowView: View {
                                 .resizable()
                                 .frame(width: displayW, height: displayH)
                             AnnotationCanvasView(
-                                items: $model.items,
-                                selectedItemID: $selectedItemID,
-                                currentTool: selectedTool,
-                                currentColor: selectedColor,
-                                lineWidth: lineWidth,
-                                textInputString: textInputString,
+                                model: model,
+                                baseImage: capturedItem.image,
                                 zoomScale: z,
                                 blurredImage: blurredImage
                             )
@@ -210,9 +162,9 @@ public struct AnnotationEditorWindowView: View {
                     backdropShadowRadius: $model.backdropShadowRadius,
                     addShadow: $model.addShadow,
                     onClose: onClose,
-                    onCopy: { ImageExporter.copyToClipboard(finalImage()) },
+                    onCopy: { ImageExporter.copyToClipboard(model.renderFinalImage()) },
                     onSaveToHistory: {
-                        let img = finalImage()
+                        let img = model.renderFinalImage()
                         if let custom = onSaveToHistory {
                             custom(img)
                         } else {
@@ -221,7 +173,7 @@ public struct AnnotationEditorWindowView: View {
                         model.markSaved()
                     },
                     onSave: {
-                        onSave(finalImage())
+                        onSave(model.renderFinalImage())
                     }
                 )
                 .padding(.horizontal, 14)
@@ -232,27 +184,18 @@ public struct AnnotationEditorWindowView: View {
         }
         .frame(minWidth: 640, minHeight: 460)
         .task {
-            await Task.yield()
-            blurredImage = BlurFilter.makeBlurred(capturedItem.image)
+            blurredImage = await BlurFilter.makeBlurredAsync(capturedItem.image)
             model.finishInitialLoading()
         }
-        .onChange(of: model.items) { old, _ in
-            model.recordStateChange(oldItems: old)
-        }
-        .onChange(of: model.showBackdrop) { _, _ in model.markModified() }
-        .onChange(of: model.backdropPreset) { _, _ in model.markModified() }
-        .onChange(of: model.backdropPadding) { _, _ in model.markModified() }
-        .onChange(of: model.addShadow) { _, _ in model.markModified() }
-        .onEditorDeleteKey(
-            onDelete: deleteSelected,
-            onEscape: { selectedItemID = nil }
+        .editorKeyHandler(
+            onDelete: { model.deleteSelected() },
+            onEscape: { model.selectItem(id: nil) },
+            onSelectTool: { model.selectTool($0) }
         )
         .editorKeyboardShortcuts(
-            onUndo: undo,
-            onRedo: redo,
-            onDuplicate: duplicateSelected,
-            onDelete: deleteSelected,
-            onDeselect: { selectedItemID = nil },
+            onUndo: { model.undo() },
+            onRedo: { model.redo() },
+            onDuplicate: { model.duplicateSelected() },
             onFit: { fitMode = true },
             onZoomIn: { setZoom(zoom * 1.25) },
             onZoomOut: { setZoom(zoom / 1.25) }

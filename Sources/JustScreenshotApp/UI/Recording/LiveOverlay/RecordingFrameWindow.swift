@@ -1,9 +1,10 @@
 import Cocoa
+import QuartzCore
 
-/// Прозрачное окно-рамка поверх выбранной области экрана, показывающее границы записи
+/// Прозрачное окно-рамка поверх выбранной области экрана, показывающее границы записи.
+/// Рамка — статичный CAShapeLayer; ripples/keystrokes перерисовываются только в своей зоне.
 public final class RecordingFrameWindow: NSWindow {
     public init(screenRect: CGRect) {
-        // screenRect здесь в экранных координатах AppKit (origin внизу экрана)
         super.init(
             contentRect: screenRect,
             styleMask: [.borderless],
@@ -11,15 +12,16 @@ public final class RecordingFrameWindow: NSWindow {
             defer: false
         )
         
-        self.level = .floating
-        self.isOpaque = false
-        self.backgroundColor = .clear
-        self.hasShadow = false
-        self.ignoresMouseEvents = true // Клики проходят сквозь рамку в приложения под ней
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        title = JustScreenshotWindowTitles.recordingFrame
+        level = .floating
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        animationBehavior = .none
         
-        let borderView = RecordingBorderNSView(frame: NSRect(origin: .zero, size: screenRect.size))
-        self.contentView = borderView
+        contentView = RecordingBorderNSView(frame: NSRect(origin: .zero, size: screenRect.size))
     }
 }
 
@@ -30,10 +32,13 @@ private final class RecordingBorderNSView: NSView {
     private var monitor: Any?
     private var keyMonitor: Any?
     private var animationTask: Task<Void, Never>?
+    private let borderLayer = CAShapeLayer()
+    private let cornerLayer = CAShapeLayer()
     
     override init(frame: NSRect) {
         super.init(frame: frame)
-        self.wantsLayer = true
+        wantsLayer = true
+        setupBorderLayers()
         setupClickMonitoring()
         setupKeyboardMonitoring()
     }
@@ -49,15 +54,62 @@ private final class RecordingBorderNSView: NSView {
         }
     }
     
+    override func layout() {
+        super.layout()
+        updateBorderPaths()
+    }
+    
+    private func setupBorderLayers() {
+        guard let root = layer else { return }
+        root.backgroundColor = NSColor.clear.cgColor
+        
+        borderLayer.fillColor = nil
+        borderLayer.strokeColor = CGColor(red: 1.0, green: 0.22, blue: 0.22, alpha: 0.9)
+        borderLayer.lineWidth = 3
+        borderLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        root.addSublayer(borderLayer)
+        
+        cornerLayer.fillColor = nil
+        cornerLayer.strokeColor = CGColor(red: 1.0, green: 0.1, blue: 0.1, alpha: 1)
+        cornerLayer.lineWidth = 4
+        cornerLayer.lineCap = .round
+        cornerLayer.lineJoin = .round
+        cornerLayer.contentsScale = NSScreen.main?.backingScaleFactor ?? 2
+        root.addSublayer(cornerLayer)
+        
+        updateBorderPaths()
+    }
+    
+    private func updateBorderPaths() {
+        let inset = bounds.insetBy(dx: 1.5, dy: 1.5)
+        borderLayer.path = CGPath(roundedRect: inset, cornerWidth: 6, cornerHeight: 6, transform: nil)
+        borderLayer.frame = bounds
+        
+        let cornerLen: CGFloat = 16
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: bounds.minX + 1.5, y: bounds.minY + cornerLen))
+        path.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.minY + 1.5))
+        path.addLine(to: CGPoint(x: bounds.minX + cornerLen, y: bounds.minY + 1.5))
+        
+        path.move(to: CGPoint(x: bounds.maxX - cornerLen, y: bounds.minY + 1.5))
+        path.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.minY + 1.5))
+        path.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.minY + cornerLen))
+        
+        path.move(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.maxY - cornerLen))
+        path.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.maxY - 1.5))
+        path.addLine(to: CGPoint(x: bounds.maxX - cornerLen, y: bounds.maxY - 1.5))
+        
+        path.move(to: CGPoint(x: bounds.minX + cornerLen, y: bounds.maxY - 1.5))
+        path.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.maxY - 1.5))
+        path.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.maxY - cornerLen))
+        
+        cornerLayer.path = path
+        cornerLayer.frame = bounds
+    }
+    
     private func cleanUp() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
-        }
-        if let keyMonitor {
-            NSEvent.removeMonitor(keyMonitor)
-            self.keyMonitor = nil
-        }
+        if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor); self.keyMonitor = nil }
         animationTask?.cancel()
         animationTask = nil
     }
@@ -68,9 +120,10 @@ private final class RecordingBorderNSView: NSView {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 guard let text = KeystrokeFormatter.format(event: event) else { return }
+                self.invalidateEffectsRegion()
                 self.currentKeystroke = RecordingOverlayRenderer.KeystrokeInfo(text: text, startTime: Date())
                 self.startAnimationIfNeeded()
-                self.needsDisplay = true
+                self.invalidateEffectsRegion()
             }
         }
     }
@@ -79,10 +132,8 @@ private final class RecordingBorderNSView: NSView {
         monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             Task { @MainActor [weak self] in
                 guard let self, let win = self.window else { return }
-                let clickScreenLoc = event.locationInWindow // В экранных координатах AppKit
+                let clickScreenLoc = event.locationInWindow
                 let windowFrame = win.frame
-                
-                // Проверяем, произошел ли клик внутри записываемой рамки
                 if windowFrame.contains(clickScreenLoc) {
                     let localX = clickScreenLoc.x - windowFrame.origin.x
                     let localY = clickScreenLoc.y - windowFrame.origin.y
@@ -95,35 +146,53 @@ private final class RecordingBorderNSView: NSView {
     private func addRipple(at point: CGPoint) {
         ripples.append(RecordingOverlayRenderer.ClickRipple(center: point, startTime: Date()))
         startAnimationIfNeeded()
-        needsDisplay = true
+        setNeedsDisplay(rippleDirtyRect(around: point))
     }
     
     private func startAnimationIfNeeded() {
-        if animationTask == nil {
-            animationTask = Task { @MainActor [weak self] in
-                while let self, !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 16_000_000) // ~60 fps
-                    let now = Date()
-                    self.ripples.removeAll { now.timeIntervalSince($0.startTime) > 0.45 }
-                    
-                    if let ks = self.currentKeystroke, now.timeIntervalSince(ks.startTime) > 1.2 {
-                        self.currentKeystroke = nil
-                    }
-                    
-                    self.needsDisplay = true
-                    if self.ripples.isEmpty && self.currentKeystroke == nil {
-                        self.animationTask = nil
-                        break
-                    }
+        guard animationTask == nil else { return }
+        animationTask = Task { @MainActor [weak self] in
+            while let self, !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 16_000_000)
+                let now = Date()
+                let oldRipples = self.ripples
+                self.ripples.removeAll { now.timeIntervalSince($0.startTime) > 0.45 }
+                
+                if let ks = self.currentKeystroke, now.timeIntervalSince(ks.startTime) > 1.2 {
+                    self.invalidateEffectsRegion()
+                    self.currentKeystroke = nil
+                }
+                
+                for ripple in oldRipples {
+                    self.setNeedsDisplay(self.rippleDirtyRect(around: ripple.center))
+                }
+                if self.currentKeystroke != nil {
+                    self.invalidateEffectsRegion()
+                }
+                
+                if self.ripples.isEmpty && self.currentKeystroke == nil {
+                    self.animationTask = nil
+                    break
                 }
             }
         }
     }
     
+    private func rippleDirtyRect(around point: CGPoint) -> NSRect {
+        let r: CGFloat = 40
+        return NSRect(x: point.x - r, y: point.y - r, width: r * 2, height: r * 2)
+            .intersection(bounds.insetBy(dx: -2, dy: -2))
+    }
+    
+    private func invalidateEffectsRegion() {
+        // Нижняя зона бейджа клавиш + центр
+        let badge = NSRect(x: 0, y: 0, width: bounds.width, height: min(80, bounds.height))
+        setNeedsDisplay(badge)
+    }
+    
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        RecordingOverlayRenderer.drawBorder(bounds: bounds, in: context)
+        // Рамка рисуется слоями; здесь только динамические эффекты.
         RecordingOverlayRenderer.drawRipples(ripples, now: Date(), in: context)
         
         if let ks = currentKeystroke {

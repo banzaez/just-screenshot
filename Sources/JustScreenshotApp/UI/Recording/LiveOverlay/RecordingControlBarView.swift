@@ -8,8 +8,6 @@ public struct RecordingControlBarView: View {
     var onStop: () -> Void
     var onCancel: () -> Void
     
-    @State private var isHovering = false
-    
     public init(
         windowManager: AppWindowManager = .shared,
         onPauseResume: @escaping () -> Void,
@@ -29,14 +27,12 @@ public struct RecordingControlBarView: View {
         let seconds = total % 60
         if hours > 0 {
             return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
         }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
     
     public var body: some View {
         HStack(spacing: 12) {
-            // Drag handle / Индикатор записи
             HStack(spacing: 8) {
                 Circle()
                     .fill(windowManager.isRecordingPaused ? Color.orange : Color.red)
@@ -45,10 +41,12 @@ public struct RecordingControlBarView: View {
                         Circle()
                             .stroke(Color.white.opacity(0.3), lineWidth: 1)
                     )
+                    .accessibilityHidden(true)
                 
                 Text(formattedTime)
                     .font(.system(size: 13, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white)
+                    .accessibilityLabel(L("recording.bar.timer_a11y", formattedTime))
                 
                 if windowManager.isRecordingPaused {
                     Text(L("recording.bar.pause_badge"))
@@ -61,12 +59,13 @@ public struct RecordingControlBarView: View {
                 }
             }
             .padding(.leading, 4)
+            .accessibilityElement(children: .combine)
             
             Divider()
                 .frame(height: 16)
                 .background(Color.white.opacity(0.2))
+                .accessibilityHidden(true)
             
-            // Кнопка Пауза / Возобновить
             Button(action: onPauseResume) {
                 Image(systemName: windowManager.isRecordingPaused ? "play.fill" : "pause.fill")
                     .font(.system(size: 12, weight: .bold))
@@ -77,8 +76,8 @@ public struct RecordingControlBarView: View {
             }
             .buttonStyle(.plain)
             .help(windowManager.isRecordingPaused ? L("recording.bar.resume_help") : L("recording.bar.pause_help"))
+            .accessibilityLabel(windowManager.isRecordingPaused ? L("recording.bar.resume_help") : L("recording.bar.pause_help"))
             
-            // Кнопка Стоп (Завершить и сохранить)
             Button(action: onStop) {
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3)
@@ -95,8 +94,8 @@ public struct RecordingControlBarView: View {
             }
             .buttonStyle(.plain)
             .help(L("recording.bar.done_help"))
+            .accessibilityLabel(L("recording.bar.done_help"))
             
-            // Кнопка Отмена (Удалить и отменить запись)
             Button(action: onCancel) {
                 Image(systemName: "trash")
                     .font(.system(size: 11, weight: .medium))
@@ -107,6 +106,7 @@ public struct RecordingControlBarView: View {
             }
             .buttonStyle(.plain)
             .help(L("recording.bar.cancel_help"))
+            .accessibilityLabel(L("recording.bar.cancel_help"))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

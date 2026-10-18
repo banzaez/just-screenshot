@@ -61,11 +61,12 @@ public struct VideoEditorWindowView: View {
                     Button {
                         model.seek(to: model.currentTime - 1.0)
                     } label: {
-                        Image(systemName: "gobackward.10")
+                        Image(systemName: "gobackward")
                             .font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
                     .help(L("video_editor.back_1s"))
+                    .accessibilityLabel(L("video_editor.back_1s"))
                     
                     Button {
                         model.togglePlayPause()
@@ -77,15 +78,17 @@ public struct VideoEditorWindowView: View {
                     .buttonStyle(.plain)
                     .keyboardShortcut(.space, modifiers: [])
                     .help(L("video_editor.play_pause"))
+                    .accessibilityLabel(L("video_editor.play_pause"))
                     
                     Button {
                         model.seek(to: model.currentTime + 1.0)
                     } label: {
-                        Image(systemName: "goforward.10")
+                        Image(systemName: "goforward")
                             .font(.system(size: 14))
                     }
                     .buttonStyle(.plain)
                     .help(L("video_editor.forward_1s"))
+                    .accessibilityLabel(L("video_editor.forward_1s"))
                     
                     Spacer()
                     
@@ -99,7 +102,7 @@ public struct VideoEditorWindowView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .onEditorDeleteKey(
+        .editorKeyHandler(
             onDelete: {
                 if let id = model.selectedAnnotationID {
                     model.removeAnnotation(id: id)

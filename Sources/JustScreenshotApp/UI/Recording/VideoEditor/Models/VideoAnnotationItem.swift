@@ -15,7 +15,7 @@ public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {
         id: UUID = UUID(),
         type: VideoAnnotationType = .rect,
         rect: CGRect? = nil,
-        text: String = "Текст",
+        text: String = "",
         color: Color = .red,
         lineWidth: CGFloat = 3,
         fontSize: CGFloat = 20,

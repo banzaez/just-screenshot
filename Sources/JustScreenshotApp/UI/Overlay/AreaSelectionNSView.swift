@@ -1,14 +1,16 @@
 import Cocoa
 import ScreenCaptureKit
+import QuartzCore
 
-/// Интерактивное NSView отображения затемнения, окна hover и рамки выделения
+/// Интерактивный оверлей: затемнение статичным слоем, прицел/рамка — отдельными CALayer.
 final class AreaSelectionNSView: NSView {
-    private let screen: NSScreen
-    private let mode: OverlayMode
+    private var screen: NSScreen
+    private var mode: OverlayMode
     private var visibleWindows: [SCWindow]
-    private let onCompleteRect: (CGRect) -> Void
-    private let onCompleteWindow: (SCWindow) -> Void
-    private let onCancel: () -> Void
+    private var onCompleteRect: (CGRect) -> Void
+    private var onCompleteWindow: (SCWindow) -> Void
+    private var onCancel: () -> Void
+    private var onNeedBackgroundSample: (() -> Void)?
     
     private var isDragging = false
     private var startPoint: CGPoint?
@@ -17,8 +19,19 @@ final class AreaSelectionNSView: NSView {
     private var trackingArea: NSTrackingArea?
     
     private var sampler: ScreenPixelSampler
-    /// Области, уже нарисованные на экране. Перерисовывается только их разница с новым кадром.
-    private var paintedRegions: [CGRect] = []
+    private var hasSampler = false
+    
+    private let dimLayer = CALayer()
+    private let maskLayer = CAShapeLayer()
+    private let borderLayer = CAShapeLayer()
+    private let crosshairLayer = CAShapeLayer()
+    private let badgeBackgroundLayer = CAShapeLayer()
+    private let badgeTextLayer = CATextLayer()
+    private let tipBackgroundLayer = CAShapeLayer()
+    private let tipTextLayer = CATextLayer()
+    
+    private let crosshairArmLength: CGFloat = 48
+    private let crosshairGap: CGFloat = 6
     
     init(
         frame: NSRect,
@@ -28,64 +41,208 @@ final class AreaSelectionNSView: NSView {
         backgroundImage: CGImage? = nil,
         onCompleteRect: @escaping (CGRect) -> Void,
         onCompleteWindow: @escaping (SCWindow) -> Void,
-        onCancel: @escaping () -> Void
+        onCancel: @escaping () -> Void,
+        onNeedBackgroundSample: (() -> Void)? = nil
     ) {
         self.screen = screen
         self.mode = mode
-        self.visibleWindows = visibleWindows
+        self.visibleWindows = Self.sortedFrontToBack(visibleWindows)
         self.sampler = ScreenPixelSampler(image: backgroundImage)
+        self.hasSampler = backgroundImage != nil
         self.onCompleteRect = onCompleteRect
         self.onCompleteWindow = onCompleteWindow
         self.onCancel = onCancel
+        self.onNeedBackgroundSample = onNeedBackgroundSample
         super.init(frame: frame)
-        // Без layer-backed view грязные прямоугольники реально остаются полосками,
-        // а не перезаливают весь экран на каждый mouseMoved.
-        self.wantsLayer = false
         
-        // Показываем прицел сразу, если курсор мыши находится на этом экране
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        setupLayers()
+        
         let mouseLoc = NSEvent.mouseLocation
         if NSMouseInRect(mouseLoc, screen.frame, false) {
-            let windowPoint = NSPoint(x: mouseLoc.x - screen.frame.origin.x, y: mouseLoc.y - screen.frame.origin.y)
-            self.currentPoint = windowPoint
-        } else {
-            self.currentPoint = nil
+            currentPoint = NSPoint(
+                x: mouseLoc.x - screen.frame.origin.x,
+                y: mouseLoc.y - screen.frame.origin.y
+            )
         }
-        paintedRegions = currentDamageRegions()
-    }
-    
-    func updateSampler(_ sampler: ScreenPixelSampler) {
-        self.sampler = sampler
-        guard mode != .windowOnly, !isDragging else { return }
-        syncPaint()
-    }
-    
-    func updateVisibleWindows(_ windows: [SCWindow]) {
-        self.visibleWindows = windows
-        guard mode == .windowOnly else { return }
-        if let loc = currentPoint {
-            hoveredWindow = windowUnderCursor(at: loc)
-        }
-        syncPaint()
-    }
-    
-    func updateBackgroundImage(_ image: CGImage) {
-        sampler = ScreenPixelSampler(image: image)
-        guard mode != .windowOnly, !isDragging else { return }
-        syncPaint()
+        refreshTip()
+        syncLayers()
     }
     
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
     
+    func reconfigure(
+        screen: NSScreen,
+        mode: OverlayMode,
+        visibleWindows: [SCWindow],
+        backgroundImage: CGImage? = nil,
+        onCompleteRect: @escaping (CGRect) -> Void,
+        onCompleteWindow: @escaping (SCWindow) -> Void,
+        onCancel: @escaping () -> Void,
+        onNeedBackgroundSample: (() -> Void)? = nil
+    ) {
+        self.screen = screen
+        self.mode = mode
+        self.visibleWindows = Self.sortedFrontToBack(visibleWindows)
+        self.sampler = ScreenPixelSampler(image: backgroundImage)
+        self.hasSampler = backgroundImage != nil
+        self.onCompleteRect = onCompleteRect
+        self.onCompleteWindow = onCompleteWindow
+        self.onCancel = onCancel
+        self.onNeedBackgroundSample = onNeedBackgroundSample
+        isDragging = false
+        startPoint = nil
+        hoveredWindow = nil
+        
+        let mouseLoc = NSEvent.mouseLocation
+        if NSMouseInRect(mouseLoc, screen.frame, false) {
+            currentPoint = NSPoint(
+                x: mouseLoc.x - screen.frame.origin.x,
+                y: mouseLoc.y - screen.frame.origin.y
+            )
+            if mode == .windowOnly {
+                hoveredWindow = windowUnderCursor(at: currentPoint!)
+            }
+        } else {
+            currentPoint = nil
+        }
+        
+        applyContentsScale()
+        refreshTip()
+        syncLayers()
+        updateTrackingAreas()
+        requestSamplerIfNeeded()
+    }
+    
+    func updateSampler(_ sampler: ScreenPixelSampler) {
+        self.sampler = sampler
+        hasSampler = true
+        guard mode != .windowOnly, !isDragging else { return }
+        syncLayers()
+    }
+    
+    func updateVisibleWindows(_ windows: [SCWindow]) {
+        visibleWindows = Self.sortedFrontToBack(windows)
+        guard mode == .windowOnly else { return }
+        if let loc = currentPoint {
+            hoveredWindow = windowUnderCursor(at: loc)
+        }
+        syncLayers()
+    }
+    
+    func updateBackgroundImage(_ image: CGImage) {
+        updateSampler(ScreenPixelSampler(image: image))
+    }
+    
+    func resetOverlayState() {
+        isHidden = false
+        isDragging = false
+        startPoint = nil
+        currentPoint = nil
+        hoveredWindow = nil
+        sampler = ScreenPixelSampler(image: nil)
+        hasSampler = false
+        onNeedBackgroundSample = nil
+        onCompleteRect = { _ in }
+        onCompleteWindow = { _ in }
+        onCancel = {}
+        syncLayers()
+    }
+    
+    // MARK: - Layer setup
+    
+    private func setupLayers() {
+        guard let root = layer else { return }
+        root.backgroundColor = NSColor.clear.cgColor
+        
+        dimLayer.backgroundColor = CGColor(gray: 0, alpha: 0.35)
+        dimLayer.frame = bounds
+        maskLayer.fillColor = NSColor.white.cgColor
+        maskLayer.fillRule = .evenOdd
+        dimLayer.mask = maskLayer
+        root.addSublayer(dimLayer)
+        
+        borderLayer.fillColor = nil
+        borderLayer.lineWidth = 2
+        borderLayer.lineJoin = .round
+        root.addSublayer(borderLayer)
+        
+        crosshairLayer.strokeColor = CGColor(gray: 1, alpha: 0.45)
+        crosshairLayer.fillColor = nil
+        crosshairLayer.lineWidth = 1
+        crosshairLayer.lineDashPattern = [4, 4]
+        root.addSublayer(crosshairLayer)
+        
+        badgeBackgroundLayer.fillColor = CGColor(gray: 0.08, alpha: 0.92)
+        root.addSublayer(badgeBackgroundLayer)
+        
+        configureTextLayer(badgeTextLayer, font: .monospacedSystemFont(ofSize: 11, weight: .bold), size: 11)
+        root.addSublayer(badgeTextLayer)
+        
+        tipBackgroundLayer.fillColor = CGColor(gray: 0.1, alpha: 0.88)
+        root.addSublayer(tipBackgroundLayer)
+        
+        configureTextLayer(tipTextLayer, font: .systemFont(ofSize: 13, weight: .medium), size: 13)
+        root.addSublayer(tipTextLayer)
+        
+        applyContentsScale()
+    }
+    
+    private func configureTextLayer(_ layer: CATextLayer, font: NSFont, size: CGFloat) {
+        layer.contentsScale = screen.backingScaleFactor
+        layer.foregroundColor = NSColor.white.cgColor
+        layer.font = font
+        layer.fontSize = size
+        layer.alignmentMode = .left
+        layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+    }
+    
+    private func applyContentsScale() {
+        let scale = screen.backingScaleFactor
+        for layer in [dimLayer, maskLayer, borderLayer, crosshairLayer, badgeBackgroundLayer, tipBackgroundLayer] {
+            layer.contentsScale = scale
+            layer.actions = [
+                "bounds": NSNull(),
+                "position": NSNull(),
+                "path": NSNull(),
+                "opacity": NSNull(),
+                "hidden": NSNull()
+            ]
+        }
+        badgeTextLayer.contentsScale = scale
+        tipTextLayer.contentsScale = scale
+    }
+    
+    override func layout() {
+        super.layout()
+        dimLayer.frame = bounds
+        refreshTip()
+        syncLayers()
+    }
+    
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        applyContentsScale()
+    }
+    
+    // MARK: - Tracking
+    
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        if let trackingArea = trackingArea {
+        if let trackingArea {
             removeTrackingArea(trackingArea)
         }
-        let options: NSTrackingArea.Options = [.activeAlways, .mouseMoved, .mouseEnteredAndExited]
-        trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
-        addTrackingArea(trackingArea!)
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        trackingArea = area
+        addTrackingArea(area)
     }
     
     override func resetCursorRects() {
@@ -94,15 +251,12 @@ final class AreaSelectionNSView: NSView {
     }
     
     override var acceptsFirstResponder: Bool { true }
-
-    /// Первый клик по ещё неактивному окну сразу начинает выделение, а не только активирует приложение.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
-        if window != nil {
-            window?.makeFirstResponder(self)
-        }
+        window?.makeFirstResponder(self)
+        requestSamplerIfNeeded()
     }
     
     override func cancelOperation(_ sender: Any?) {
@@ -110,7 +264,7 @@ final class AreaSelectionNSView: NSView {
     }
     
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { // ESC
+        if event.keyCode == 53 {
             onCancel()
         } else {
             super.keyDown(with: event)
@@ -120,10 +274,8 @@ final class AreaSelectionNSView: NSView {
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         
-        // Быстрое копирование HEX-кода при зажатой клавише Option (⌥)
-        if event.modifierFlags.contains(.option) {
-            let screenHeight = bounds.height
-            let screenPoint = CGPoint(x: loc.x, y: screenHeight - loc.y)
+        if event.modifierFlags.contains(.option), mode != .windowOnly {
+            let screenPoint = CGPoint(x: loc.x, y: bounds.height - loc.y)
             if let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
                 ImageExporter.copyText(hex)
                 NSSound(named: "Tink")?.play()
@@ -135,7 +287,7 @@ final class AreaSelectionNSView: NSView {
         startPoint = loc
         currentPoint = loc
         isDragging = false
-        syncPaint()
+        syncLayers()
     }
     
     override func mouseDragged(with event: NSEvent) {
@@ -145,21 +297,16 @@ final class AreaSelectionNSView: NSView {
             return
         }
         currentPoint = loc
-        
-        if let start = startPoint {
-            let dist = hypot(loc.x - start.x, loc.y - start.y)
-            if dist > 3 {
-                isDragging = true
-                hoveredWindow = nil
-            }
+        if let start = startPoint, hypot(loc.x - start.x, loc.y - start.y) > 3 {
+            isDragging = true
+            hoveredWindow = nil
         }
-        syncPaint()
+        syncLayers()
     }
     
     override func mouseUp(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
         
-        // 1. Режим окна (windowOnly)
         if mode == .windowOnly {
             if let hovered = hoveredWindow {
                 startPoint = nil
@@ -171,31 +318,16 @@ final class AreaSelectionNSView: NSView {
             return
         }
         
-        // 2. Режим произвольной области (areaOnly / recordingArea)
         if isDragging, let start = startPoint {
-            let rect = CGRect(
-                x: min(start.x, loc.x),
-                y: min(start.y, loc.y),
-                width: abs(start.x - loc.x),
-                height: abs(start.y - loc.y)
-            )
-            
+            let rect = selectionRect(from: start, to: loc)
             startPoint = nil
             currentPoint = nil
             isDragging = false
             
             if rect.width > 5 && rect.height > 5 {
-                let globalAppKitX = screen.frame.origin.x + rect.origin.x
-                let globalAppKitY = screen.frame.origin.y + rect.origin.y
-                let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
-                let scRect = CGRect(
-                    x: globalAppKitX,
-                    y: primaryHeight - globalAppKitY - rect.height,
-                    width: rect.width,
-                    height: rect.height
-                )
-                self.isHidden = true
-                self.window?.alphaValue = 0.0
+                let scRect = quartzRect(fromViewRect: rect)
+                isHidden = true
+                window?.alphaValue = 0
                 CATransaction.flush()
                 onCompleteRect(scRect)
                 return
@@ -210,6 +342,7 @@ final class AreaSelectionNSView: NSView {
     
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        requestSamplerIfNeeded()
         moveCursor(to: convert(event.locationInWindow, from: nil))
     }
     
@@ -218,50 +351,91 @@ final class AreaSelectionNSView: NSView {
         guard !isDragging else { return }
         currentPoint = nil
         hoveredWindow = nil
-        syncPaint()
+        syncLayers()
     }
     
     override func mouseMoved(with event: NSEvent) {
         moveCursor(to: convert(event.locationInWindow, from: nil))
     }
-
+    
     private func moveCursor(to loc: CGPoint) {
+        requestSamplerIfNeeded()
+        
         if mode == .windowOnly {
             let next = windowUnderCursor(at: loc)
-            let sameWindow = next?.windowID == hoveredWindow?.windowID
+            let same = next?.windowID == hoveredWindow?.windowID
             currentPoint = loc
-            guard !sameWindow else { return }
+            guard !same else { return }
             hoveredWindow = next
-            syncPaint()
+            syncLayers()
             return
         }
+        
         if let currentPoint, abs(currentPoint.x - loc.x) < 0.5, abs(currentPoint.y - loc.y) < 0.5 {
             return
         }
         currentPoint = loc
-        syncPaint()
+        syncLayers()
     }
-
+    
+    private func requestSamplerIfNeeded() {
+        guard mode == .areaOnly, !hasSampler else { return }
+        onNeedBackgroundSample?()
+    }
+    
+    // MARK: - Geometry
+    
+    private static func sortedFrontToBack(_ windows: [SCWindow]) -> [SCWindow] {
+        windows.enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.windowLayer != rhs.element.windowLayer {
+                    return lhs.element.windowLayer > rhs.element.windowLayer
+                }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+    
+    private var primaryDisplayHeight: CGFloat {
+        NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+            ?? NSScreen.main?.frame.height
+            ?? bounds.height
+    }
+    
     private func windowUnderCursor(at loc: CGPoint) -> SCWindow? {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? bounds.height
-        let mouse = CGPoint(
-            x: screen.frame.origin.x + loc.x,
-            y: primaryHeight - (screen.frame.origin.y + loc.y)
-        )
+        let mouse = quartzPoint(fromViewPoint: loc)
         return visibleWindows.first { $0.frame.contains(mouse) }
     }
-
-    private func appKitRect(for winFrame: CGRect) -> CGRect {
-        let primaryHeight = NSScreen.screens.first?.frame.height ?? bounds.height
-        let appKitGlobalY = primaryHeight - winFrame.origin.y - winFrame.height
+    
+    private func quartzPoint(fromViewPoint loc: CGPoint) -> CGPoint {
+        let globalAppKit = CGPoint(
+            x: screen.frame.origin.x + loc.x,
+            y: screen.frame.origin.y + loc.y
+        )
+        return CGPoint(x: globalAppKit.x, y: primaryDisplayHeight - globalAppKit.y)
+    }
+    
+    private func appKitRect(for quartzFrame: CGRect) -> CGRect {
+        let globalAppKitY = primaryDisplayHeight - quartzFrame.origin.y - quartzFrame.height
         return CGRect(
-            x: winFrame.origin.x - screen.frame.origin.x,
-            y: appKitGlobalY - screen.frame.origin.y,
-            width: winFrame.width,
-            height: winFrame.height
+            x: quartzFrame.origin.x - screen.frame.origin.x,
+            y: globalAppKitY - screen.frame.origin.y,
+            width: quartzFrame.width,
+            height: quartzFrame.height
         )
     }
-
+    
+    private func quartzRect(fromViewRect rect: CGRect) -> CGRect {
+        let globalAppKitX = screen.frame.origin.x + rect.origin.x
+        let globalAppKitY = screen.frame.origin.y + rect.origin.y
+        return CGRect(
+            x: globalAppKitX,
+            y: primaryDisplayHeight - globalAppKitY - rect.height,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+    
     private func selectionRect(from start: CGPoint, to current: CGPoint) -> CGRect {
         CGRect(
             x: min(start.x, current.x),
@@ -270,118 +444,177 @@ final class AreaSelectionNSView: NSView {
             height: abs(start.y - current.y)
         )
     }
-
-    private func syncPaint() {
-        let next = currentDamageRegions()
-        guard next != paintedRegions else { return }
-        for rect in paintedRegions where !rect.isEmpty {
-            setNeedsDisplay(rect)
-        }
-        for rect in next where !rect.isEmpty {
-            setNeedsDisplay(rect)
-        }
-        paintedRegions = next
-    }
-
-    private func currentDamageRegions() -> [CGRect] {
-        if mode == .windowOnly, let hovered = hoveredWindow {
-            let rect = appKitRect(for: hovered.frame)
-            let title = hovered.owningApplication?.applicationName ?? (hovered.title ?? L("overlay.window_fallback"))
-            let badge = AreaOverlayBadgeRenderer.badgeRect(for: L("overlay.window_badge", title), near: rect)
-            return [rect.insetBy(dx: -4, dy: -4), badge.insetBy(dx: -2, dy: -2)]
-        }
-        if isDragging, let start = startPoint, let current = currentPoint {
-            let rect = selectionRect(from: start, to: current)
-            let prefix = mode == .recordingArea ? "🎥 Запись: " : ""
-            let badge = AreaOverlayBadgeRenderer.badgeRect(
-                for: "\(prefix)\(Int(rect.width)) × \(Int(rect.height)) px",
-                near: rect
-            )
-            return [rect.insetBy(dx: -3, dy: -3), badge.insetBy(dx: -2, dy: -2)]
-        }
-        guard mode != .windowOnly, let current = currentPoint else { return [] }
-        let badge = AreaOverlayBadgeRenderer.crosshairBadgeRect(point: current, bounds: bounds, sampler: sampler)
-        return [
-            CGRect(x: 0, y: current.y - 2, width: max(bounds.width, 1), height: 4),
-            CGRect(x: current.x - 2, y: 0, width: 4, height: max(bounds.height, 1)),
-            badge.insetBy(dx: -2, dy: -2)
+    
+    // MARK: - Layer sync
+    
+    private func refreshTip() {
+        let text = tipText()
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium)
         ]
-    }
-
-    private func rectsBeingDrawn(fallback: NSRect) -> [NSRect] {
-        var pointer: UnsafePointer<NSRect>?
-        var count = 0
-        getRectsBeingDrawn(&pointer, count: &count)
-        guard let pointer, count > 0 else { return [fallback] }
-        return (0..<count).map { pointer[$0] }
+        let size = (text as NSString).size(withAttributes: attrs)
+        let tipRect = CGRect(
+            x: bounds.midX - size.width / 2 - 16,
+            y: bounds.height - 56,
+            width: size.width + 32,
+            height: size.height + 12
+        )
+        tipBackgroundLayer.path = CGPath(roundedRect: tipRect, cornerWidth: 16, cornerHeight: 16, transform: nil)
+        tipTextLayer.string = text
+        tipTextLayer.frame = CGRect(
+            x: tipRect.origin.x + 16,
+            y: tipRect.origin.y + 6,
+            width: size.width,
+            height: size.height
+        )
     }
     
-    override func draw(_ dirtyRect: NSRect) {
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        let dirtyRects = rectsBeingDrawn(fallback: dirtyRect)
-        
-        // Затемняется только повреждённый кусок, иначе каждый mouseMoved
-        // перезаливает кадр всего монитора и оверлей перестаёт успевать за курсором.
-        context.setBlendMode(.copy)
-        context.setFillColor(CGColor(gray: 0, alpha: 0.35))
-        for rect in dirtyRects {
-            context.fill(rect)
+    private func tipText() -> String {
+        switch mode {
+        case .windowOnly: return L("overlay.window_tip")
+        case .areaOnly: return L("overlay.area_tip")
+        case .recordingArea: return L("overlay.record_tip")
         }
-        context.setBlendMode(.normal)
+    }
+    
+    private func syncLayers() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
         
-        // 1. Отрисовка подсветки окна
+        var hole: CGRect?
+        var borderRect: CGRect?
+        var badge: String?
+        var showCrosshair = false
+        
         if mode == .windowOnly, let hovered = hoveredWindow {
-            let appKitRect = self.appKitRect(for: hovered.frame)
-            
-            context.saveGState()
-            context.setBlendMode(.clear)
-            context.fill(appKitRect)
-            context.restoreGState()
-            
-            context.setStrokeColor(CGColor(red: 0.1, green: 0.7, blue: 1.0, alpha: 1.0))
-            context.setLineWidth(3.0)
-            let path = CGPath(roundedRect: appKitRect, cornerWidth: 10, cornerHeight: 10, transform: nil)
-            context.addPath(path)
-            context.strokePath()
-            
-            let appTitle = hovered.owningApplication?.applicationName ?? (hovered.title ?? L("overlay.window_fallback"))
-            AreaOverlayBadgeRenderer.drawBadge(text: L("overlay.window_badge", appTitle), at: appKitRect, in: context)
-        }
-        // 2. Отрисовка рамки произвольного размера
-        else if isDragging, let start = startPoint, let current = currentPoint {
+            let rect = appKitRect(for: hovered.frame)
+            hole = rect
+            borderRect = rect
+            let title = hovered.owningApplication?.applicationName
+                ?? (hovered.title ?? L("overlay.window_fallback"))
+            badge = L("overlay.window_badge", title)
+            borderLayer.strokeColor = CGColor(red: 0.1, green: 0.7, blue: 1.0, alpha: 1)
+            borderLayer.lineWidth = 3
+        } else if isDragging, let start = startPoint, let current = currentPoint {
             let rect = selectionRect(from: start, to: current)
-            
-            context.saveGState()
-            context.setBlendMode(.clear)
-            context.fill(rect)
-            context.restoreGState()
-            
-            let strokeColor = mode == .recordingArea ? CGColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1.0) : CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1.0)
-            context.setStrokeColor(strokeColor)
-            context.setLineWidth(2.0)
-            context.stroke(rect)
-            
-            let prefix = mode == .recordingArea ? "🎥 Запись: " : ""
-            AreaOverlayBadgeRenderer.drawBadge(text: "\(prefix)\(Int(rect.width)) × \(Int(rect.height)) px", at: rect, in: context)
-        } else if mode != .windowOnly, let current = currentPoint {
-            // Отрисовка аккуратного прицела/перекрестья до начала драга
-            context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.35))
-            context.setLineWidth(1.0)
-            context.setLineDash(phase: 0, lengths: [4, 4])
-            
-            context.move(to: CGPoint(x: 0, y: current.y))
-            context.addLine(to: CGPoint(x: bounds.width, y: current.y))
-            context.move(to: CGPoint(x: current.x, y: 0))
-            context.addLine(to: CGPoint(x: current.x, y: bounds.height))
-            context.strokePath()
-            context.setLineDash(phase: 0, lengths: [])
-            
-            AreaOverlayBadgeRenderer.drawCrosshairBadge(point: current, bounds: bounds, sampler: sampler, in: context)
+            hole = rect
+            borderRect = rect
+            if mode == .recordingArea {
+                badge = L("overlay.record_badge", Int(rect.width), Int(rect.height))
+                borderLayer.strokeColor = CGColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+            } else {
+                badge = L("overlay.area_badge", Int(rect.width), Int(rect.height))
+                borderLayer.strokeColor = CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
+            }
+            borderLayer.lineWidth = 2
+        } else if mode != .windowOnly, currentPoint != nil {
+            showCrosshair = true
         }
         
-        let tipRect = AreaOverlayBadgeRenderer.topTipRect(mode: mode, bounds: bounds)
-        if dirtyRects.contains(where: { $0.intersects(tipRect) }) {
-            AreaOverlayBadgeRenderer.drawTopTip(mode: mode, bounds: bounds, in: context)
+        updateDimMask(hole: hole)
+        updateBorder(rect: borderRect)
+        updateCrosshair(visible: showCrosshair, at: currentPoint)
+        
+        if let badge, let borderRect {
+            showBadge(text: badge, near: borderRect, offset: nil)
+        } else if showCrosshair, let point = currentPoint {
+            let screenPoint = CGPoint(x: point.x, y: bounds.height - point.y)
+            let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) ?? "#------"
+            let text = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  \(hex)"
+            showBadge(
+                text: text,
+                near: CGRect(x: point.x, y: point.y, width: 1, height: 1),
+                offset: CGPoint(x: 14, y: 14)
+            )
+        } else {
+            badgeBackgroundLayer.isHidden = true
+            badgeTextLayer.isHidden = true
         }
+    }
+    
+    private func updateDimMask(hole: CGRect?) {
+        let path = CGMutablePath()
+        path.addRect(bounds)
+        if let hole, hole.width > 0, hole.height > 0 {
+            path.addRect(hole)
+        }
+        maskLayer.path = path
+        maskLayer.frame = bounds
+    }
+    
+    private func updateBorder(rect: CGRect?) {
+        guard let rect, rect.width > 0, rect.height > 0 else {
+            borderLayer.path = nil
+            borderLayer.isHidden = true
+            return
+        }
+        borderLayer.isHidden = false
+        if mode == .windowOnly {
+            borderLayer.path = CGPath(roundedRect: rect, cornerWidth: 10, cornerHeight: 10, transform: nil)
+        } else {
+            borderLayer.path = CGPath(rect: rect, transform: nil)
+        }
+    }
+    
+    private func updateCrosshair(visible: Bool, at point: CGPoint?) {
+        guard visible, let point else {
+            crosshairLayer.path = nil
+            crosshairLayer.isHidden = true
+            return
+        }
+        
+        crosshairLayer.isHidden = false
+        let arm = crosshairArmLength
+        let gap = crosshairGap
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: point.x - arm, y: point.y))
+        path.addLine(to: CGPoint(x: point.x - gap, y: point.y))
+        path.move(to: CGPoint(x: point.x + gap, y: point.y))
+        path.addLine(to: CGPoint(x: point.x + arm, y: point.y))
+        path.move(to: CGPoint(x: point.x, y: point.y - arm))
+        path.addLine(to: CGPoint(x: point.x, y: point.y - gap))
+        path.move(to: CGPoint(x: point.x, y: point.y + gap))
+        path.addLine(to: CGPoint(x: point.x, y: point.y + arm))
+        crosshairLayer.path = path
+    }
+    
+    private func showBadge(text: String, near rect: CGRect, offset: CGPoint?) {
+        let font = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let size = (text as NSString).size(withAttributes: attrs)
+        
+        let badgeRect: CGRect
+        if let offset {
+            badgeRect = CGRect(
+                x: min(max(rect.origin.x + offset.x, 10), bounds.width - size.width - 24),
+                y: min(max(rect.origin.y + offset.y, 10), bounds.height - size.height - 18),
+                width: size.width + 16,
+                height: size.height + 6
+            )
+        } else {
+            badgeRect = CGRect(
+                x: rect.midX - size.width / 2 - 10,
+                y: max(rect.minY - 26, 12),
+                width: size.width + 20,
+                height: size.height + 8
+            )
+        }
+        
+        badgeBackgroundLayer.isHidden = false
+        badgeTextLayer.isHidden = false
+        badgeBackgroundLayer.path = CGPath(
+            roundedRect: badgeRect,
+            cornerWidth: offset == nil ? 6 : 5,
+            cornerHeight: offset == nil ? 6 : 5,
+            transform: nil
+        )
+        badgeTextLayer.string = text
+        badgeTextLayer.frame = CGRect(
+            x: badgeRect.origin.x + (offset == nil ? 10 : 8),
+            y: badgeRect.origin.y + (offset == nil ? 4 : 3),
+            width: size.width,
+            height: size.height
+        )
     }
 }

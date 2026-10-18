@@ -4,8 +4,6 @@ import SwiftUI
 public struct VideoTimelineView: View {
     @ObservedObject var model: VideoEditorModel
     @State private var isDraggingPlayhead = false
-    @State private var isDraggingStart = false
-    @State private var isDraggingEnd = false
     
     public init(model: VideoEditorModel) {
         self.model = model
@@ -26,7 +24,7 @@ public struct VideoTimelineView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.right.to.line")
                         .font(.system(size: 10))
-                    Text("In: \(formatTime(model.trimStart))")
+                    Text(L("video_editor.trim_in", formatTime(model.trimStart)))
                         .font(.system(size: 11, design: .monospaced))
                 }
                 .foregroundColor(.yellow)
@@ -40,7 +38,7 @@ public struct VideoTimelineView: View {
                 Spacer()
                 
                 HStack(spacing: 4) {
-                    Text("Out: \(formatTime(model.trimEnd))")
+                    Text(L("video_editor.trim_out", formatTime(model.trimEnd)))
                         .font(.system(size: 11, design: .monospaced))
                     Image(systemName: "arrow.left.to.line")
                         .font(.system(size: 10))

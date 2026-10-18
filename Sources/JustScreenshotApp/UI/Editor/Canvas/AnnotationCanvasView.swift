@@ -1,15 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Холст аннотаций: рисование, выбор, перемещение, изменение размера за маркеры и поворот за ручку
+/// Холст аннотаций: рисование, выбор, перемещение, resize и поворот.
+/// Move/resize идут через локальный preview — модель коммитится только в onEnded.
 public struct AnnotationCanvasView: View {
-    @Binding public var items: [AnnotationItem]
-    @Binding public var selectedItemID: UUID?
-    
-    public let currentTool: AnnotationTool
-    public let currentColor: Color
-    public let lineWidth: CGFloat
-    public let textInputString: String
+    @ObservedObject public var model: AnnotationEditorModel
+    public let baseImage: NSImage
     public let zoomScale: CGFloat
     public let blurredImage: NSImage?
     
@@ -17,30 +13,31 @@ public struct AnnotationCanvasView: View {
     @State private var dragCurrent: CGPoint?
     @State private var mode: AnnotationDragMode = .idle
     @State private var snapshot: AnnotationItem?
+    /// Локальная копия элемента во время move/resize — без @Published на каждый пиксель
+    @State private var previewItem: AnnotationItem?
     @State private var nextCounter: Int = 1
+    @State private var lastClickTime: Date = .distantPast
+    @State private var lastClickItemID: UUID?
     
     public init(
-        items: Binding<[AnnotationItem]>,
-        selectedItemID: Binding<UUID?>,
-        currentTool: AnnotationTool,
-        currentColor: Color,
-        lineWidth: CGFloat,
-        textInputString: String = "Текст",
+        model: AnnotationEditorModel,
+        baseImage: NSImage,
         zoomScale: CGFloat = 1.0,
         blurredImage: NSImage? = nil
     ) {
-        self.blurredImage = blurredImage
-        self._items = items
-        self._selectedItemID = selectedItemID
-        self.currentTool = currentTool
-        self.currentColor = currentColor
-        self.lineWidth = lineWidth
-        self.textInputString = textInputString
+        self.model = model
+        self.baseImage = baseImage
         self.zoomScale = zoomScale
+        self.blurredImage = blurredImage
     }
     
     private var interactions: AnnotationCanvasInteractions {
         AnnotationCanvasInteractions(zoomScale: zoomScale)
+    }
+    
+    private var displayItems: [AnnotationItem] {
+        guard let previewItem else { return model.items }
+        return model.items.map { $0.id == previewItem.id ? previewItem : $0 }
     }
     
     public var body: some View {
@@ -48,25 +45,21 @@ public struct AnnotationCanvasView: View {
             var scaled = context
             scaled.scaleBy(x: zoomScale, y: zoomScale)
             
-            for item in items {
+            for item in displayItems {
                 var itemContext = scaled
                 AnnotationCanvasDrawer.applyRotation(of: item, to: &itemContext)
-                AnnotationCanvasDrawer.drawItem(item, in: &itemContext, blurredImage: blurredImage)
+                AnnotationCanvasDrawer.drawItem(item, in: &itemContext, baseImage: baseImage, blurredImage: blurredImage)
             }
             
-            if let sel = items.first(where: { $0.id == selectedItemID }) {
+            let selectedID = previewItem?.id ?? model.selectedItemID
+            if let sel = displayItems.first(where: { $0.id == selectedID }) {
                 AnnotationCanvasDrawer.drawSelection(sel, in: scaled, zoomScale: zoomScale, interactions: interactions)
             }
             
-            if mode == .drawing, currentTool != .select, let start = dragStart, let current = dragCurrent {
-                let preview = AnnotationItem(
-                    tool: currentTool, startPoint: start, endPoint: current,
-                    color: currentColor, lineWidth: lineWidth,
-                    text: textInputString.isEmpty ? "Текст заметки" : textInputString,
-                    counterNumber: nextCounter, fontSize: 20
-                )
+            if mode == .drawing, model.selectedTool != .select, let start = dragStart, let current = dragCurrent {
+                let preview = makePreviewItem(start: start, end: current)
                 var c = scaled
-                AnnotationCanvasDrawer.drawItem(preview, in: &c, blurredImage: blurredImage)
+                AnnotationCanvasDrawer.drawItem(preview, in: &c, baseImage: baseImage, blurredImage: blurredImage)
             }
         }
         .contentShape(Rectangle())
@@ -74,6 +67,20 @@ public struct AnnotationCanvasView: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { value in handleChanged(value) }
                 .onEnded { value in handleEnded(value) }
+        )
+    }
+    
+    private func makePreviewItem(start: CGPoint, end: CGPoint) -> AnnotationItem {
+        AnnotationItem(
+            tool: model.selectedTool,
+            startPoint: start,
+            endPoint: end,
+            color: model.selectedColor,
+            lineWidth: model.lineWidth,
+            text: model.textInputString.isEmpty ? L("editor.default_note_text") : model.textInputString,
+            counterNumber: nextCounter,
+            fontSize: 20,
+            scaleFactor: model.selectedTool == .magnifier ? 2.0 : 1.0
         )
     }
     
@@ -85,23 +92,7 @@ public struct AnnotationCanvasView: View {
         if dragStart == nil {
             dragStart = interactions.modelPoint(value.startLocation)
             let startLoc = dragStart!
-            
-            if let sel = items.first(where: { $0.id == selectedItemID }), let h = interactions.hitHandle(of: sel, at: startLoc) {
-                mode = .handle(h)
-                snapshot = sel
-            } else if let hit = items.reversed().first(where: { $0.contains(point: startLoc) }) {
-                selectedItemID = hit.id
-                mode = .moving
-                snapshot = hit
-            } else if currentTool == .select {
-                selectedItemID = nil
-                mode = .idle
-                snapshot = nil
-            } else {
-                selectedItemID = nil
-                mode = .drawing
-                snapshot = nil
-            }
+            beginGesture(at: startLoc)
         }
         
         guard let start = dragStart else { return }
@@ -112,13 +103,58 @@ public struct AnnotationCanvasView: View {
         case .drawing:
             dragCurrent = loc
         case .moving:
-            guard let snap = snapshot, let idx = items.firstIndex(where: { $0.id == snap.id }) else { return }
+            guard let snap = snapshot else { return }
             let dx = loc.x - start.x, dy = loc.y - start.y
-            items[idx].startPoint = CGPoint(x: snap.startPoint.x + dx, y: snap.startPoint.y + dy)
-            items[idx].endPoint = CGPoint(x: snap.endPoint.x + dx, y: snap.endPoint.y + dy)
+            var moved = snap
+            moved.startPoint = CGPoint(x: snap.startPoint.x + dx, y: snap.startPoint.y + dy)
+            moved.endPoint = CGPoint(x: snap.endPoint.x + dx, y: snap.endPoint.y + dy)
+            previewItem = moved
         case .handle(let h):
-            guard let snap = snapshot, let idx = items.firstIndex(where: { $0.id == snap.id }) else { return }
-            interactions.applyHandle(h, snap: snap, to: loc, in: &items, index: idx)
+            guard let snap = snapshot else { return }
+            previewItem = interactions.applyingHandle(h, snap: snap, to: loc)
+        }
+    }
+    
+    private func beginGesture(at startLoc: CGPoint) {
+        if let sel = model.selectedItem, let h = interactions.hitHandle(of: sel, at: startLoc) {
+            mode = .handle(h)
+            snapshot = sel
+            previewItem = sel
+            model.beginGestureEdit()
+            return
+        }
+        
+        if let hit = model.items.reversed().first(where: { $0.contains(point: startLoc) }) {
+            handleItemClick(hit)
+            mode = .moving
+            snapshot = hit
+            previewItem = hit
+            model.beginGestureEdit()
+            return
+        }
+        
+        if model.selectedTool == .select {
+            model.selectItem(id: nil)
+            mode = .idle
+            snapshot = nil
+            previewItem = nil
+        } else {
+            model.selectItem(id: nil)
+            mode = .drawing
+            snapshot = nil
+            previewItem = nil
+        }
+    }
+    
+    private func handleItemClick(_ hit: AnnotationItem) {
+        let now = Date()
+        let isDoubleClick = hit.id == lastClickItemID && now.timeIntervalSince(lastClickTime) < 0.35
+        lastClickTime = now
+        lastClickItemID = hit.id
+        
+        model.selectItem(id: hit.id)
+        if isDoubleClick && hit.tool == .text {
+            model.requestTextFocus()
         }
     }
     
@@ -128,38 +164,79 @@ public struct AnnotationCanvasView: View {
             dragCurrent = nil
             mode = .idle
             snapshot = nil
+            previewItem = nil
         }
-        guard mode == .drawing, currentTool != .select, let start = dragStart else { return }
-        let end = dragCurrent ?? interactions.modelPoint(value.location)
-        let dist = hypot(end.x - start.x, end.y - start.y)
         
+        switch mode {
+        case .moving, .handle:
+            if let previewItem, let idx = model.items.firstIndex(where: { $0.id == previewItem.id }) {
+                model.items[idx] = previewItem
+            }
+            model.endGestureEdit()
+            
+        case .drawing:
+            guard model.selectedTool != .select, let start = dragStart else { return }
+            let end = dragCurrent ?? interactions.modelPoint(value.location)
+            commitNewItem(start: start, end: end)
+            
+        case .idle:
+            break
+        }
+    }
+    
+    private func commitNewItem(start: CGPoint, end: CGPoint) {
+        let dist = hypot(end.x - start.x, end.y - start.y)
         var newItem: AnnotationItem?
-        switch currentTool {
+        
+        switch model.selectedTool {
         case .text:
+            let text = model.textInputString.isEmpty ? L("editor.default_text") : model.textInputString
             newItem = AnnotationItem(
-                tool: .text, startPoint: start, endPoint: CGPoint(x: start.x + 100, y: start.y + 30),
-                color: currentColor, lineWidth: lineWidth,
-                text: textInputString.isEmpty ? "Текст" : textInputString, fontSize: 22
+                tool: .text,
+                startPoint: start,
+                endPoint: CGPoint(x: start.x + 100, y: start.y + 30),
+                color: model.selectedColor,
+                lineWidth: model.lineWidth,
+                text: text,
+                fontSize: 22
             )
         case .counter:
             newItem = AnnotationItem(
-                tool: .counter, startPoint: start, endPoint: start,
-                color: currentColor, lineWidth: lineWidth, counterNumber: nextCounter
+                tool: .counter,
+                startPoint: start,
+                endPoint: start,
+                color: model.selectedColor,
+                lineWidth: model.lineWidth,
+                counterNumber: nextCounter
             )
             nextCounter += 1
         case .select:
             break
+        case .magnifier:
+            if dist >= 4 {
+                newItem = AnnotationItem(
+                    tool: .magnifier,
+                    startPoint: start,
+                    endPoint: end,
+                    color: model.selectedColor,
+                    lineWidth: model.lineWidth,
+                    scaleFactor: 2.0
+                )
+            }
         default:
             if dist >= 4 {
                 newItem = AnnotationItem(
-                    tool: currentTool, startPoint: start, endPoint: end,
-                    color: currentColor, lineWidth: lineWidth
+                    tool: model.selectedTool,
+                    startPoint: start,
+                    endPoint: end,
+                    color: model.selectedColor,
+                    lineWidth: model.lineWidth
                 )
             }
         }
+        
         if let item = newItem {
-            items.append(item)
-            selectedItemID = item.id
+            model.appendItem(item, select: true, focusText: item.tool == .text)
         }
     }
 }

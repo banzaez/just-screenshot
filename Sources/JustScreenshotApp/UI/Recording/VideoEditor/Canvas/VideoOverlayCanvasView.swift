@@ -197,6 +197,7 @@ private struct VideoAnnotationItemView: View {
     
     @State private var dragInitialOrigin: CGPoint?
     @State private var resizeInitialRect: CGRect?
+    @State private var globalCenter: CGPoint = .zero
     
     var body: some View {
         let itemWidth = max(24, item.rect.width * videoRect.width)
@@ -262,12 +263,24 @@ private struct VideoAnnotationItemView: View {
             
             // Рамка выделения и ручки манипулятора строго по размеру элемента
             if isSelected {
-                selectionControls(width: itemWidth, height: itemHeight, centerX: itemCenterX, centerY: itemCenterY)
+                selectionControls(width: itemWidth, height: itemHeight)
             }
         }
         .frame(width: itemWidth, height: itemHeight)
         .rotationEffect(.degrees(item.rotationAngle))
         .position(x: itemCenterX, y: itemCenterY)
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onAppear {
+                        let frame = geo.frame(in: .global)
+                        globalCenter = CGPoint(x: frame.midX, y: frame.midY)
+                    }
+                    .onChange(of: geo.frame(in: .global)) { _, frame in
+                        globalCenter = CGPoint(x: frame.midX, y: frame.midY)
+                    }
+            }
+        )
         // Плавное перетаскивание всего элемента без скачков
         .gesture(
             DragGesture()
@@ -296,7 +309,7 @@ private struct VideoAnnotationItemView: View {
     }
     
     @ViewBuilder
-    private func selectionControls(width: CGFloat, height: CGFloat, centerX: CGFloat, centerY: CGFloat) -> some View {
+    private func selectionControls(width: CGFloat, height: CGFloat) -> some View {
         ZStack {
             // Пунктирная рамка выделения строго вокруг элемента (без расползания)
             RoundedRectangle(cornerRadius: 6)
@@ -314,8 +327,7 @@ private struct VideoAnnotationItemView: View {
                         DragGesture(coordinateSpace: .global)
                             .onChanged { val in
                                 let loc = val.location
-                                let centerInWindow = CGPoint(x: centerX, y: centerY)
-                                var deg = atan2(loc.y - centerInWindow.y, loc.x - centerInWindow.x) * 180 / .pi + 90
+                                var deg = atan2(loc.y - globalCenter.y, loc.x - globalCenter.x) * 180 / .pi + 90
                                 if deg > 180 { deg -= 360 }
                                 if deg < -180 { deg += 360 }
                                 let snapped = (deg / 15).rounded() * 15

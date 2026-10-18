@@ -150,10 +150,9 @@ public enum AnnotationRenderer {
         case .blur:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             if let blurred {
-                context.saveGState()
-                context.clip(to: rect)
-                blurred.draw(in: NSRect(origin: .zero, size: imageSize))
-                context.restoreGState()
+                // Рисуем только нужный фрагмент, а не весь кадр
+                let nsRect = NSRect(origin: rect.origin, size: rect.size)
+                blurred.draw(in: nsRect, from: nsRect, operation: .copy, fraction: 1.0)
             } else {
                 context.setFillColor(CGColor(gray: 0.5, alpha: 0.7))
                 context.fill(rect)
@@ -182,12 +181,12 @@ public enum AnnotationRenderer {
             context.fillEllipse(in: circleRect)
             context.restoreGState()
             
-            // Клиппинг кругом и отрисовка масштабированного фрагмента (зум 2.0x)
+            // Клиппинг кругом и отрисовка масштабированного фрагмента
             context.saveGState()
             context.addEllipse(in: circleRect)
             context.clip()
             
-            let zoomFactor: CGFloat = 2.0
+            let zoomFactor = CGFloat(item.scaleFactor > 0 ? item.scaleFactor : 2.0)
             context.translateBy(x: center.x, y: center.y)
             context.scaleBy(x: zoomFactor, y: zoomFactor)
             context.translateBy(x: -center.x, y: -center.y)
@@ -200,8 +199,19 @@ public enum AnnotationRenderer {
             context.setLineWidth(4)
             context.strokeEllipse(in: circleRect)
             
+            let label = String(format: "%.1g×", Double(zoomFactor)) as NSString
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.white
+            ]
+            let labelSize = label.size(withAttributes: attrs)
+            label.draw(
+                at: NSPoint(x: center.x - labelSize.width / 2, y: circleRect.minY + 4),
+                withAttributes: attrs
+            )
+            
         case .text:
-            let text = (item.text.isEmpty ? "Текст" : item.text) as NSString
+            let text = (item.text.isEmpty ? L("editor.default_text") : item.text) as NSString
             let font = NSFont.boldSystemFont(ofSize: item.fontSize)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,

@@ -49,7 +49,7 @@ public struct AnnotationItem: Identifiable, Sendable {
     
     /// Измеренный размер текстового блока (совпадает с рендером)
     public var textSize: CGSize {
-        let str = (text.isEmpty ? "Текст" : text) as NSString
+        let str = (text.isEmpty ? "Aa" : text) as NSString
         let s = str.size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: fontSize)])
         return CGSize(width: ceil(s.width), height: ceil(s.height))
     }

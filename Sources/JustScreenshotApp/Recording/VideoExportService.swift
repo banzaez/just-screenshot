@@ -1,17 +1,16 @@
 import Foundation
 import AVFoundation
 import CoreGraphics
+import QuartzCore
 
-/// Сервис экспорта видео: обрезка (trimming), изменение скорости, кадрирование (crop), экспорт в MP4 и анимированный GIF
+/// Сервис экспорта видео: обрезка, скорость, кадрирование, burn-in аннотаций, MP4/GIF
 public final class VideoExportService: @unchecked Sendable {
     public static let shared = VideoExportService()
     
-    // Typealias для обратной совместимости вызовов
     public typealias ExportOptions = VideoExportOptions
     
     private init() {}
     
-    /// Экспорт в MP4 с обрезкой, масштабированием скорости и кадрированием
     public func exportVideo(
         sourceURL: URL,
         destinationURL: URL,
@@ -26,10 +25,13 @@ public final class VideoExportService: @unchecked Sendable {
         let composition = AVMutableComposition()
         
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
-            throw NSError(domain: "VideoExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Видеотрек не найден"])
+            throw NSError(domain: "VideoExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video track not found"])
         }
         
-        let compVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!
+        let compVideoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        )!
         
         let trimTimeRange = CMTimeRange(
             start: CMTime(seconds: startTime, preferredTimescale: 600),
@@ -38,35 +40,71 @@ public final class VideoExportService: @unchecked Sendable {
         
         try compVideoTrack.insertTimeRange(trimTimeRange, of: videoTrack, at: .zero)
         
-        // Регулировка скорости (playbackRate)
         if options.playbackRate != 1.0 && options.playbackRate > 0 {
-            let scaledDuration = CMTime(seconds: (endTime - startTime) / Double(options.playbackRate), preferredTimescale: 600)
-            compVideoTrack.scaleTimeRange(CMTimeRange(start: .zero, duration: trimTimeRange.duration), toDuration: scaledDuration)
+            let scaledDuration = CMTime(
+                seconds: (endTime - startTime) / Double(options.playbackRate),
+                preferredTimescale: 600
+            )
+            compVideoTrack.scaleTimeRange(
+                CMTimeRange(start: .zero, duration: trimTimeRange.duration),
+                toDuration: scaledDuration
+            )
         }
         
-        // Настройка видеокомпозиции для кадрирования (Crop)
         let naturalSize = try await videoTrack.load(.naturalSize)
+        let preferredTransform = try await videoTrack.load(.preferredTransform)
+        let isRotated = abs(preferredTransform.b) == 1.0 || abs(preferredTransform.c) == 1.0
+        let displaySize = isRotated
+            ? CGSize(width: naturalSize.height, height: naturalSize.width)
+            : naturalSize
+        
+        let burnIn = await MainActor.run { BurnInAnnotation.from(options.annotations) }
+        let needsComposition = options.cropRect != nil || !burnIn.isEmpty
+        
         var videoComposition: AVMutableVideoComposition?
         
-        if let crop = options.cropRect, crop.width > 0, crop.height > 0 {
-            let targetWidth = naturalSize.width * crop.width
-            let targetHeight = naturalSize.height * crop.height
+        if needsComposition {
+            let crop = options.cropRect
+            let renderWidth: CGFloat
+            let renderHeight: CGFloat
+            if let crop, crop.width > 0, crop.height > 0 {
+                renderWidth = floor(displaySize.width * crop.width / 2) * 2
+                renderHeight = floor(displaySize.height * crop.height / 2) * 2
+            } else {
+                renderWidth = floor(displaySize.width / 2) * 2
+                renderHeight = floor(displaySize.height / 2) * 2
+            }
             
             let vComp = AVMutableVideoComposition()
-            vComp.renderSize = CGSize(width: floor(targetWidth / 2) * 2, height: floor(targetHeight / 2) * 2)
+            vComp.renderSize = CGSize(width: max(2, renderWidth), height: max(2, renderHeight))
             vComp.frameDuration = CMTime(value: 1, timescale: 30)
             
             let instruction = AVMutableVideoCompositionInstruction()
             instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
             
             let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideoTrack)
-            let tx = -(crop.origin.x * naturalSize.width)
-            let ty = -(crop.origin.y * naturalSize.height)
-            let transform = CGAffineTransform(translationX: tx, y: ty)
+            var transform = preferredTransform
+            if let crop, crop.width > 0, crop.height > 0 {
+                let tx = -(crop.origin.x * displaySize.width)
+                let ty = -(crop.origin.y * displaySize.height)
+                transform = transform.concatenating(CGAffineTransform(translationX: tx, y: ty))
+            }
             layerInstruction.setTransform(transform, at: .zero)
             
             instruction.layerInstructions = [layerInstruction]
             vComp.instructions = [instruction]
+            
+            if !burnIn.isEmpty {
+                // CoreAnimationTool требует вызова с MainActor
+                let tool = await MainActor.run {
+                    VideoAnnotationBurnIn.makeAnimationTool(
+                        annotations: burnIn,
+                        renderSize: vComp.renderSize
+                    )
+                }
+                vComp.animationTool = tool
+            }
+            
             videoComposition = vComp
         }
         
@@ -74,8 +112,11 @@ public final class VideoExportService: @unchecked Sendable {
             try? FileManager.default.removeItem(at: destinationURL)
         }
         
-        guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
-            throw NSError(domain: "VideoExport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Не удалось создать AVAssetExportSession"])
+        guard let exportSession = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw NSError(domain: "VideoExport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"])
         }
         
         exportSession.outputURL = destinationURL
@@ -93,11 +134,10 @@ public final class VideoExportService: @unchecked Sendable {
         } else if let error = exportSession.error {
             throw error
         } else {
-            throw NSError(domain: "VideoExport", code: -3, userInfo: [NSLocalizedDescriptionKey: "Экспорт завершился с ошибкой или был отменен"])
+            throw NSError(domain: "VideoExport", code: -3, userInfo: [NSLocalizedDescriptionKey: "Export failed or was cancelled"])
         }
     }
     
-    /// Экспорт в анимированный GIF делегируется GIFExportService
     public func exportGIF(
         sourceURL: URL,
         destinationURL: URL,

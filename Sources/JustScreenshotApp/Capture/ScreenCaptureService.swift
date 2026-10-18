@@ -7,11 +7,14 @@ import Cocoa
 public final class ScreenCaptureService {
     public static let shared = ScreenCaptureService()
     
+    nonisolated private static let contentCacheTTL: TimeInterval = 0.2
+    nonisolated(unsafe) private static var contentCache: (excludeDesktop: Bool, onScreenOnly: Bool, content: SCShareableContent, date: Date)?
+    
     private init() {}
     
     /// Проверка наличия разрешения на запись экрана
     public func hasScreenCapturePermission() -> Bool {
-        return CGPreflightScreenCaptureAccess()
+        CGPreflightScreenCaptureAccess()
     }
     
     /// Проверка и запрос разрешений на запись экрана
@@ -35,7 +38,6 @@ public final class ScreenCaptureService {
             return true
         }
         
-        // Показываем диалог с предложением открыть системные настройки
         showPermissionAlert()
         return false
     }
@@ -60,43 +62,80 @@ public final class ScreenCaptureService {
     
     /// Захват определенной области экрана
     public func captureRect(_ rect: CGRect, excludingWindowIDs: [CGWindowID] = []) async throws -> NSImage {
-        // Минимальная пауза 35 мс для завершения анимации/скрытия и синхронизации буфера WindowServer
-        try? await Task.sleep(nanoseconds: 35_000_000)
+        // Короткая пауза, чтобы скрытый оверлей успел уйти из композитинга WindowServer.
+        try? await Task.sleep(nanoseconds: 16_000_000)
         
-        // Проверяем доступный контент через ScreenCaptureKit
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let scaleHint = NSScreen.main?.backingScaleFactor ?? 2.0
+        let ids = excludingWindowIDs
+        return try await Task.detached(priority: .userInitiated) {
+            try await Self.captureRectImage(rect: rect, excludingWindowIDs: ids, scaleHint: scaleHint)
+        }.value
+    }
+    
+    /// Захват экрана целиком через ScreenCaptureKit.
+    public func captureScreenWithSCK(screen: NSScreen) async throws -> CGImage {
+        let frame = screen.frame
+        let scale = screen.backingScaleFactor
+        return try await Task.detached(priority: .userInitiated) {
+            try await Self.captureDisplayImage(frame: frame, scale: scale)
+        }.value
+    }
+    
+    /// Захват конкретного окна
+    public func captureWindow(windowID: CGWindowID) async throws -> NSImage {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        return try await Task.detached(priority: .userInitiated) {
+            try await Self.captureWindowImage(windowID: windowID, scale: scale)
+        }.value
+    }
+    
+    /// Получение списка активных окон для hover-подсветки.
+    public func getVisibleWindows() async throws -> [SCWindow] {
+        try await Task.detached(priority: .userInitiated) {
+            WindowSnapshot(windows: try await Self.fetchVisibleWindows())
+        }.value.windows
+    }
+    
+    // MARK: - Background capture
+    
+    nonisolated private static func shareableContent(
+        excludeDesktopWindows: Bool,
+        onScreenWindowsOnly: Bool
+    ) async throws -> SCShareableContent {
+        if let cache = contentCache,
+           cache.excludeDesktop == excludeDesktopWindows,
+           cache.onScreenOnly == onScreenWindowsOnly,
+           Date().timeIntervalSince(cache.date) < contentCacheTTL {
+            return cache.content
+        }
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            excludeDesktopWindows,
+            onScreenWindowsOnly: onScreenWindowsOnly
+        )
+        contentCache = (excludeDesktopWindows, onScreenWindowsOnly, content, Date())
+        return content
+    }
+    
+    nonisolated private static func captureRectImage(
+        rect: CGRect,
+        excludingWindowIDs: [CGWindowID],
+        scaleHint: CGFloat
+    ) async throws -> NSImage {
+        let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
         
         guard let display = content.displays.first(where: { disp in
-            let dispRect = CGRect(x: CGFloat(disp.frame.origin.x),
-                                  y: CGFloat(disp.frame.origin.y),
-                                  width: CGFloat(disp.frame.width),
-                                  height: CGFloat(disp.frame.height))
-            return dispRect.intersects(rect)
+            displayFrame(disp).intersects(rect)
         }) ?? content.displays.first else {
             throw NSError(domain: "ScreenCaptureService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
         }
         
-        // Фильтр исключения окон: переданные ID и любые оверлеи текущего приложения
-        let currentPID = ProcessInfo.processInfo.processIdentifier
-        let excludedWindows = content.windows.filter { window in
-            if excludingWindowIDs.contains(CGWindowID(window.windowID)) {
-                return true
-            }
-            if window.owningApplication?.processID == currentPID {
-                if window.title == "JustScreenshotAreaOverlay" ||
-                   window.title == "JustScreenshotCountdownOverlay" ||
-                   window.windowLayer >= 1000 {
-                    return true
-                }
-            }
-            return false
-        }
+        let excludedWindows = overlayWindows(in: content, excludingWindowIDs: excludingWindowIDs)
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
-        // Вычисляем точный масштаб отображения для целевого монитора
-        let displayScale: CGFloat = display.frame.width > 0 ? CGFloat(display.width) / CGFloat(display.frame.width) : (NSScreen.main?.backingScaleFactor ?? 2.0)
+        let displayScale: CGFloat = display.frame.width > 0
+            ? CGFloat(display.width) / CGFloat(display.frame.width)
+            : scaleHint
         
-        // Приводим rect к локальной системе координат выбранного монитора
         let localRect = CGRect(
             x: rect.origin.x - CGFloat(display.frame.origin.x),
             y: rect.origin.y - CGFloat(display.frame.origin.y),
@@ -113,44 +152,18 @@ public final class ScreenCaptureService {
         config.colorSpaceName = CGColorSpace.sRGB
         
         let cgImage = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        let size = NSSize(width: rect.width, height: rect.height)
-        let nsImage = NSImage(cgImage: cgImage, size: size)
-        return nsImage
+        return NSImage(cgImage: cgImage, size: NSSize(width: rect.width, height: rect.height))
     }
     
-    /// Захват экрана целиком через современный ScreenCaptureKit (SCScreenshotManager).
-    /// Сам снимок выполняется вне главного актора: SCShareableContent на нём надолго блокирует оверлей.
-    public func captureScreenWithSCK(screen: NSScreen) async throws -> CGImage {
-        let frame = screen.frame
-        let scale = screen.backingScaleFactor
-        return try await Task.detached(priority: .userInitiated) {
-            try await Self.captureDisplayImage(frame: frame, scale: scale)
-        }.value
-    }
-
     nonisolated private static func captureDisplayImage(frame: CGRect, scale: CGFloat) async throws -> CGImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
-            let displayFrame = CGRect(x: CGFloat(disp.frame.origin.x),
-                                       y: CGFloat(disp.frame.origin.y),
-                                       width: CGFloat(disp.frame.width),
-                                       height: CGFloat(disp.frame.height))
-            return displayFrame.intersects(frame)
+            displayFrame(disp).intersects(frame)
         }) ?? content.displays.first else {
             throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
         }
         
-        let currentPID = ProcessInfo.processInfo.processIdentifier
-        let excludedWindows = content.windows.filter { window in
-            if window.owningApplication?.processID == currentPID {
-                if window.title == "JustScreenshotAreaOverlay" ||
-                   window.title == "JustScreenshotCountdownOverlay" ||
-                   window.windowLayer >= 1000 {
-                    return true
-                }
-            }
-            return false
-        }
+        let excludedWindows = overlayWindows(in: content, excludingWindowIDs: [])
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         let config = SCStreamConfiguration()
         config.width = Int(frame.width * scale)
@@ -162,16 +175,14 @@ public final class ScreenCaptureService {
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
     
-    /// Захват конкретного окна
-    public func captureWindow(windowID: CGWindowID) async throws -> NSImage {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+    nonisolated private static func captureWindowImage(windowID: CGWindowID, scale: CGFloat) async throws -> NSImage {
+        let content = try await shareableContent(excludeDesktopWindows: false, onScreenWindowsOnly: true)
         guard let scWindow = content.windows.first(where: { $0.windowID == windowID }) else {
             throw NSError(domain: "ScreenCaptureService", code: -2, userInfo: [NSLocalizedDescriptionKey: "Окно не найдено"])
         }
         
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
         let config = SCStreamConfiguration()
-        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
         config.width = Int(scWindow.frame.width * scale)
         config.height = Int(scWindow.frame.height * scale)
         config.showsCursor = false
@@ -181,21 +192,12 @@ public final class ScreenCaptureService {
         return NSImage(cgImage: cgImage, size: NSSize(width: scWindow.frame.width, height: scWindow.frame.height))
     }
     
-    /// Получение списка активных окон для hover-подсветки.
-    /// Запрос уходит с главного актора, иначе оверлей выбора окна не принимает мышь, пока ScreenCaptureKit отвечает.
-    public func getVisibleWindows() async throws -> [SCWindow] {
-        try await Task.detached(priority: .userInitiated) {
-            WindowSnapshot(windows: try await Self.fetchVisibleWindows())
-        }.value.windows
-    }
-
     nonisolated private static func fetchVisibleWindows() async throws -> [SCWindow] {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
         let currentPID = ProcessInfo.processInfo.processIdentifier
         return content.windows.filter { win in
             if win.owningApplication?.processID == currentPID {
-                if win.title == "JustScreenshotAreaOverlay" ||
-                   win.title == "JustScreenshotCountdownOverlay" ||
+                if JustScreenshotWindowTitles.isOverlayTitle(win.title) ||
                    win.windowLayer >= 1000 {
                     return false
                 }
@@ -206,6 +208,34 @@ public final class ScreenCaptureService {
             }
             return true
         }
+    }
+    
+    nonisolated private static func overlayWindows(
+        in content: SCShareableContent,
+        excludingWindowIDs: [CGWindowID]
+    ) -> [SCWindow] {
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        return content.windows.filter { window in
+            if excludingWindowIDs.contains(CGWindowID(window.windowID)) {
+                return true
+            }
+            if window.owningApplication?.processID == currentPID {
+                if JustScreenshotWindowTitles.isOverlayTitle(window.title) ||
+                   window.windowLayer >= 1000 {
+                    return true
+                }
+            }
+            return false
+        }
+    }
+    
+    nonisolated private static func displayFrame(_ display: SCDisplay) -> CGRect {
+        CGRect(
+            x: CGFloat(display.frame.origin.x),
+            y: CGFloat(display.frame.origin.y),
+            width: CGFloat(display.frame.width),
+            height: CGFloat(display.frame.height)
+        )
     }
 }
 

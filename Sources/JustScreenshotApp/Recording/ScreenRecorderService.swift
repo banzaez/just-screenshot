@@ -38,14 +38,13 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
                                   height: CGFloat(disp.frame.height))
             return dispRect.intersects(rect)
         }) ?? content.displays.first else {
-            throw NSError(domain: "ScreenRecorder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
+            throw NSError(domain: "ScreenRecorder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Display not found"])
         }
         
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let excludedWindows = content.windows.filter { window in
             if window.owningApplication?.processID == currentPID {
-                if window.title == "JustScreenshotAreaOverlay" ||
-                   window.title == "JustScreenshotCountdownOverlay" ||
+                if JustScreenshotWindowTitles.isOverlayTitle(window.title) ||
                    window.windowLayer >= 1000 {
                     return true
                 }
@@ -155,9 +154,19 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         
         input.markAsFinished()
         
-        return await withCheckedContinuation { continuation in
-            writer.finishWriting {
-                continuation.resume(returning: self.outputURL)
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL?, Error>) in
+            writer.finishWriting { [outputURL = self.outputURL] in
+                let status = writer.status
+                let writerError = writer.error
+                if status == .completed, let url = outputURL {
+                    continuation.resume(returning: url)
+                } else {
+                    continuation.resume(throwing: writerError ?? NSError(
+                        domain: "ScreenRecorder",
+                        code: -2,
+                        userInfo: [NSLocalizedDescriptionKey: "Recording finalize failed"]
+                    ))
+                }
             }
         }
     }

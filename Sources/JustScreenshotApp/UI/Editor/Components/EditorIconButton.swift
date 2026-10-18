@@ -27,5 +27,7 @@ public struct EditorIconButton: View {
         }
         .buttonStyle(.plain)
         .help(title ?? "")
+        .accessibilityLabel(title ?? systemName)
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }

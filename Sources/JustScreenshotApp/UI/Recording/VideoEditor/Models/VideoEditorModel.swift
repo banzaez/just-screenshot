@@ -121,24 +121,40 @@ public final class VideoEditorModel: ObservableObject {
                     self.duration = dur
                     self.trimEnd = dur
                 }
-                await self.generateThumbnails(asset: asset, count: 10)
+                await self.generateThumbnails(count: 10)
             }
         }
     }
     
-    private func generateThumbnails(asset: AVAsset, count: Int) async {
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.maximumSize = CGSize(width: 160, height: 100)
-        
-        var thumbs: [NSImage] = []
-        for i in 0..<count {
-            let time = CMTime(seconds: (self.duration / Double(count)) * Double(i), preferredTimescale: 600)
-            if let cgImage = try? generator.copyCGImage(at: time, actualTime: nil) {
-                let img = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
-                thumbs.append(img)
+    private func generateThumbnails(count: Int) async {
+        let duration = self.duration
+        let url = self.videoURL
+        let thumbs: [NSImage] = await Task.detached(priority: .utility) {
+            let asset = AVURLAsset(url: url)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            generator.maximumSize = CGSize(width: 160, height: 100)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.1, preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.1, preferredTimescale: 600)
+            
+            var times: [CMTime] = []
+            for i in 0..<count {
+                times.append(CMTime(seconds: (duration / Double(count)) * Double(i), preferredTimescale: 600))
             }
-        }
+            
+            var result: [NSImage] = []
+            result.reserveCapacity(count)
+            do {
+                for try await imageResult in generator.images(for: times) {
+                    let cgImage = try imageResult.image
+                    result.append(NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height)))
+                }
+            } catch {
+                // Частичный filmstrip лучше, чем пустой
+            }
+            return result
+        }.value
+        
         self.thumbnails = thumbs
     }
     
@@ -180,7 +196,8 @@ public final class VideoEditorModel: ObservableObject {
     
     // Аннотации
     public func addAnnotation(type: VideoAnnotationType) {
-        let newItem = VideoAnnotationItem(type: type)
+        let text = type == .text ? L("video_editor.type_text") : ""
+        let newItem = VideoAnnotationItem(type: type, text: text)
         annotations.append(newItem)
         selectedAnnotationID = newItem.id
     }

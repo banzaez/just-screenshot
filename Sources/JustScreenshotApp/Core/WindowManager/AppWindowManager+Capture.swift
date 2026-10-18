@@ -18,15 +18,14 @@ extension AppWindowManager {
             return
         }
         
-        closeAllOverlays()
-        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        let token = beginOverlaySession()
+        let screens = activeScreens()
         guard !screens.isEmpty else { return }
-        let token = UUID()
-        overlayToken = token
         
         let overlays = screens.map { screen in
-            AreaOverlayWindow(
-                screen: screen, mode: .windowOnly, visibleWindows: [],
+            acquireOverlay(for: screen).configured(
+                screen: screen,
+                mode: .windowOnly,
                 onCompleteRect: { _ in },
                 onCompleteWindow: { [weak self] scWindow in
                     self?.closeAllOverlays()
@@ -37,7 +36,6 @@ extension AppWindowManager {
         }
         presentOverlays(overlays)
         
-        // Список окон запрашивается вне главного потока, чтобы оверлей не замирал на время SCShareableContent.
         Task { [weak self] in
             let windows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
             guard let self, self.overlayToken == token else { return }
@@ -54,7 +52,6 @@ extension AppWindowManager {
             return
         }
         
-        // Быстрая синхронная проверка разрешений без задержек и переходов Task
         if !ScreenCaptureService.shared.hasScreenCapturePermission() {
             Task { [weak self] in
                 guard let self else { return }
@@ -68,54 +65,44 @@ extension AppWindowManager {
             return
         }
         
-        self.closeAllOverlays()
-        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        let token = beginOverlaySession()
+        let screens = activeScreens()
         guard !screens.isEmpty else { return }
         
-        let token = UUID()
-        self.overlayToken = token
-        
-        let overlays = screens.map { screen in
-            AreaOverlayWindow(
-                screen: screen, mode: .areaOnly, visibleWindows: [],
-                backgroundImage: nil,
+        let overlays = screens.map { screen -> AreaOverlayWindow in
+            let overlay = acquireOverlay(for: screen)
+            return overlay.configured(
+                screen: screen,
+                mode: .areaOnly,
                 onCompleteRect: { [weak self] rect in
                     guard let self else { return }
-                    let overlayIDs = self.overlayWindows.compactMap { $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil }
+                    let overlayIDs = self.overlayWindows.compactMap {
+                        $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil
+                    }
                     self.closeAllOverlays()
                     Task { [weak self] in
                         await self?.captureRectAndShowHUD(rect: rect, excludingWindowIDs: overlayIDs)
                     }
                 },
                 onCompleteWindow: { _ in },
-                onCancel: { [weak self] in self?.closeAllOverlays() }
+                onCancel: { [weak self] in self?.closeAllOverlays() },
+                onNeedBackgroundSample: { [weak self, weak overlay] in
+                    guard let self, let overlay else { return }
+                    self.ensureSampler(for: overlay, token: token)
+                }
             )
         }
-        self.presentOverlays(overlays)
+        presentOverlays(overlays)
         
-        // Фоновый захват экрана для лупы/пипетки на экране с курсором мыши без задержки отображения
-        // Сначала экран с курсором, затем остальные
-        let mouseLoc = NSEvent.mouseLocation
-        let ordered = overlays.sorted { a, _ in NSMouseInRect(mouseLoc, a.frame, false) }
-        
-        for overlay in ordered {
-            guard let screen = overlay.screen else { continue }
-            Task { [weak self, weak overlay] in
-                guard let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen) else { return }
-                guard let self, self.overlayToken == token else { return }
-                let sampler = await Task.detached(priority: .userInitiated) {
-                    ScreenPixelSampler(image: bgImage)
-                }.value
-                guard self.overlayToken == token else { return }
-                overlay?.updateSampler(sampler)
-            }
+        // Сразу только экран под курсором — остальные по mouseEntered.
+        if let primary = overlays.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? overlays.first {
+            ensureSampler(for: primary, token: token)
         }
     }
     
     /// Повтор захвата предыдущей области экрана (Repeat Last Capture)
     public func repeatLastCapture() {
         guard let rect = AppSettings.shared.lastCapturedRect else {
-            // Если область еще не была зафиксирована, запускаем обычный выбор
             startAreaCapture()
             return
         }
@@ -127,10 +114,35 @@ extension AppWindowManager {
         }
     }
     
+    // MARK: - Pool / presentation
+    
+    func activeScreens() -> [NSScreen] {
+        NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+    }
+    
+    @discardableResult
+    func beginOverlaySession() -> UUID {
+        closeAllOverlays()
+        let token = UUID()
+        overlayToken = token
+        samplerInFlight.removeAll()
+        return token
+    }
+    
+    func acquireOverlay(for screen: NSScreen) -> AreaOverlayWindow {
+        if let existing = overlayPool[screen.displayID] {
+            return existing
+        }
+        let window = AreaOverlayWindow(screen: screen)
+        overlayPool[screen.displayID] = window
+        return window
+    }
+    
     func presentOverlays(_ windows: [AreaOverlayWindow]) {
-        self.overlayWindows = windows
-        // Активация до makeKey, иначе первый жест уходит на пробуждение приложения.
-        NSApp.activate()
+        overlayWindows = windows
+        installOverlayEscMonitors()
+        NSApp.activate(ignoringOtherApps: true)
+        
         let mouseLoc = NSEvent.mouseLocation
         for window in windows {
             window.isReleasedWhenClosed = false
@@ -148,14 +160,63 @@ extension AppWindowManager {
     }
     
     func closeAllOverlays() {
-        overlayToken = UUID() // отменяет отложенные презентации оверлея
+        overlayToken = UUID()
+        samplerInFlight.removeAll()
+        removeOverlayEscMonitors()
+        
         let windows = overlayWindows
         overlayWindows.removeAll()
-        for w in windows {
-            w.alphaValue = 0
-            w.orderOut(nil)
-            w.contentView = nil
-            w.close()
+        for window in windows {
+            window.prepareForReuse()
+        }
+    }
+    
+    func installOverlayEscMonitors() {
+        guard overlayEscLocalMonitor == nil else { return }
+        overlayEscLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                self?.closeAllOverlays()
+                return nil
+            }
+            return event
+        }
+        overlayEscGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                DispatchQueue.main.async { self?.closeAllOverlays() }
+            }
+        }
+    }
+    
+    func removeOverlayEscMonitors() {
+        if let monitor = overlayEscLocalMonitor {
+            NSEvent.removeMonitor(monitor)
+            overlayEscLocalMonitor = nil
+        }
+        if let monitor = overlayEscGlobalMonitor {
+            NSEvent.removeMonitor(monitor)
+            overlayEscGlobalMonitor = nil
+        }
+    }
+    
+    func ensureSampler(for overlay: AreaOverlayWindow, token: UUID) {
+        let displayID = overlay.screenID
+        guard !samplerInFlight.contains(displayID) else { return }
+        guard let screen = overlay.screen ?? NSScreen.screens.first(where: { $0.displayID == displayID }) else { return }
+        
+        samplerInFlight.insert(displayID)
+        Task { [weak self, weak overlay] in
+            defer {
+                Task { @MainActor [weak self] in
+                    self?.samplerInFlight.remove(displayID)
+                }
+            }
+            guard let bgImage = try? await ScreenCaptureService.shared.captureScreenWithSCK(screen: screen) else { return }
+            guard let self, self.overlayToken == token else { return }
+            let sampler = await Task.detached(priority: .userInitiated) {
+                ScreenPixelSampler(image: bgImage)
+            }.value
+            guard self.overlayToken == token else { return }
+            overlay?.updateSampler(sampler)
         }
     }
     
@@ -215,5 +276,29 @@ extension AppWindowManager {
             if !text.isEmpty { ImageExporter.copyText(text) }
             completion(text)
         }
+    }
+}
+
+extension AreaOverlayWindow {
+    @discardableResult
+    func configured(
+        screen: NSScreen,
+        mode: OverlayMode,
+        onCompleteRect: @escaping (CGRect) -> Void,
+        onCompleteWindow: @escaping (SCWindow) -> Void,
+        onCancel: @escaping () -> Void,
+        onNeedBackgroundSample: (() -> Void)? = nil
+    ) -> AreaOverlayWindow {
+        configure(
+            screen: screen,
+            mode: mode,
+            visibleWindows: [],
+            backgroundImage: nil,
+            onCompleteRect: onCompleteRect,
+            onCompleteWindow: onCompleteWindow,
+            onCancel: onCancel,
+            onNeedBackgroundSample: onNeedBackgroundSample
+        )
+        return self
     }
 }

@@ -1,22 +1,12 @@
 import Cocoa
 import ScreenCaptureKit
 
-/// Представление полноэкранного окна оверлея
+/// Полноэкранное окно оверлея. Переиспользуется из пула без повторного alloc.
 public final class AreaOverlayWindow: NSWindow {
-    private let onCancel: () -> Void
-    nonisolated(unsafe) private var localKeyMonitor: Any?
-    nonisolated(unsafe) private var globalKeyMonitor: Any?
-
-    public init(
-        screen: NSScreen,
-        mode: OverlayMode,
-        visibleWindows: [SCWindow] = [],
-        backgroundImage: CGImage? = nil,
-        onCompleteRect: @escaping (CGRect) -> Void,
-        onCompleteWindow: @escaping (SCWindow) -> Void,
-        onCancel: @escaping () -> Void
-    ) {
-        self.onCancel = onCancel
+    private(set) var screenID: CGDirectDisplayID
+    
+    public init(screen: NSScreen) {
+        self.screenID = screen.displayID
         super.init(
             contentRect: screen.frame,
             styleMask: [.borderless],
@@ -24,66 +14,81 @@ public final class AreaOverlayWindow: NSWindow {
             defer: false
         )
         
-        self.title = "JustScreenshotAreaOverlay"
-        // Выше обычных окон и меню, чтобы клики доходили сразу, не дожидаясь активации приложения.
-        self.level = .screenSaver
-        self.animationBehavior = .none
-        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        self.isOpaque = false
-        self.isReleasedWhenClosed = false
-        self.backgroundColor = .clear
-        self.hasShadow = false
-        self.ignoresMouseEvents = false
-        self.acceptsMouseMovedEvents = true
+        title = JustScreenshotWindowTitles.areaOverlay
+        level = .screenSaver
+        animationBehavior = .none
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        isOpaque = false
+        isReleasedWhenClosed = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = false
+        acceptsMouseMovedEvents = true
         
         let overlayView = AreaSelectionNSView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
+            screen: screen,
+            mode: .areaOnly,
+            visibleWindows: [],
+            onCompleteRect: { _ in },
+            onCompleteWindow: { _ in },
+            onCancel: {}
+        )
+        contentView = overlayView
+    }
+    
+    public func configure(
+        screen: NSScreen,
+        mode: OverlayMode,
+        visibleWindows: [SCWindow] = [],
+        backgroundImage: CGImage? = nil,
+        onCompleteRect: @escaping (CGRect) -> Void,
+        onCompleteWindow: @escaping (SCWindow) -> Void,
+        onCancel: @escaping () -> Void,
+        onNeedBackgroundSample: (() -> Void)? = nil
+    ) {
+        screenID = screen.displayID
+        setFrame(screen.frame, display: false)
+        alphaValue = 1
+        
+        let view: AreaSelectionNSView
+        if let existing = contentView as? AreaSelectionNSView {
+            view = existing
+            view.isHidden = false
+            view.frame = NSRect(origin: .zero, size: screen.frame.size)
+        } else {
+            view = AreaSelectionNSView(
+                frame: NSRect(origin: .zero, size: screen.frame.size),
+                screen: screen,
+                mode: mode,
+                visibleWindows: visibleWindows,
+                backgroundImage: backgroundImage,
+                onCompleteRect: onCompleteRect,
+                onCompleteWindow: onCompleteWindow,
+                onCancel: onCancel,
+                onNeedBackgroundSample: onNeedBackgroundSample
+            )
+            contentView = view
+            return
+        }
+        
+        view.reconfigure(
             screen: screen,
             mode: mode,
             visibleWindows: visibleWindows,
             backgroundImage: backgroundImage,
             onCompleteRect: onCompleteRect,
             onCompleteWindow: onCompleteWindow,
-            onCancel: onCancel
+            onCancel: onCancel,
+            onNeedBackgroundSample: onNeedBackgroundSample
         )
-        self.contentView = overlayView
-        installEscMonitors()
     }
-
-    private func installEscMonitors() {
-        let cancel = onCancel
-        localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 {
-                DispatchQueue.main.async { cancel() }
-                return nil
-            }
-            return event
-        }
-        // Фолбэк, если приложение не стало активным и окно не получает клавиши
-        globalKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            if event.keyCode == 53 {
-                DispatchQueue.main.async { cancel() }
-            }
-        }
+    
+    public func prepareForReuse() {
+        alphaValue = 0
+        orderOut(nil)
+        (contentView as? AreaSelectionNSView)?.resetOverlayState()
     }
-
-    private func removeEscMonitors() {
-        if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
-        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
-        localKeyMonitor = nil
-        globalKeyMonitor = nil
-    }
-
-    deinit {
-        if let m = localKeyMonitor { NSEvent.removeMonitor(m) }
-        if let m = globalKeyMonitor { NSEvent.removeMonitor(m) }
-    }
-
-    public override func close() {
-        removeEscMonitors()
-        super.close()
-    }
-
     
     public func updateSampler(_ sampler: ScreenPixelSampler) {
         (contentView as? AreaSelectionNSView)?.updateSampler(sampler)
@@ -99,8 +104,15 @@ public final class AreaOverlayWindow: NSWindow {
     
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
-
+    
     public override func cancelOperation(_ sender: Any?) {
-        onCancel()
+        (contentView as? AreaSelectionNSView)?.cancelOperation(sender)
+    }
+}
+
+extension NSScreen {
+    /// Стабильный ID дисплея для пула оверлеев.
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 }

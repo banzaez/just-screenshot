@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Отрисовка элементов аннотаций, рамки выделения и маркеров внутри SwiftUI GraphicsContext
+@MainActor
 enum AnnotationCanvasDrawer {
     static func applyRotation(of item: AnnotationItem, to ctx: inout GraphicsContext) {
         guard item.rotationAngle != 0, !item.isLineLike else { return }
@@ -24,7 +25,6 @@ enum AnnotationCanvasDrawer {
         var ctx = base
         
         if item.isLineLike {
-            // Аккуратная повёрнутая рамка вдоль отрезка
             let c = item.center
             let angle = atan2(item.endPoint.y - item.startPoint.y, item.endPoint.x - item.startPoint.x)
             let len = hypot(item.endPoint.x - item.startPoint.x, item.endPoint.y - item.startPoint.y)
@@ -50,7 +50,6 @@ enum AnnotationCanvasDrawer {
             }
         }
         
-        // Ручки (одинакового экранного размера независимо от зума)
         var handleCtx = base
         if !item.isLineLike { applyRotation(of: item, to: &handleCtx) }
         let r = 5 * px
@@ -71,6 +70,7 @@ enum AnnotationCanvasDrawer {
     static func drawItem(
         _ item: AnnotationItem,
         in context: inout GraphicsContext,
+        baseImage: NSImage?,
         blurredImage: NSImage?
     ) {
         let rect = CGRect(
@@ -103,6 +103,8 @@ enum AnnotationCanvasDrawer {
             if let blurred = blurredImage {
                 var clipped = context
                 clipped.clip(to: Path(rect))
+                // Рисуем только покрывающий rect: масштабируем полный blur так,
+                // чтобы пиксели совпали с исходником, clip отсекает остальное.
                 clipped.draw(Image(nsImage: blurred), in: CGRect(origin: .zero, size: blurred.size))
             } else {
                 context.fill(Path(rect), with: .color(Color.gray.opacity(0.7)))
@@ -115,23 +117,46 @@ enum AnnotationCanvasDrawer {
             context.stroke(p, with: .color(item.color.opacity(0.45)),
                            style: StrokeStyle(lineWidth: item.lineWidth * 4, lineCap: .round, lineJoin: .round))
         case .magnifier:
-            let radius = max(min(rect.width, rect.height) / 2, 16)
-            let circleRect = CGRect(x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2)
-            let circlePath = Path(ellipseIn: circleRect)
-            
-            // Полупрозрачный блик линзы и рамка
-            context.fill(circlePath, with: .color(.white.opacity(0.18)))
-            context.stroke(circlePath, with: .color(.white), lineWidth: 3.5)
-            context.stroke(Path(ellipseIn: circleRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(.black.opacity(0.35)), lineWidth: 1.0)
-            
-            let label = Text("2x").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white)
-            context.draw(label, at: CGPoint(x: rect.midX, y: circleRect.maxY - 14))
+            drawMagnifier(item: item, rect: rect, in: &context, baseImage: baseImage)
         case .text:
-            let t = Text(item.text.isEmpty ? "Текст" : item.text)
+            let label = item.text.isEmpty ? L("editor.default_text") : item.text
+            let t = Text(label)
                 .font(.system(size: item.fontSize, weight: .bold))
                 .foregroundColor(item.color)
             context.draw(t, at: item.startPoint, anchor: .topLeading)
         }
+    }
+    
+    private static func drawMagnifier(
+        item: AnnotationItem,
+        rect: CGRect,
+        in context: inout GraphicsContext,
+        baseImage: NSImage?
+    ) {
+        let radius = max(min(rect.width, rect.height) / 2, 16)
+        let circleRect = CGRect(x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2)
+        let circlePath = Path(ellipseIn: circleRect)
+        let zoomFactor = CGFloat(item.scaleFactor > 0 ? item.scaleFactor : 2.0)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        
+        if let baseImage {
+            var clipped = context
+            clipped.clip(to: circlePath)
+            clipped.translateBy(x: center.x, y: center.y)
+            clipped.scaleBy(x: zoomFactor, y: zoomFactor)
+            clipped.translateBy(x: -center.x, y: -center.y)
+            clipped.draw(Image(nsImage: baseImage), in: CGRect(origin: .zero, size: baseImage.size))
+        } else {
+            context.fill(circlePath, with: .color(.white.opacity(0.18)))
+        }
+        
+        context.stroke(circlePath, with: .color(.white), lineWidth: 3.5)
+        context.stroke(Path(ellipseIn: circleRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(.black.opacity(0.35)), lineWidth: 1.0)
+        
+        let label = Text(String(format: "%.1g×", zoomFactor))
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundColor(.white)
+        context.draw(label, at: CGPoint(x: rect.midX, y: circleRect.maxY - 14))
     }
     
     private static func drawArrow(from start: CGPoint, to end: CGPoint, path: inout Path, headLength: CGFloat) {

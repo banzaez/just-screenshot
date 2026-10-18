@@ -25,12 +25,14 @@ public final class RecordingControlBarWindow: NSWindow {
             defer: false
         )
         
+        self.title = JustScreenshotWindowTitles.recordingBar
         self.level = .floating
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
         self.isMovableByWindowBackground = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.animationBehavior = .none
         
         let barView = RecordingControlBarView(
             windowManager: windowManager,

@@ -23,7 +23,12 @@ public final class GIFExportService: @unchecked Sendable {
         let totalDuration = endTime - startTime
         
         let fps = max(5, min(30, options.gifFPS))
-        let frameCount = max(1, Int(totalDuration * Double(fps)))
+        let rate = max(0.01, Double(options.playbackRate > 0 ? options.playbackRate : 1))
+        // Длительность кадра с учётом скорости; timeline семплим по исходным секундам
+        let frameDuration = (1.0 / Double(fps)) / rate
+        let frameCount = max(1, Int((totalDuration / rate) * Double(fps)))
+        
+        let burnIn = await MainActor.run { BurnInAnnotation.from(options.annotations) }
         
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
@@ -33,17 +38,24 @@ public final class GIFExportService: @unchecked Sendable {
         
         var cmTimes: [CMTime] = []
         for i in 0..<frameCount {
-            let timeSec = startTime + (Double(i) / Double(fps))
-            let cmTime = CMTime(seconds: timeSec, preferredTimescale: 600)
-            cmTimes.append(cmTime)
+            // В исходной шкале времени: при 2x берём кадры вдвое реже по source timeline? 
+            // Пользователь ожидает ускоренное/замедленное воспроизведение GIF.
+            // Семплируем source равномерно по trim, delay сжимаем/растягиваем через frameDuration.
+            let timeSec = startTime + (Double(i) / Double(max(frameCount - 1, 1))) * totalDuration
+            cmTimes.append(CMTime(seconds: min(endTime - 0.001, timeSec), preferredTimescale: 600))
         }
         
         if FileManager.default.fileExists(atPath: destinationURL.path) {
             try? FileManager.default.removeItem(at: destinationURL)
         }
         
-        guard let destination = CGImageDestinationCreateWithURL(destinationURL as CFURL, UTType.gif.identifier as CFString, frameCount, nil) else {
-            throw NSError(domain: "GIFExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Не удалось создать GIF Destination"])
+        guard let destination = CGImageDestinationCreateWithURL(
+            destinationURL as CFURL,
+            UTType.gif.identifier as CFString,
+            frameCount,
+            nil
+        ) else {
+            throw NSError(domain: "GIFExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create GIF destination"])
         }
         
         let gifProperties: [String: Any] = [
@@ -53,7 +65,6 @@ public final class GIFExportService: @unchecked Sendable {
         ]
         CGImageDestinationSetProperties(destination, gifProperties as CFDictionary)
         
-        let frameDuration = 1.0 / Double(fps * (options.playbackRate > 0 ? Int(options.playbackRate) : 1))
         let frameProperties: [String: Any] = [
             kCGImagePropertyGIFDictionary as String: [
                 kCGImagePropertyGIFDelayTime as String: frameDuration
@@ -62,9 +73,13 @@ public final class GIFExportService: @unchecked Sendable {
         
         var processed = 0
         for try await result in generator.images(for: cmTimes) {
-            let cgImage = try result.image
-            var finalCGImage = cgImage
-            // Если есть Crop
+            var cgImage = try result.image
+            
+            // Сначала burn-in в полной системе координат кадра, затем crop
+            if !burnIn.isEmpty {
+                cgImage = VideoAnnotationBurnIn.composite(cgImage, annotations: burnIn)
+            }
+            
             if let crop = options.cropRect, crop.width > 0, crop.height > 0 {
                 let w = CGFloat(cgImage.width)
                 let h = CGFloat(cgImage.height)
@@ -75,17 +90,17 @@ public final class GIFExportService: @unchecked Sendable {
                     height: crop.height * h
                 )
                 if let cropped = cgImage.cropping(to: cropPixelRect) {
-                    finalCGImage = cropped
+                    cgImage = cropped
                 }
             }
             
-            CGImageDestinationAddImage(destination, finalCGImage, frameProperties as CFDictionary)
+            CGImageDestinationAddImage(destination, cgImage, frameProperties as CFDictionary)
             processed += 1
             progressHandler(Double(processed) / Double(frameCount))
         }
         
         if !CGImageDestinationFinalize(destination) {
-            throw NSError(domain: "GIFExport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Ошибка финализации GIF файла"])
+            throw NSError(domain: "GIFExport", code: -2, userInfo: [NSLocalizedDescriptionKey: "Failed to finalize GIF"])
         }
         progressHandler(1.0)
     }

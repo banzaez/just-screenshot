@@ -22,7 +22,12 @@ public final class AppWindowManager: ObservableObject {
             }
         }
     }
+    /// Пул оверлеев по displayID — без повторного alloc на каждый хоткей.
+    var overlayPool: [CGDirectDisplayID: AreaOverlayWindow] = [:]
     var overlayToken = UUID()
+    var samplerInFlight: Set<CGDirectDisplayID> = []
+    var overlayEscLocalMonitor: Any?
+    var overlayEscGlobalMonitor: Any?
     var recordingFrameWindow: RecordingFrameWindow?
     var recordingBarWindow: RecordingControlBarWindow?
     let hudStack = HUDStackManager()
@@ -33,6 +38,9 @@ public final class AppWindowManager: ObservableObject {
     var settingsWindow: ManagedWindow?
     var cascadePoint = NSPoint.zero
     var recordingTimer: Timer?
+    var recordingStartedAt: Date?
+    var recordingPausedAt: Date?
+    var recordingAccumulatedPause: TimeInterval = 0
     
     let history = HistoryStore.shared
     private lazy var hotKeyCoordinator = AppHotKeyCoordinator(windowManager: self)

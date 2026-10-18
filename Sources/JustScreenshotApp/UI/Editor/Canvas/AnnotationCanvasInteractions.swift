@@ -48,7 +48,6 @@ struct AnnotationCanvasInteractions {
     
     func hitHandle(of item: AnnotationItem, at point: CGPoint) -> AnnotationHandle? {
         let local = item.unrotated(point)
-        // Ручка вращения проверяется первой, чтобы не конфликтовать с углами
         let ordered = handlePositions(of: item).sorted { a, _ in a.0 == .rotate }
         for (h, pos) in ordered where hypot(local.x - pos.x, local.y - pos.y) <= handleHitRadius {
             return h
@@ -56,7 +55,9 @@ struct AnnotationCanvasInteractions {
         return nil
     }
     
-    func applyHandle(_ h: AnnotationHandle, snap: AnnotationItem, to loc: CGPoint, in items: inout [AnnotationItem], index idx: Int) {
+    /// Применяет ручку к копии элемента (без мутации массива модели)
+    func applyingHandle(_ h: AnnotationHandle, snap: AnnotationItem, to loc: CGPoint) -> AnnotationItem {
+        var item = snap
         switch h {
         case .rotate:
             let c = snap.center
@@ -64,19 +65,20 @@ struct AnnotationCanvasInteractions {
             deg = AnnotationItem.normalize(deg)
             let snapped = (deg / 15).rounded() * 15
             if abs(deg - snapped) < 4 { deg = snapped }
-            items[idx].rotationAngle = deg
+            item.rotationAngle = deg
         case .start:
-            items[idx].startPoint = loc
+            item.startPoint = loc
         case .end:
-            items[idx].endPoint = loc
+            item.endPoint = loc
         case .corner(let left, let top):
             let local = snap.unrotated(loc)
             let minX = min(snap.startPoint.x, snap.endPoint.x), maxX = max(snap.startPoint.x, snap.endPoint.x)
             let minY = min(snap.startPoint.y, snap.endPoint.y), maxY = max(snap.startPoint.y, snap.endPoint.y)
             let x0 = left ? local.x : minX, x1 = left ? maxX : local.x
             let y0 = top ? local.y : minY, y1 = top ? maxY : local.y
-            items[idx].startPoint = CGPoint(x: x0, y: y0)
-            items[idx].endPoint = CGPoint(x: x1, y: y1)
+            item.startPoint = CGPoint(x: x0, y: y0)
+            item.endPoint = CGPoint(x: x1, y: y1)
         }
+        return item
     }
 }

@@ -22,14 +22,14 @@ extension AppWindowManager {
             return
         }
         
-        self.closeAllOverlays()
-        let screens = NSScreen.screens.isEmpty ? (NSScreen.main.map { [$0] } ?? []) : NSScreen.screens
+        beginOverlaySession()
+        let screens = activeScreens()
         guard !screens.isEmpty else { return }
         
-        self.overlayToken = UUID()
         let overlays = screens.map { screen in
-            AreaOverlayWindow(
-                screen: screen, mode: .recordingArea, visibleWindows: [],
+            acquireOverlay(for: screen).configured(
+                screen: screen,
+                mode: .recordingArea,
                 onCompleteRect: { [weak self] rect in
                     self?.closeAllOverlays()
                     Task { [weak self] in await self?.beginRecordingArea(rect: rect) }
@@ -38,7 +38,7 @@ extension AppWindowManager {
                 onCancel: { [weak self] in self?.closeAllOverlays() }
             )
         }
-        self.presentOverlays(overlays)
+        presentOverlays(overlays)
     }
     
     func beginRecordingArea(rect: CGRect) async {
@@ -50,12 +50,17 @@ extension AppWindowManager {
             isRecording = true
             isRecordingPaused = false
             recordingDuration = 0
+            recordingStartedAt = Date()
+            recordingPausedAt = nil
+            recordingAccumulatedPause = 0
+            
             if AppSettings.shared.playSound {
                 NSSound(named: "Purr")?.play()
             }
             
-            // Преобразуем координаты ScreenCaptureKit (origin вверху основного экрана) в координаты AppKit
-            let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 900
+            let primaryScreenHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
+                ?? NSScreen.main?.frame.height
+                ?? 900
             let appKitRect = NSRect(
                 x: rect.origin.x,
                 y: primaryScreenHeight - rect.origin.y - rect.height,
@@ -63,20 +68,18 @@ extension AppWindowManager {
                 height: rect.height
             )
             
-            // 1. Показываем рамку выделения области
             let frameWin = RecordingFrameWindow(screenRect: appKitRect)
             frameWin.orderFrontRegardless()
-            self.recordingFrameWindow = frameWin
+            recordingFrameWindow = frameWin
             
-            // 2. Вычисляем позицию для плавающей панели снизу области (если включено в настройках)
             if AppSettings.shared.showFloatingBarDuringRecording {
                 var barCenter = NSPoint(x: appKitRect.midX, y: appKitRect.minY - 35)
-                // Если панель выходит за нижний край экрана, показываем её внутри внизу области
                 if barCenter.y < 40 {
                     barCenter.y = appKitRect.minY + 35
                 }
-                // Предотвращаем выход за левый и правый края текущего экрана
-                let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(barCenter, $0.frame, false) }) ?? NSScreen.main ?? NSScreen.screens.first
+                let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(barCenter, $0.frame, false) })
+                    ?? NSScreen.main
+                    ?? NSScreen.screens.first
                 let screenMinX = (targetScreen?.frame.minX ?? 0) + 160
                 let screenMaxX = (targetScreen?.frame.maxX ?? 1440) - 160
                 barCenter.x = max(screenMinX, min(screenMaxX, barCenter.x))
@@ -89,38 +92,49 @@ extension AppWindowManager {
                     onCancel: { [weak self] in self?.cancelScreenRecording() }
                 )
                 barWin.orderFrontRegardless()
-                self.recordingBarWindow = barWin
+                recordingBarWindow = barWin
             }
             
-            recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                 Task { @MainActor [weak self] in
-                    guard let self, self.isRecording, !self.isRecordingPaused else { return }
-                    self.recordingDuration += 1
+                    self?.tickRecordingDuration()
                 }
             }
         } catch {
-            print("Recording start failed: \(error.localizedDescription)")
+            showRecordingError(error.localizedDescription)
         }
     }
     
     public func togglePauseResumeScreenRecording() {
         guard isRecording else { return }
         if isRecordingPaused {
+            if let pausedAt = recordingPausedAt {
+                recordingAccumulatedPause += Date().timeIntervalSince(pausedAt)
+            }
+            recordingPausedAt = nil
             ScreenRecorderService.shared.resumeRecording()
             isRecordingPaused = false
         } else {
+            recordingPausedAt = Date()
             ScreenRecorderService.shared.pauseRecording()
             isRecordingPaused = true
         }
+        tickRecordingDuration()
     }
     
     public func stopScreenRecording() {
         cleanupRecordingSession()
         
         Task {
-            if let savedURL = try? await ScreenRecorderService.shared.stopRecording() {
+            do {
+                if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
+                    await MainActor.run {
+                        self.openVideoEditor(videoURL: savedURL)
+                    }
+                }
+            } catch {
                 await MainActor.run {
-                    self.openVideoEditor(videoURL: savedURL)
+                    self.showRecordingError(error.localizedDescription)
                 }
             }
         }
@@ -139,11 +153,33 @@ extension AppWindowManager {
         recordingTimer = nil
         isRecording = false
         isRecordingPaused = false
+        recordingStartedAt = nil
+        recordingPausedAt = nil
+        recordingAccumulatedPause = 0
         
         recordingFrameWindow?.orderOut(nil)
         recordingFrameWindow = nil
         
         recordingBarWindow?.orderOut(nil)
         recordingBarWindow = nil
+    }
+    
+    private func tickRecordingDuration() {
+        guard isRecording, let start = recordingStartedAt else { return }
+        var paused = recordingAccumulatedPause
+        if let pausedAt = recordingPausedAt {
+            paused += Date().timeIntervalSince(pausedAt)
+        }
+        recordingDuration = max(0, Date().timeIntervalSince(start) - paused)
+    }
+    
+    private func showRecordingError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = L("recording.error_title")
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("alert.cancel"))
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 }
