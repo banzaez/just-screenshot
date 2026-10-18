@@ -148,10 +148,13 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         
         input.markAsFinished()
         
+        let outputURL = self.outputURL
+        // AVAssetWriter не Sendable; finishWriting вызывает completion на своей очереди после завершения.
+        nonisolated(unsafe) let finishingWriter = writer
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL?, Error>) in
-            writer.finishWriting { [outputURL = self.outputURL] in
-                let status = writer.status
-                let writerError = writer.error
+            finishingWriter.finishWriting {
+                let status = finishingWriter.status
+                let writerError = finishingWriter.error
                 if status == .completed, let url = outputURL {
                     continuation.resume(returning: url)
                 } else {
