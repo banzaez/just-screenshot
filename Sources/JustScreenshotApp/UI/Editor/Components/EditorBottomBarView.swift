@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Нижняя панель: фон (пресеты, отступ, тень), закрыть / копировать / сохранить
+/// Компактная нижняя панель: фон + действия
 public struct EditorBottomBarView: View {
     @Binding public var showBackdrop: Bool
     @Binding public var backdropPreset: BackdropPreset
@@ -16,6 +16,7 @@ public struct EditorBottomBarView: View {
     public let onSave: () -> Void
     
     @State private var justSavedToHistory: Bool = false
+    @State private var showAdjustPopover: Bool = false
     
     public init(
         showBackdrop: Binding<Bool>,
@@ -42,185 +43,171 @@ public struct EditorBottomBarView: View {
     }
     
     public var body: some View {
-        HStack(spacing: 12) {
-            // Группа фона с выпадающим меню и настройками
-            backdropControlGroup
-            
-            Spacer(minLength: 12)
-            
-            Button(L("editor.close"), action: onClose)
-                .keyboardShortcut("w", modifiers: [.command])
-                .controlSize(.regular)
-            
-            Button(action: onCopy) {
-                Label(L("editor.copy"), systemImage: "doc.on.doc")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .keyboardShortcut("c", modifiers: [.command, .shift])
-            
-            Button {
-                onSaveToHistory()
-                withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_800_000_000)
-                    withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
-                }
-            } label: {
-                Label(
-                    justSavedToHistory ? L("editor.saved") : L("editor.save"),
-                    systemImage: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down"
-                )
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.regular)
-            .tint(justSavedToHistory ? .green : nil)
-            .keyboardShortcut("s", modifiers: [.command])
-            .help(L("editor.save_history_help"))
-            
-            Button(action: onSave) {
-                Label(L("editor.export"), systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.regular)
-            .keyboardShortcut("e", modifiers: [.command])
-            .help(L("editor.export_help"))
+        HStack(spacing: 10) {
+            backdropCapsule
+            Spacer(minLength: 8)
+            actionsCapsule
         }
     }
     
-    // MARK: - Группа настроек фона с выпадающим меню и компактными ползунками
+    // MARK: - Backdrop
     
-    private var backdropControlGroup: some View {
-        HStack(spacing: 8) {
-            // Переключатель фона (галочка / checkbox)
-            Toggle(L("editor.backdrop"), isOn: $showBackdrop)
-                .toggleStyle(.checkbox)
-                .font(.system(size: 12, weight: .medium))
+    private var backdropCapsule: some View {
+        HStack(spacing: 6) {
+            EditorIconButton(
+                "rectangle.on.rectangle.angled",
+                title: L("editor.backdrop"),
+                isActive: showBackdrop,
+                width: 30
+            ) {
+                showBackdrop.toggle()
+            }
             
             if showBackdrop {
-                // Выбор пресета градиента/фона исключительно цветами (кружки-свотчи)
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     ForEach(BackdropPreset.allCases) { preset in
                         Button {
                             backdropPreset = preset
                         } label: {
                             Circle()
                                 .fill(preset.gradient)
-                                .frame(width: 20, height: 20)
+                                .frame(width: 16, height: 16)
                                 .overlay(
                                     Circle()
-                                        .stroke(Color.primary.opacity(backdropPreset == preset ? 0.9 : 0.25), lineWidth: backdropPreset == preset ? 2 : 0.8)
-                                )
-                                .overlay(
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 9, weight: .black))
-                                        .foregroundColor(.white)
-                                        .shadow(color: .black.opacity(0.6), radius: 1, x: 0, y: 1)
-                                        .opacity(backdropPreset == preset ? 1 : 0)
+                                        .strokeBorder(
+                                            Color.primary.opacity(backdropPreset == preset ? 0.95 : 0.2),
+                                            lineWidth: backdropPreset == preset ? 1.5 : 0.5
+                                        )
                                 )
                         }
                         .buttonStyle(.plain)
                         .help(preset.rawValue)
                     }
                 }
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color.primary.opacity(0.04))
-                )
                 
-                Divider()
-                    .frame(height: 16)
-                    .padding(.horizontal, 2)
-                
-                // Компактные стильные ползунки параметров
-                compactSlider(
-                    label: L("editor.padding"),
-                    icon: "arrow.up.left.and.arrow.down.right",
-                    value: $backdropPadding,
-                    range: 16...120,
-                    step: 2,
-                    unit: L("editor.unit_px")
-                )
-                
-                compactSlider(
-                    label: L("editor.corners"),
-                    icon: "square.dashed",
-                    value: $backdropCornerRadius,
-                    range: 0...32,
-                    step: 2,
-                    unit: L("editor.unit_px")
-                )
-                
-                // Переключатель тени
-                Toggle(isOn: $addShadow) {
-                    Image(systemName: "shadow")
-                        .font(.system(size: 11, weight: .semibold))
+                EditorIconButton(
+                    "slider.horizontal.3",
+                    title: L("editor.padding"),
+                    isActive: showAdjustPopover,
+                    width: 28
+                ) {
+                    showAdjustPopover.toggle()
                 }
-                .toggleStyle(.button)
-                .buttonStyle(.bordered)
-                .tint(addShadow ? .accentColor : nil)
-                .controlSize(.mini)
-                .help(L("editor.shadow_help"))
+                .popover(isPresented: $showAdjustPopover, arrowEdge: .top) {
+                    adjustPopover
+                }
                 
-                if addShadow {
-                    compactSlider(
-                        label: L("editor.shadow"),
-                        icon: "circle.lefthalf.striped.horizontal",
-                        value: $backdropShadowRadius,
-                        range: 4...60,
-                        step: 4,
-                        unit: L("editor.unit_px")
-                    )
+                EditorIconButton(
+                    "shadow",
+                    title: L("editor.shadow_help"),
+                    isActive: addShadow,
+                    width: 28
+                ) {
+                    addShadow.toggle()
                 }
             }
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(showBackdrop ? Color.primary.opacity(0.03) : Color.clear)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(showBackdrop ? Color.primary.opacity(0.08) : Color.clear, lineWidth: 1)
-        )
-        .animation(.easeInOut(duration: 0.2), value: showBackdrop)
-        .animation(.easeInOut(duration: 0.2), value: addShadow)
+        .padding(3)
+        .background(capsuleBackground)
+        .animation(.easeInOut(duration: 0.18), value: showBackdrop)
     }
     
-    // MARK: - Элегантный компактный ползунок со значением
+    private var adjustPopover: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            adjustRow(
+                icon: "arrow.up.left.and.arrow.down.right",
+                title: L("editor.padding"),
+                value: $backdropPadding,
+                range: 16...120,
+                step: 2
+            )
+            adjustRow(
+                icon: "square.dashed",
+                title: L("editor.corners"),
+                value: $backdropCornerRadius,
+                range: 0...32,
+                step: 2
+            )
+            if addShadow {
+                adjustRow(
+                    icon: "circle.lefthalf.striped.horizontal",
+                    title: L("editor.shadow"),
+                    value: $backdropShadowRadius,
+                    range: 4...60,
+                    step: 4
+                )
+            }
+        }
+        .padding(14)
+        .frame(width: 240)
+    }
     
-    @ViewBuilder
-    private func compactSlider(
-        label: String,
+    private func adjustRow(
         icon: String,
+        title: String,
         value: Binding<CGFloat>,
         range: ClosedRange<CGFloat>,
-        step: CGFloat,
-        unit: String
+        step: CGFloat
     ) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.secondary)
-            
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                Spacer()
+                Text("\(Int(value.wrappedValue)) \(L("editor.unit_px"))")
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
             Slider(value: value, in: range, step: step)
-                .frame(width: 58)
-                .controlSize(.mini)
-            
-            Text("\(Int(value.wrappedValue))")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 18, alignment: .trailing)
+                .controlSize(.small)
         }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(Color.primary.opacity(0.04))
-        )
-        .help("\(label): \(Int(value.wrappedValue)) \(unit)")
+    }
+    
+    // MARK: - Actions
+    
+    private var actionsCapsule: some View {
+        HStack(spacing: 2) {
+            EditorIconButton("xmark", title: L("editor.close"), width: 30, action: onClose)
+                .keyboardShortcut("w", modifiers: [.command])
+            
+            EditorIconButton("doc.on.doc", title: L("editor.copy"), width: 30, action: onCopy)
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+            
+            Button {
+                onSaveToHistory()
+                withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
+                }
+            } label: {
+                Image(systemName: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(width: 30, height: 30)
+                    .foregroundStyle(justSavedToHistory ? Color.white : Color.white)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(justSavedToHistory ? Color.green : Color.accentColor)
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(L("editor.save_history_help"))
+            .keyboardShortcut("s", modifiers: [.command])
+            .accessibilityLabel(justSavedToHistory ? L("editor.saved") : L("editor.save"))
+            
+            EditorIconButton("square.and.arrow.up", title: L("editor.export"), width: 30, action: onSave)
+                .keyboardShortcut("e", modifiers: [.command])
+        }
+        .padding(3)
+        .background(capsuleBackground)
+    }
+    
+    private var capsuleBackground: some View {
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
+            .fill(Color.primary.opacity(0.05))
     }
 }

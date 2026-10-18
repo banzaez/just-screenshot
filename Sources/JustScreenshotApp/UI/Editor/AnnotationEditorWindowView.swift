@@ -152,33 +152,30 @@ public struct AnnotationEditorWindowView: View {
             
             Divider()
             
-            ScrollView(.horizontal, showsIndicators: false) {
-                EditorBottomBarView(
-                    showBackdrop: $model.showBackdrop,
-                    backdropPreset: $model.backdropPreset,
-                    backdropPadding: $model.backdropPadding,
-                    backdropCornerRadius: $model.backdropCornerRadius,
-                    backdropShadowRadius: $model.backdropShadowRadius,
-                    addShadow: $model.addShadow,
-                    onClose: onClose,
-                    onCopy: { ImageExporter.copyToClipboard(model.renderFinalImage()) },
-                    onSaveToHistory: {
-                        let img = model.renderFinalImage()
-                        if let custom = onSaveToHistory {
-                            custom(img)
-                        } else {
-                            HistoryStore.shared.add(img)
-                        }
-                        model.markSaved()
-                    },
-                    onSave: {
-                        onSave(model.renderFinalImage())
+            EditorBottomBarView(
+                showBackdrop: $model.showBackdrop,
+                backdropPreset: $model.backdropPreset,
+                backdropPadding: $model.backdropPadding,
+                backdropCornerRadius: $model.backdropCornerRadius,
+                backdropShadowRadius: $model.backdropShadowRadius,
+                addShadow: $model.addShadow,
+                onClose: onClose,
+                onCopy: { ImageExporter.copyToClipboard(model.renderFinalImage()) },
+                onSaveToHistory: {
+                    let img = model.renderFinalImage()
+                    if let custom = onSaveToHistory {
+                        custom(img)
+                    } else {
+                        HistoryStore.shared.add(img)
                     }
-                )
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .frame(minWidth: 760)
-            }
+                    model.markSaved()
+                },
+                onSave: {
+                    onSave(model.renderFinalImage())
+                }
+            )
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))
         }
         .frame(minWidth: 640, minHeight: 460)
