@@ -19,8 +19,9 @@ public final class VideoExportService: @unchecked Sendable {
     ) async throws {
         let asset = AVURLAsset(url: sourceURL)
         let duration = try await asset.load(.duration).seconds
-        let startTime = max(0, options.trimStart)
-        let endTime = options.trimEnd > startTime ? min(duration, options.trimEnd) : duration
+        let trim = VideoExportTrim.range(duration: duration, options: options)
+        let startTime = trim.start
+        let endTime = trim.end
         
         let composition = AVMutableComposition()
         

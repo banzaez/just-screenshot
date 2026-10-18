@@ -7,7 +7,6 @@ public struct VideoExportOptions: Sendable {
     public var trimEnd: Double   // секунды
     public var playbackRate: Float // 0.5, 1.0, 1.5, 2.0
     public var cropRect: CGRect?  // нормализованные координаты [0...1]
-    public var exportGIF: Bool
     public var gifFPS: Int
     public var annotations: [VideoAnnotationItem]
     
@@ -16,7 +15,6 @@ public struct VideoExportOptions: Sendable {
         trimEnd: Double = 0,
         playbackRate: Float = 1.0,
         cropRect: CGRect? = nil,
-        exportGIF: Bool = false,
         gifFPS: Int = 15,
         annotations: [VideoAnnotationItem] = []
     ) {
@@ -24,8 +22,16 @@ public struct VideoExportOptions: Sendable {
         self.trimEnd = trimEnd
         self.playbackRate = playbackRate
         self.cropRect = cropRect
-        self.exportGIF = exportGIF
         self.gifFPS = gifFPS
         self.annotations = annotations
+    }
+}
+
+/// Нормализованный диапазон обрезки по длительности ассета
+enum VideoExportTrim {
+    static func range(duration: Double, options: VideoExportOptions) -> (start: Double, end: Double) {
+        let start = max(0, options.trimStart)
+        let end = options.trimEnd > start ? min(duration, options.trimEnd) : duration
+        return (start, end)
     }
 }

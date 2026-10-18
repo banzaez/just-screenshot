@@ -54,8 +54,7 @@ public enum AnnotationRenderer {
     /// Отрисовка исходного изображения со списком аннотаций
     public static func render(
         baseImage: NSImage,
-        items: [AnnotationItem],
-        zoomScale: CGFloat = 1.0
+        items: [AnnotationItem]
     ) -> NSImage {
         let size = baseImage.size
         let targetImage = NSImage(size: size)
@@ -232,10 +231,8 @@ public enum AnnotationRenderer {
         context.strokePath()
         
         let angle = atan2(p2.y - p1.y, p2.x - p1.x)
-        let arrowLength: CGFloat = headLength
-        let arrowAngle: CGFloat = .pi / 6
-        let tip1 = CGPoint(x: p2.x - arrowLength * cos(angle - arrowAngle), y: p2.y - arrowLength * sin(angle - arrowAngle))
-        let tip2 = CGPoint(x: p2.x - arrowLength * cos(angle + arrowAngle), y: p2.y - arrowLength * sin(angle + arrowAngle))
+        let tip1 = CGPoint(x: p2.x - headLength * cos(angle - .pi / 6), y: p2.y - headLength * sin(angle - .pi / 6))
+        let tip2 = CGPoint(x: p2.x - headLength * cos(angle + .pi / 6), y: p2.y - headLength * sin(angle + .pi / 6))
         context.move(to: p2)
         context.addLine(to: tip1)
         context.move(to: p2)

@@ -1,12 +1,11 @@
 import SwiftUI
 import AppKit
 
-/// Верхний тулбар: инструменты, цвет и толщина (выпадающие списки), масштаб, отмена
+/// Верхний тулбар: сгруппированные инструменты, цвет/толщина, масштаб, undo
 public struct EditorToolbarView: View {
     @Binding public var selectedTool: AnnotationTool
     @Binding public var selectedColor: Color
     @Binding public var lineWidth: CGFloat
-    @Binding public var textInputString: String
     
     public let zoomPercent: Int
     public let isFitMode: Bool
@@ -24,7 +23,6 @@ public struct EditorToolbarView: View {
         selectedTool: Binding<AnnotationTool>,
         selectedColor: Binding<Color>,
         lineWidth: Binding<CGFloat>,
-        textInputString: Binding<String>,
         zoomPercent: Int,
         isFitMode: Bool,
         canUndo: Bool,
@@ -40,7 +38,6 @@ public struct EditorToolbarView: View {
         self._selectedTool = selectedTool
         self._selectedColor = selectedColor
         self._lineWidth = lineWidth
-        self._textInputString = textInputString
         self.zoomPercent = zoomPercent
         self.isFitMode = isFitMode
         self.canUndo = canUndo
@@ -56,46 +53,94 @@ public struct EditorToolbarView: View {
     
     public var body: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                ForEach(AnnotationTool.allCases) { tool in
-                    EditorIconButton(tool.iconName, title: tool.localizedTitle, isActive: selectedTool == tool) {
-                        selectedTool = tool
-                    }
-                }
-            }
+            toolGroup(AnnotationTool.selectGroup)
+            toolGroup(AnnotationTool.shapesGroup)
+            toolGroup(AnnotationTool.annotateGroup)
+            toolGroup(AnnotationTool.redactGroup)
             
-            if selectedTool == .text {
-                TextField(L("editor.default_note_text"), text: $textInputString)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 150)
-            }
+            styleCapsule
             
-            Divider().frame(height: 24)
-            
-            ColorDropdown(selection: $selectedColor)
-            WidthDropdown(selection: $lineWidth)
-            
-            Divider().frame(height: 24)
-            
-            HStack(spacing: 4) {
-                EditorIconButton("minus.magnifyingglass", title: L("editor.zoom_out"), action: onZoomOut)
-                Text("\(zoomPercent)%")
-                    .font(.callout.monospacedDigit())
-                    .frame(width: 46)
-                EditorIconButton("plus.magnifyingglass", title: L("editor.zoom_in"), action: onZoomIn)
-                EditorIconButton("arrow.up.left.and.arrow.down.right", title: L("editor.fit_window"), isActive: isFitMode, action: onFit)
-                EditorIconButton("1.magnifyingglass", title: L("editor.actual_size"), action: onActualSize)
-            }
+            zoomCapsule
             
             Spacer(minLength: 8)
             
-            HStack(spacing: 4) {
-                EditorIconButton("eye.slash", title: L("editor.auto_redact"), action: onAutoRedact)
-                EditorIconButton("arrow.uturn.backward", title: L("editor.undo"), action: onUndo)
-                    .opacity(canUndo ? 1 : 0.35).disabled(!canUndo)
-                EditorIconButton("arrow.uturn.forward", title: L("editor.redo"), action: onRedo)
-                    .opacity(canRedo ? 1 : 0.35).disabled(!canRedo)
+            historyCapsule
+        }
+    }
+    
+    // MARK: - Groups
+    
+    private func toolGroup(_ tools: [AnnotationTool]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(tools) { tool in
+                EditorIconButton(
+                    tool.iconName,
+                    title: tool.localizedTitle,
+                    isActive: selectedTool == tool,
+                    width: 34
+                ) {
+                    selectedTool = tool
+                }
             }
         }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+    
+    private var styleCapsule: some View {
+        HStack(spacing: 8) {
+            ColorDropdown(selection: $selectedColor)
+            WidthDropdown(selection: $lineWidth)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+    
+    private var zoomCapsule: some View {
+        HStack(spacing: 2) {
+            EditorIconButton("minus.magnifyingglass", title: L("editor.zoom_out"), width: 32, action: onZoomOut)
+            Text("\(zoomPercent)%")
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 44)
+            EditorIconButton("plus.magnifyingglass", title: L("editor.zoom_in"), width: 32, action: onZoomIn)
+            EditorIconButton(
+                "arrow.up.left.and.arrow.down.right",
+                title: L("editor.fit_window"),
+                isActive: isFitMode,
+                width: 32,
+                action: onFit
+            )
+            EditorIconButton("1.magnifyingglass", title: L("editor.actual_size"), width: 32, action: onActualSize)
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
+    }
+    
+    private var historyCapsule: some View {
+        HStack(spacing: 2) {
+            EditorIconButton("eye.slash", title: L("editor.auto_redact"), width: 34, action: onAutoRedact)
+            EditorIconButton("arrow.uturn.backward", title: L("editor.undo"), width: 34, action: onUndo)
+                .opacity(canUndo ? 1 : 0.35)
+                .disabled(!canUndo)
+            EditorIconButton("arrow.uturn.forward", title: L("editor.redo"), width: 34, action: onRedo)
+                .opacity(canRedo ? 1 : 0.35)
+                .disabled(!canRedo)
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.05))
+        )
     }
 }

@@ -79,7 +79,7 @@ public struct AnnotationCanvasView: View {
             lineWidth: model.lineWidth,
             text: model.textInputString.isEmpty ? L("editor.default_note_text") : model.textInputString,
             counterNumber: nextCounter,
-            fontSize: 20,
+            fontSize: model.fontSize,
             scaleFactor: model.selectedTool == .magnifier ? 2.0 : 1.0
         )
     }
@@ -198,7 +198,7 @@ public struct AnnotationCanvasView: View {
                 color: model.selectedColor,
                 lineWidth: model.lineWidth,
                 text: text,
-                fontSize: 22
+                fontSize: model.fontSize
             )
         case .counter:
             newItem = AnnotationItem(

@@ -15,6 +15,32 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     
     public var id: String { rawValue }
     
+    /// Стабильный ключ для UserDefaults (не зависит от локализованного rawValue)
+    public var storageKey: String {
+        switch self {
+        case .select: return "select"
+        case .arrow: return "arrow"
+        case .rectangle: return "rectangle"
+        case .roundedRect: return "roundedRect"
+        case .ellipse: return "ellipse"
+        case .text: return "text"
+        case .counter: return "counter"
+        case .blur: return "blur"
+        case .highlighter: return "highlighter"
+        case .magnifier: return "magnifier"
+        }
+    }
+    
+    public static func from(storageKey: String) -> AnnotationTool? {
+        allCases.first { $0.storageKey == storageKey }
+    }
+    
+    /// Группы для тулбара
+    public static let selectGroup: [AnnotationTool] = [.select]
+    public static let shapesGroup: [AnnotationTool] = [.arrow, .rectangle, .roundedRect, .ellipse]
+    public static let annotateGroup: [AnnotationTool] = [.text, .counter, .highlighter]
+    public static let redactGroup: [AnnotationTool] = [.blur, .magnifier]
+    
     public var iconName: String {
         switch self {
         case .select: return "cursorarrow"

@@ -93,9 +93,4 @@ public extension View {
     ) -> some View {
         modifier(EditorKeyHandlerModifier(onDelete: onDelete, onEscape: onEscape, onSelectTool: onSelectTool))
     }
-    
-    @available(*, deprecated, renamed: "editorKeyHandler")
-    func onEditorDeleteKey(onDelete: @escaping () -> Void, onEscape: (() -> Void)? = nil) -> some View {
-        editorKeyHandler(onDelete: onDelete, onEscape: onEscape)
-    }
 }

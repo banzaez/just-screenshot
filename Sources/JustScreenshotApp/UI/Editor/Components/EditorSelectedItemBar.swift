@@ -50,13 +50,14 @@ public struct EditorSelectedItemBar: View {
     }
     
     public var body: some View {
-        HStack(spacing: 0) {
+        SelectedAnnotationBarControls.BarChrome(isActive: item != nil) {
             if let item = item {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
-                        Label(item.tool.localizedTitle, systemImage: item.tool.iconName)
-                            .font(.callout.bold())
-                            .foregroundStyle(Color.accentColor)
+                        SelectedAnnotationBarControls.TitleLabel(
+                            title: item.tool.localizedTitle,
+                            systemImage: item.tool.iconName
+                        )
                         
                         Divider().frame(height: 20)
                         
@@ -65,9 +66,11 @@ public struct EditorSelectedItemBar: View {
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 180)
                                 .focused($textFocused)
-                            EditorIconButton("textformat.size.smaller", title: L("editor.selected.font_smaller")) { onFontSizeChange(max(10, item.fontSize - 2)) }
-                            Text("\(Int(item.fontSize))").font(.callout.monospacedDigit()).frame(width: 28)
-                            EditorIconButton("textformat.size.larger", title: L("editor.selected.font_larger")) { onFontSizeChange(min(96, item.fontSize + 2)) }
+                            SelectedAnnotationBarControls.FontSizeControls(
+                                fontSize: item.fontSize,
+                                onSmaller: { onFontSizeChange(max(10, item.fontSize - 2)) },
+                                onLarger: { onFontSizeChange(min(96, item.fontSize + 2)) }
+                            )
                         }
                         
                         if item.tool == .counter {
@@ -104,43 +107,27 @@ public struct EditorSelectedItemBar: View {
                         
                         if item.supportsRotation {
                             Divider().frame(height: 20)
-                            EditorIconButton("rotate.left", title: L("editor.selected.rotate_left")) { onSetAngle(item.displayAngle - 15) }
-                            Slider(value: Binding(get: { item.displayAngle }, set: { onSetAngle($0) }), in: -180...180)
-                                .frame(width: 110)
-                            EditorIconButton("rotate.right", title: L("editor.selected.rotate_right")) { onSetAngle(item.displayAngle + 15) }
-                            Text("\(Int(item.displayAngle.rounded()))°").font(.callout.monospacedDigit()).frame(width: 40)
-                            EditorIconButton("arrow.counterclockwise", title: L("editor.selected.reset_angle")) { onSetAngle(0) }
+                            SelectedAnnotationBarControls.RotationControls(
+                                angle: item.displayAngle,
+                                onSetAngle: onSetAngle
+                            )
                         }
                         
                         Divider().frame(height: 20)
                         
-                        EditorIconButton("plus.square.on.square", title: L("editor.selected.duplicate"), action: onDuplicate)
-                        EditorIconButton("trash", title: L("editor.selected.delete"), action: onDelete)
-                        EditorIconButton("xmark", title: L("editor.selected.deselect"), action: onDeselect)
+                        SelectedAnnotationBarControls.ActionButtons(
+                            onDuplicate: onDuplicate,
+                            onDelete: onDelete,
+                            onDeselect: onDeselect
+                        )
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
                 }
             } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "cursorarrow.click.2")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                    Text(L("editor.selected.empty_hint"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text(L("editor.selected.shortcuts_hint"))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 4)
+                SelectedAnnotationBarControls.EmptyHint(showShortcuts: true)
             }
         }
-        .frame(height: 38)
-        .frame(maxWidth: .infinity)
-        .background(item != nil ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor).opacity(0.4))
         .onChange(of: focusTextField) { _, needsFocus in
             guard needsFocus, item?.tool == .text else { return }
             textFocused = true

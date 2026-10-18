@@ -8,30 +8,63 @@ public final class AnnotationEditorModel: ObservableObject {
     
     @Published public var items: [AnnotationItem] = []
     @Published public var selectedItemID: UUID? = nil
-    @Published public var selectedTool: AnnotationTool = .select
-    @Published public var selectedColor: Color = .red
-    @Published public var lineWidth: CGFloat = 4.0
+    
+    @Published public var selectedTool: AnnotationTool = EditorPreferences.tool {
+        didSet {
+            // Не затираем «рисовалку» при переходе в режим выбора
+            if selectedTool != .select {
+                EditorPreferences.tool = selectedTool
+            }
+        }
+    }
+    @Published public var selectedColor: Color = EditorPreferences.color {
+        didSet { EditorPreferences.color = selectedColor }
+    }
+    @Published public var lineWidth: CGFloat = EditorPreferences.lineWidth {
+        didSet { EditorPreferences.lineWidth = lineWidth }
+    }
+    @Published public var fontSize: CGFloat = EditorPreferences.fontSize {
+        didSet { EditorPreferences.fontSize = fontSize }
+    }
     @Published public var textInputString: String = ""
     /// Запрос фокуса на поле текста в selected bar после создания/даблклика
     @Published public var shouldFocusTextEditor: Bool = false
     
-    @Published public var showBackdrop: Bool = true {
-        didSet { markModified() }
+    @Published public var showBackdrop: Bool = EditorPreferences.showBackdrop {
+        didSet {
+            EditorPreferences.showBackdrop = showBackdrop
+            markModified()
+        }
     }
-    @Published public var backdropPreset: BackdropPreset = .aurora {
-        didSet { markModified() }
+    @Published public var backdropPreset: BackdropPreset = EditorPreferences.backdropPreset {
+        didSet {
+            EditorPreferences.backdropPreset = backdropPreset
+            markModified()
+        }
     }
-    @Published public var backdropPadding: CGFloat = 48 {
-        didSet { markModified() }
+    @Published public var backdropPadding: CGFloat = EditorPreferences.backdropPadding {
+        didSet {
+            EditorPreferences.backdropPadding = backdropPadding
+            markModified()
+        }
     }
-    @Published public var backdropCornerRadius: CGFloat = 12 {
-        didSet { markModified() }
+    @Published public var backdropCornerRadius: CGFloat = EditorPreferences.backdropCornerRadius {
+        didSet {
+            EditorPreferences.backdropCornerRadius = backdropCornerRadius
+            markModified()
+        }
     }
-    @Published public var backdropShadowRadius: CGFloat = 24 {
-        didSet { markModified() }
+    @Published public var backdropShadowRadius: CGFloat = EditorPreferences.backdropShadowRadius {
+        didSet {
+            EditorPreferences.backdropShadowRadius = backdropShadowRadius
+            markModified()
+        }
     }
-    @Published public var addShadow: Bool = true {
-        didSet { markModified() }
+    @Published public var addShadow: Bool = EditorPreferences.addShadow {
+        didSet {
+            EditorPreferences.addShadow = addShadow
+            markModified()
+        }
     }
     
     @Published public private(set) var canUndo: Bool = false
@@ -203,11 +236,11 @@ public final class AnnotationEditorModel: ObservableObject {
     
     // MARK: - Convenience mutations
     
+    /// Добавляет элемент. Инструмент рисования не сбрасывается (можно рисовать серию).
     public func appendItem(_ item: AnnotationItem, select: Bool = true, focusText: Bool = false) {
         commitItemsMutation { $0.append(item) }
         if select {
             selectedItemID = item.id
-            selectedTool = .select
         }
         if focusText {
             requestTextFocus()

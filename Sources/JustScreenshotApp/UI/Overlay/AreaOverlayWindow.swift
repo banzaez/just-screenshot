@@ -108,6 +108,28 @@ public final class AreaOverlayWindow: NSWindow {
     public override func cancelOperation(_ sender: Any?) {
         (contentView as? AreaSelectionNSView)?.cancelOperation(sender)
     }
+    
+    @discardableResult
+    func configured(
+        screen: NSScreen,
+        mode: OverlayMode,
+        onCompleteRect: @escaping (CGRect) -> Void,
+        onCompleteWindow: @escaping (SCWindow) -> Void,
+        onCancel: @escaping () -> Void,
+        onNeedBackgroundSample: (() -> Void)? = nil
+    ) -> AreaOverlayWindow {
+        configure(
+            screen: screen,
+            mode: mode,
+            visibleWindows: [],
+            backgroundImage: nil,
+            onCompleteRect: onCompleteRect,
+            onCompleteWindow: onCompleteWindow,
+            onCancel: onCancel,
+            onNeedBackgroundSample: onNeedBackgroundSample
+        )
+        return self
+    }
 }
 
 extension NSScreen {

@@ -27,20 +27,13 @@ extension AppWindowManager {
             onClose: { [weak self] in self?.closeEditor(id: id) }
         )
         
-        let window = NSWindow(
+        let window = makeEditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false
+            title: L("editor.title", Int(item.image.size.width), Int(item.image.size.height)),
+            minSize: NSSize(width: 640, height: 460),
+            rootView: view,
+            resetCascade: editors.isEmpty
         )
-        window.title = L("editor.title", Int(item.image.size.width), Int(item.image.size.height))
-        window.minSize = NSSize(width: 640, height: 460)
-        window.contentView = NSHostingView(rootView: view)
-        
-        if editors.isEmpty {
-            window.center()
-            cascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        }
-        cascadePoint = window.cascadeTopLeft(from: cascadePoint)
         
         let managed = ManagedWindow(window: window) { [weak self] closed in
             self?.editors = self?.editors.filter { $0.value !== closed } ?? [:]
@@ -96,20 +89,13 @@ extension AppWindowManager {
             onClose: { [weak self] in self?.closeVideoEditor(id: editorID) }
         )
         
-        let window = NSWindow(
+        let window = makeEditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
-            backing: .buffered, defer: false
+            title: L("video_editor.title", videoURL.lastPathComponent),
+            minSize: NSSize(width: 720, height: 500),
+            rootView: view,
+            resetCascade: videoEditors.isEmpty
         )
-        window.title = L("video_editor.title", videoURL.lastPathComponent)
-        window.minSize = NSSize(width: 720, height: 500)
-        window.contentView = NSHostingView(rootView: view)
-        
-        if videoEditors.isEmpty {
-            window.center()
-            cascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
-        }
-        cascadePoint = window.cascadeTopLeft(from: cascadePoint)
         
         let managed = ManagedWindow(window: window) { [weak self] closed in
             model.cleanup()
@@ -118,11 +104,35 @@ extension AppWindowManager {
         
         videoEditors[editorID] = managed
         managed.bringToFront()
-        NSApp.activate(ignoringOtherApps: true)
     }
     
     func closeVideoEditor(id: UUID) {
         guard let managed = videoEditors.removeValue(forKey: id) else { return }
         managed.closeSilently()
+    }
+    
+    private func makeEditorWindow<Content: View>(
+        contentRect: NSRect,
+        title: String,
+        minSize: NSSize,
+        rootView: Content,
+        resetCascade: Bool
+    ) -> NSWindow {
+        let window = NSWindow(
+            contentRect: contentRect,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        window.minSize = minSize
+        window.contentView = NSHostingView(rootView: rootView)
+        
+        if resetCascade {
+            window.center()
+            cascadePoint = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        }
+        cascadePoint = window.cascadeTopLeft(from: cascadePoint)
+        return window
     }
 }

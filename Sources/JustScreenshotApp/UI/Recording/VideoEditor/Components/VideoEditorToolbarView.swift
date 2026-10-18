@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Верхняя панель инструментов профессионального видеоредактора
+/// Верхняя панель инструментов видеоредактора
 public struct VideoEditorToolbarView: View {
     @ObservedObject var model: VideoEditorModel
     var onExportMP4: () -> Void
@@ -18,32 +18,48 @@ public struct VideoEditorToolbarView: View {
     }
     
     public var body: some View {
-        HStack(spacing: 14) {
-            // Кнопки добавления аннотаций
-            HStack(spacing: 4) {
+        HStack(spacing: 10) {
+            // Добавление аннотаций
+            HStack(spacing: 2) {
                 ForEach(VideoAnnotationType.allCases) { type in
-                    Button {
+                    EditorIconButton(
+                        type.icon,
+                        title: L("video_editor.add_annotation", type.localizedTitle),
+                        width: 40
+                    ) {
                         model.addAnnotation(type: type)
-                    } label: {
-                        VStack(spacing: 2) {
-                            Image(systemName: type.icon)
-                                .font(.system(size: 13, weight: .medium))
-                            Text(type.localizedTitle)
-                                .font(.system(size: 9))
-                        }
-                        .frame(width: 52, height: 38)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(6)
                     }
-                    .buttonStyle(.plain)
-                    .help(L("video_editor.add_annotation", type.localizedTitle))
                 }
             }
+            .padding(3)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
             
-            Divider()
-                .frame(height: 24)
+            // Стиль новых / выбранных
+            HStack(spacing: 8) {
+                ColorDropdown(
+                    selection: Binding(
+                        get: { model.annotationColor },
+                        set: { model.setAnnotationColor($0) }
+                    )
+                )
+                WidthDropdown(
+                    selection: Binding(
+                        get: { model.annotationLineWidth },
+                        set: { model.setAnnotationLineWidth($0) }
+                    )
+                )
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.08))
+            )
             
-            // Кадрирование (Crop)
+            // Crop
             Button {
                 model.isCropping.toggle()
             } label: {
@@ -51,17 +67,20 @@ public struct VideoEditorToolbarView: View {
                     Image(systemName: "crop")
                         .font(.system(size: 13, weight: .medium))
                     Text(L("video_editor.crop"))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .semibold))
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 12)
                 .frame(height: 32)
-                .background(model.isCropping ? Color.blue : Color.white.opacity(0.08))
-                .cornerRadius(6)
+                .foregroundStyle(model.isCropping ? Color.white : Color.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(model.isCropping ? Color.accentColor : Color.white.opacity(0.08))
+                )
             }
             .buttonStyle(.plain)
             .help(L("video_editor.crop_help"))
             
-            // Скорость воспроизведения
+            // Скорость
             Menu {
                 Button(L("video_editor.speed_05")) { model.setRate(0.5) }
                 Button(L("video_editor.speed_10")) { model.setRate(1.0) }
@@ -74,55 +93,57 @@ public struct VideoEditorToolbarView: View {
                     Text(String(format: "%.1fx", model.playbackRate))
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 10)
                 .frame(height: 32)
-                .background(Color.white.opacity(0.08))
-                .cornerRadius(6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
             }
             .menuStyle(.borderlessButton)
-            .frame(width: 76)
+            .frame(width: 80)
             
             Spacer()
             
-            // Кнопка экспорта в GIF
             Button(action: onExportGIF) {
                 HStack(spacing: 6) {
                     Image(systemName: "photo.stack")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(L("video_editor.export_gif"))
                         .font(.system(size: 11, weight: .bold))
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 32)
-                .background(Color.purple.opacity(0.85))
-                .foregroundColor(.white)
-                .cornerRadius(6)
+                .foregroundStyle(.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.purple.opacity(0.85))
+                )
             }
             .buttonStyle(.plain)
             .help(L("video_editor.export_gif_help"))
             
-            // Кнопка экспорта в MP4
             Button(action: onExportMP4) {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.down.circle.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, weight: .semibold))
                     Text(L("video_editor.save_mp4"))
                         .font(.system(size: 12, weight: .semibold))
                 }
                 .padding(.horizontal, 14)
                 .frame(height: 32)
-                .background(Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(6)
+                .foregroundStyle(.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color.accentColor)
+                )
             }
             .buttonStyle(.plain)
             .help(L("video_editor.save_mp4_help"))
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .background(Color(NSColor.windowBackgroundColor))
-        .overlay(
-            Divider(), alignment: .bottom
-        )
+        .overlay(Divider(), alignment: .bottom)
     }
 }

@@ -11,6 +11,21 @@ public enum BackdropPreset: String, CaseIterable, Identifiable, Sendable {
     
     public var id: String { rawValue }
     
+    public var storageKey: String {
+        switch self {
+        case .aurora: return "aurora"
+        case .ocean: return "ocean"
+        case .sunset: return "sunset"
+        case .forest: return "forest"
+        case .graphite: return "graphite"
+        case .snow: return "snow"
+        }
+    }
+    
+    public static func from(storageKey: String) -> BackdropPreset? {
+        allCases.first { $0.storageKey == storageKey }
+    }
+    
     public var colors: [Color] {
         switch self {
         case .aurora: return [Color(red: 0.36, green: 0.28, blue: 0.95), Color(red: 0.75, green: 0.30, blue: 0.85)]

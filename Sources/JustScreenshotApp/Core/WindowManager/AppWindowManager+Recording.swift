@@ -9,19 +9,14 @@ extension AppWindowManager {
     }
     
     public func startScreenRecording() {
-        if !ScreenCaptureService.shared.hasScreenCapturePermission() {
-            Task { [weak self] in
-                guard let self else { return }
-                let granted = await ScreenCaptureService.shared.checkAndRequestPermissions()
-                if !granted {
-                    ScreenCaptureService.shared.showPermissionAlert()
-                    return
-                }
-                self.startScreenRecording()
-            }
-            return
+        Task { [weak self] in
+            guard let self else { return }
+            guard await ScreenCaptureService.shared.ensurePermission() else { return }
+            self.presentRecordingOverlays()
         }
-        
+    }
+    
+    private func presentRecordingOverlays() {
         beginOverlaySession()
         let screens = activeScreens()
         guard !screens.isEmpty else { return }
@@ -58,15 +53,7 @@ extension AppWindowManager {
                 NSSound(named: "Purr")?.play()
             }
             
-            let primaryScreenHeight = NSScreen.screens.first(where: { $0.frame.origin == .zero })?.frame.height
-                ?? NSScreen.main?.frame.height
-                ?? 900
-            let appKitRect = NSRect(
-                x: rect.origin.x,
-                y: primaryScreenHeight - rect.origin.y - rect.height,
-                width: rect.width,
-                height: rect.height
-            )
+            let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: rect)
             
             let frameWin = RecordingFrameWindow(screenRect: appKitRect)
             frameWin.orderFrontRegardless()

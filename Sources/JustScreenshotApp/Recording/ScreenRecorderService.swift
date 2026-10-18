@@ -42,14 +42,8 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         }
         
         let currentPID = ProcessInfo.processInfo.processIdentifier
-        let excludedWindows = content.windows.filter { window in
-            if window.owningApplication?.processID == currentPID {
-                if JustScreenshotWindowTitles.isOverlayTitle(window.title) ||
-                   window.windowLayer >= 1000 {
-                    return true
-                }
-            }
-            return false
+        let excludedWindows = content.windows.filter {
+            JustScreenshotWindowTitles.shouldExcludeFromCapture($0, currentPID: currentPID)
         }
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         

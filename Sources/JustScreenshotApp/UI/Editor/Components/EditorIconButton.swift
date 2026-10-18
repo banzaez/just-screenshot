@@ -19,10 +19,13 @@ public struct EditorIconButton: View {
     public var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 14, weight: .medium))
-                .frame(width: width, height: 32)
-                .foregroundStyle(isActive ? Color.white : Color.primary)
-                .background(RoundedRectangle(cornerRadius: 7).fill(isActive ? Color.accentColor : Color.primary.opacity(0.06)))
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: width, height: 30)
+                .foregroundStyle(isActive ? Color.white : Color.primary.opacity(0.85))
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isActive ? Color.accentColor : Color.clear)
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

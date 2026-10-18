@@ -12,16 +12,6 @@ public final class AppWindowManager: ObservableObject {
     @Published public var recordingDuration: TimeInterval = 0
     
     var overlayWindows: [AreaOverlayWindow] = []
-    var overlayWindow: AreaOverlayWindow? {
-        get { overlayWindows.first }
-        set {
-            if let newValue {
-                overlayWindows = [newValue]
-            } else {
-                overlayWindows = []
-            }
-        }
-    }
     /// Пул оверлеев по displayID — без повторного alloc на каждый хоткей.
     var overlayPool: [CGDirectDisplayID: AreaOverlayWindow] = [:]
     var overlayToken = UUID()

@@ -1,4 +1,5 @@
 import Foundation
+import ScreenCaptureKit
 
 /// Стабильные title окон приложения для исключения из ScreenCaptureKit
 enum JustScreenshotWindowTitles {
@@ -17,5 +18,12 @@ enum JustScreenshotWindowTitles {
     static func isOverlayTitle(_ title: String?) -> Bool {
         guard let title else { return false }
         return allOverlayTitles.contains(title)
+    }
+    
+    /// Окно нашего процесса, которое не должно попадать в захват/запись
+    nonisolated static func shouldExcludeFromCapture(_ window: SCWindow, currentPID: pid_t? = nil) -> Bool {
+        let pid = currentPID ?? ProcessInfo.processInfo.processIdentifier
+        guard window.owningApplication?.processID == pid else { return false }
+        return isOverlayTitle(window.title) || window.windowLayer >= 1000
     }
 }

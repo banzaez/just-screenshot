@@ -50,17 +50,21 @@ public struct BurnInAnnotation: Sendable {
 /// Отрисовка аннотаций поверх кадра (GIF) и сборка CALayer для MP4
 enum VideoAnnotationBurnIn {
     
+    nonisolated private static func pixelRect(for item: BurnInAnnotation, in size: CGSize) -> CGRect {
+        CGRect(
+            x: item.rect.origin.x * size.width,
+            y: item.rect.origin.y * size.height,
+            width: max(1, item.rect.width * size.width),
+            height: max(1, item.rect.height * size.height)
+        )
+    }
+    
     /// Рисует аннотации в CGContext. origin — top-left видеокадра (как у CGImage).
     nonisolated static func draw(_ annotations: [BurnInAnnotation], in context: CGContext, videoSize: CGSize) {
         guard !annotations.isEmpty, videoSize.width > 0, videoSize.height > 0 else { return }
         
         for item in annotations {
-            let pixelRect = CGRect(
-                x: item.rect.origin.x * videoSize.width,
-                y: item.rect.origin.y * videoSize.height,
-                width: max(1, item.rect.width * videoSize.width),
-                height: max(1, item.rect.height * videoSize.height)
-            )
+            let pixelRect = pixelRect(for: item, in: videoSize)
             let center = CGPoint(x: pixelRect.midX, y: pixelRect.midY)
             
             context.saveGState()
@@ -88,22 +92,14 @@ enum VideoAnnotationBurnIn {
                 context.setLineWidth(item.lineWidth)
                 context.setLineCap(.round)
                 context.setLineJoin(.round)
-                let start = CGPoint(x: pixelRect.minX + 4, y: pixelRect.maxY - 4)
-                let end = CGPoint(x: pixelRect.maxX - 4, y: pixelRect.minY + 4)
-                context.move(to: start)
-                context.addLine(to: end)
-                let head = max(12, item.lineWidth * 3)
-                let angle = atan2(end.y - start.y, end.x - start.x)
-                context.move(to: end)
-                context.addLine(to: CGPoint(
-                    x: end.x - head * cos(angle - .pi / 6),
-                    y: end.y - head * sin(angle - .pi / 6)
-                ))
-                context.move(to: end)
-                context.addLine(to: CGPoint(
-                    x: end.x - head * cos(angle + .pi / 6),
-                    y: end.y - head * sin(angle + .pi / 6)
-                ))
+                let geometry = AnnotationArrowGeometry.diagonal(in: pixelRect.size, lineWidth: item.lineWidth)
+                let origin = pixelRect.origin
+                context.move(to: CGPoint(x: origin.x + geometry.start.x, y: origin.y + geometry.start.y))
+                context.addLine(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
+                context.move(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
+                context.addLine(to: CGPoint(x: origin.x + geometry.headLeft.x, y: origin.y + geometry.headLeft.y))
+                context.move(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
+                context.addLine(to: CGPoint(x: origin.x + geometry.headRight.x, y: origin.y + geometry.headRight.y))
                 context.strokePath()
                 
             case .text:
@@ -173,12 +169,7 @@ enum VideoAnnotationBurnIn {
         parent.isGeometryFlipped = true
         
         for item in annotations {
-            let pixelRect = CGRect(
-                x: item.rect.origin.x * renderSize.width,
-                y: item.rect.origin.y * renderSize.height,
-                width: max(1, item.rect.width * renderSize.width),
-                height: max(1, item.rect.height * renderSize.height)
-            )
+            let pixelRect = pixelRect(for: item, in: renderSize)
             
             let layer = CALayer()
             layer.frame = pixelRect
@@ -205,16 +196,8 @@ enum VideoAnnotationBurnIn {
                 let shape = CAShapeLayer()
                 shape.frame = layer.bounds
                 let path = CGMutablePath()
-                let start = CGPoint(x: 4, y: layer.bounds.height - 4)
-                let end = CGPoint(x: layer.bounds.width - 4, y: 4)
-                path.move(to: start)
-                path.addLine(to: end)
-                let head = max(12, item.lineWidth * 3)
-                let angle = atan2(end.y - start.y, end.x - start.x)
-                path.move(to: end)
-                path.addLine(to: CGPoint(x: end.x - head * cos(angle - .pi / 6), y: end.y - head * sin(angle - .pi / 6)))
-                path.move(to: end)
-                path.addLine(to: CGPoint(x: end.x - head * cos(angle + .pi / 6), y: end.y - head * sin(angle + .pi / 6)))
+                let geometry = AnnotationArrowGeometry.diagonal(in: layer.bounds.size, lineWidth: item.lineWidth)
+                AnnotationArrowGeometry.addToPath(path, points: geometry)
                 shape.path = path
                 shape.strokeColor = color
                 shape.fillColor = nil

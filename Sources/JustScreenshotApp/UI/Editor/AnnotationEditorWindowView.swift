@@ -73,7 +73,6 @@ public struct AnnotationEditorWindowView: View {
                     ),
                     selectedColor: $model.selectedColor,
                     lineWidth: $model.lineWidth,
-                    textInputString: $model.textInputString,
                     zoomPercent: Int((zoom * 100).rounded()),
                     isFitMode: fitMode,
                     canUndo: model.canUndo,
@@ -87,7 +86,7 @@ public struct AnnotationEditorWindowView: View {
                     onAutoRedact: autoRedactSensitiveData
                 )
                 .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
             }
             .background(Color(nsColor: .controlBackgroundColor))
             

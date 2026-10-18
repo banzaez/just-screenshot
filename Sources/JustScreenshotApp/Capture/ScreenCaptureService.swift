@@ -196,11 +196,8 @@ public final class ScreenCaptureService {
         let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
         let currentPID = ProcessInfo.processInfo.processIdentifier
         return content.windows.filter { win in
-            if win.owningApplication?.processID == currentPID {
-                if JustScreenshotWindowTitles.isOverlayTitle(win.title) ||
-                   win.windowLayer >= 1000 {
-                    return false
-                }
+            if JustScreenshotWindowTitles.shouldExcludeFromCapture(win, currentPID: currentPID) {
+                return false
             }
             guard win.frame.width > 50 && win.frame.height > 50 else { return false }
             guard let title = win.title, !title.isEmpty else {
@@ -219,13 +216,7 @@ public final class ScreenCaptureService {
             if excludingWindowIDs.contains(CGWindowID(window.windowID)) {
                 return true
             }
-            if window.owningApplication?.processID == currentPID {
-                if JustScreenshotWindowTitles.isOverlayTitle(window.title) ||
-                   window.windowLayer >= 1000 {
-                    return true
-                }
-            }
-            return false
+            return JustScreenshotWindowTitles.shouldExcludeFromCapture(window, currentPID: currentPID)
         }
     }
     

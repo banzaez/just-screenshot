@@ -134,33 +134,32 @@ public struct VideoEditorWindowView: View {
             trimEnd: model.trimEnd,
             playbackRate: model.playbackRate,
             cropRect: model.isCropping ? model.cropRect : nil,
-            exportGIF: isGIF,
             gifFPS: 15,
             annotations: model.annotations
         )
+        let sourceURL = model.videoURL
         
         Task {
             do {
+                let onProgress: @Sendable (Double) -> Void = { progress in
+                    Task { @MainActor in
+                        self.model.exportProgress = progress
+                    }
+                }
                 if isGIF {
                     try await VideoExportService.shared.exportGIF(
-                        sourceURL: model.videoURL,
+                        sourceURL: sourceURL,
                         destinationURL: targetURL,
-                        options: options
-                    ) { progress in
-                        Task { @MainActor in
-                            self.model.exportProgress = progress
-                        }
-                    }
+                        options: options,
+                        progressHandler: onProgress
+                    )
                 } else {
                     try await VideoExportService.shared.exportVideo(
-                        sourceURL: model.videoURL,
+                        sourceURL: sourceURL,
                         destinationURL: targetURL,
-                        options: options
-                    ) { progress in
-                        Task { @MainActor in
-                            self.model.exportProgress = progress
-                        }
-                    }
+                        options: options,
+                        progressHandler: onProgress
+                    )
                 }
                 
                 await MainActor.run {

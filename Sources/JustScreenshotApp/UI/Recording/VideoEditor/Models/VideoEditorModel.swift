@@ -17,7 +17,20 @@ public final class VideoEditorModel: ObservableObject {
     @Published public var trimEnd: Double = 1.0
     
     // Скорость воспроизведения (0.5x, 1x, 1.5x, 2x)
-    @Published public var playbackRate: Float = 1.0
+    @Published public var playbackRate: Float = EditorPreferences.videoPlaybackRate {
+        didSet { EditorPreferences.videoPlaybackRate = playbackRate }
+    }
+    
+    // Стиль новых аннотаций (персистентный)
+    @Published public var annotationColor: Color = EditorPreferences.videoColor {
+        didSet { EditorPreferences.videoColor = annotationColor }
+    }
+    @Published public var annotationLineWidth: CGFloat = EditorPreferences.videoLineWidth {
+        didSet { EditorPreferences.videoLineWidth = annotationLineWidth }
+    }
+    @Published public var annotationFontSize: CGFloat = EditorPreferences.videoFontSize {
+        didSet { EditorPreferences.videoFontSize = annotationFontSize }
+    }
     
     // Кадрирование (Crop)
     @Published public var isCropping: Bool = false
@@ -197,9 +210,29 @@ public final class VideoEditorModel: ObservableObject {
     // Аннотации
     public func addAnnotation(type: VideoAnnotationType) {
         let text = type == .text ? L("video_editor.type_text") : ""
-        let newItem = VideoAnnotationItem(type: type, text: text)
+        let newItem = VideoAnnotationItem(
+            type: type,
+            text: text,
+            color: annotationColor,
+            lineWidth: annotationLineWidth,
+            fontSize: annotationFontSize
+        )
         annotations.append(newItem)
         selectedAnnotationID = newItem.id
+    }
+    
+    public func setAnnotationColor(_ color: Color) {
+        annotationColor = color
+        guard let id = selectedAnnotationID,
+              let idx = annotations.firstIndex(where: { $0.id == id }) else { return }
+        annotations[idx].color = color
+    }
+    
+    public func setAnnotationLineWidth(_ width: CGFloat) {
+        annotationLineWidth = width
+        guard let id = selectedAnnotationID,
+              let idx = annotations.firstIndex(where: { $0.id == id }) else { return }
+        annotations[idx].lineWidth = width
     }
     
     public func updateAnnotation(_ item: VideoAnnotationItem) {
