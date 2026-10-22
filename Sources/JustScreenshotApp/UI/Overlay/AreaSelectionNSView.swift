@@ -308,15 +308,33 @@ final class AreaSelectionNSView: NSView {
     
     // MARK: - Geometry
     
+    /// SCShareableContent не гарантирует z-order; Window Server — front→back.
     private static func sortedFrontToBack(_ windows: [SCWindow]) -> [SCWindow] {
-        windows.enumerated()
-            .sorted { lhs, rhs in
-                if lhs.element.windowLayer != rhs.element.windowLayer {
-                    return lhs.element.windowLayer > rhs.element.windowLayer
-                }
-                return lhs.offset < rhs.offset
+        let order = frontToBackWindowOrder()
+        return windows.sorted { lhs, rhs in
+            let lhsRank = order[CGWindowID(lhs.windowID)] ?? .max
+            let rhsRank = order[CGWindowID(rhs.windowID)] ?? .max
+            if lhsRank != rhsRank {
+                return lhsRank < rhsRank
             }
-            .map(\.element)
+            return lhs.windowLayer > rhs.windowLayer
+        }
+    }
+    
+    private static func frontToBackWindowOrder() -> [CGWindowID: Int] {
+        guard let info = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements],
+            kCGNullWindowID
+        ) as? [[String: Any]] else {
+            return [:]
+        }
+        var order: [CGWindowID: Int] = [:]
+        order.reserveCapacity(info.count)
+        for (index, entry) in info.enumerated() {
+            guard let number = entry[kCGWindowNumber as String] as? NSNumber else { continue }
+            order[CGWindowID(truncatingIfNeeded: number.intValue)] = index
+        }
+        return order
     }
     
     private func windowUnderCursor(at loc: CGPoint) -> SCWindow? {
