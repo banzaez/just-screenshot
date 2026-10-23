@@ -38,23 +38,16 @@ extension AppWindowManager {
         }
     }
     
+
     public func startAreaCapture(delaySeconds: Int = 0) {
-        if delaySeconds > 0 {
-            let countdown = CountdownOverlayWindow(seconds: delaySeconds) { [weak self] in
-                self?.startAreaCapture(delaySeconds: 0)
-            }
-            countdown.makeKeyAndOrderFront(nil)
-            return
-        }
-        
         Task { [weak self] in
             guard let self else { return }
             guard await ScreenCaptureService.shared.ensurePermission() else { return }
-            self.presentAreaOverlays()
+            self.presentAreaOverlays(delaySeconds: delaySeconds)
         }
     }
     
-    private func presentAreaOverlays() {
+    private func presentAreaOverlays(delaySeconds: Int = 0) {
         let token = beginOverlaySession()
         let screens = activeScreens()
         guard !screens.isEmpty else { return }
@@ -70,8 +63,17 @@ extension AppWindowManager {
                         $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil
                     }
                     self.closeAllOverlays()
-                    Task { [weak self] in
-                        await self?.captureRectAndShowHUD(rect: rect, excludingWindowIDs: overlayIDs)
+                    
+                    if delaySeconds > 0 {
+                        self.startTimedAreaCountdown(
+                            rect: rect,
+                            excludingWindowIDs: overlayIDs,
+                            seconds: delaySeconds
+                        )
+                    } else {
+                        Task { [weak self] in
+                            await self?.captureRectAndShowHUD(rect: rect, excludingWindowIDs: overlayIDs)
+                        }
                     }
                 },
                 onCompleteWindow: { _ in },
@@ -88,6 +90,95 @@ extension AppWindowManager {
         if let primary = overlays.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? overlays.first {
             ensureSampler(for: primary, token: token)
         }
+    }
+    
+    /// Отсчет таймера после разметки области с сохранением затемнения и возможностью отмены по Esc
+    private func startTimedAreaCountdown(
+        rect: CGRect,
+        excludingWindowIDs: [CGWindowID],
+        seconds: Int
+    ) {
+        let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: rect)
+        
+        // 1. Показываем аппаратное затемнение экрана вокруг выбранной области (cutout)
+        let screens = activeScreens()
+        let dimWindows = screens.map { screen in
+            let win = RecordingDimOverlayWindow(screen: screen, holeRect: appKitRect)
+            win.orderFrontRegardless()
+            return win
+        }
+        
+        var captureExcludingIDs = excludingWindowIDs
+        for win in dimWindows where win.windowNumber > 0 {
+            captureExcludingIDs.append(CGWindowID(win.windowNumber))
+        }
+        
+        // 2. Показываем виджет обратного отсчета по центру выбранной области
+        let center = CGPoint(x: appKitRect.midX, y: appKitRect.midY)
+        
+        var isCancelled = false
+        var isCleanedUp = false
+        var escGlobalMonitor: Any?
+        var escLocalMonitor: Any?
+        var countdownWindow: CountdownOverlayWindow?
+        
+        let cleanup: @MainActor () -> Void = {
+            guard !isCleanedUp else { return }
+            isCleanedUp = true
+            
+            if let gMon = escGlobalMonitor {
+                NSEvent.removeMonitor(gMon)
+                escGlobalMonitor = nil
+            }
+            if let lMon = escLocalMonitor {
+                NSEvent.removeMonitor(lMon)
+                escLocalMonitor = nil
+            }
+            for win in dimWindows {
+                win.orderOut(nil)
+                win.close()
+            }
+            if let cw = countdownWindow {
+                cw.orderOut(nil)
+                cw.close()
+                countdownWindow = nil
+            }
+        }
+        
+        // 3. Отмена по Escape (глобально и локально)
+        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { event in
+            if event.keyCode == 53 { // Escape
+                Task { @MainActor in
+                    isCancelled = true
+                    cleanup()
+                }
+            }
+        }
+        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            if event.keyCode == 53 { // Escape
+                Task { @MainActor in
+                    isCancelled = true
+                    cleanup()
+                }
+                return nil
+            }
+            return event
+        }
+        
+        countdownWindow = CountdownOverlayWindow(seconds: seconds, centerPoint: center) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard !isCancelled else { return }
+                cleanup()
+                guard let self else { return }
+                // 50мс пауза для надежного завершения композитинга WindowServer без оверлеев
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                await self.captureRectAndShowHUD(rect: rect, excludingWindowIDs: captureExcludingIDs)
+            }
+        }
+        if let cw = countdownWindow, cw.windowNumber > 0 {
+            captureExcludingIDs.append(CGWindowID(cw.windowNumber))
+        }
+        countdownWindow?.orderFrontRegardless()
     }
     
     /// Повтор захвата предыдущей области экрана (Repeat Last Capture)

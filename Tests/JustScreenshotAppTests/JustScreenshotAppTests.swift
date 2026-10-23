@@ -78,3 +78,44 @@ struct LocalizationTests {
         #expect(L(.editorClose) == "閉じる")
     }
 }
+
+@Suite("Smart Zoom & Cursor Tracking Tests")
+struct SmartZoomTests {
+    
+    @Test func testEmptyCursorTrackDefaultState() {
+        let track = CursorTrack()
+        let state = track.cameraState(at: 1.0, mode: .continuous)
+        #expect(state.focus == CGPoint(x: 0.5, y: 0.5))
+        #expect(state.zoom >= 1.20)
+    }
+    
+    @Test func testCursorTrackInterpolation() {
+        let kf1 = CursorKeyframe(timestamp: 0.0, point: CGPoint(x: 0.2, y: 0.2))
+        let kf2 = CursorKeyframe(timestamp: 2.0, point: CGPoint(x: 0.8, y: 0.8))
+        let track = CursorTrack(keyframes: [kf1, kf2])
+        
+        let midState = track.cameraState(at: 1.0, mode: .continuous)
+        // В середине smoothstep выдает точно 0.5
+        #expect(abs(midState.focus.x - 0.5) < 0.05)
+        #expect(abs(midState.focus.y - 0.5) < 0.05)
+        #expect(midState.zoom >= 1.20)
+    }
+    
+    @Test func testCursorTrackClickZoomPriority() {
+        let kf1 = CursorKeyframe(timestamp: 1.0, point: CGPoint(x: 0.3, y: 0.3), isClick: true)
+        let track = CursorTrack(keyframes: [kf1])
+        
+        let clickState = track.cameraState(at: 1.5, scale: .closeup, mode: .onClicks)
+        #expect(clickState.focus == CGPoint(x: 0.3, y: 0.3))
+        #expect(clickState.zoom >= 1.45)
+    }
+    
+    @Test func testCursorTrackClickModeOverviewWhenNoClick() {
+        let kf1 = CursorKeyframe(timestamp: 1.0, point: CGPoint(x: 0.3, y: 0.3), isClick: true)
+        let track = CursorTrack(keyframes: [kf1])
+        
+        // В момент t=5.0 клик уже далеко позади — в режиме onClicks должен быть общий план 1.0x
+        let state = track.cameraState(at: 5.0, mode: .onClicks)
+        #expect(state.zoom == 1.0)
+    }
+}

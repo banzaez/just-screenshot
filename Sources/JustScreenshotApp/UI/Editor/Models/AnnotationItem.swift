@@ -14,6 +14,7 @@ public struct AnnotationItem: Identifiable, Sendable {
     public var fontSize: CGFloat
     public var rotationAngle: Double // в градусах (для не-линейных элементов)
     public var scaleFactor: Double
+    public var curveOffset: CGFloat // смещение контрольной точки для изогнутых стрелок
     
     public init(
         id: UUID = UUID(),
@@ -26,7 +27,8 @@ public struct AnnotationItem: Identifiable, Sendable {
         counterNumber: Int = 1,
         fontSize: CGFloat = 20.0,
         rotationAngle: Double = 0.0,
-        scaleFactor: Double = 1.0
+        scaleFactor: Double = 1.0,
+        curveOffset: CGFloat = 0.0
     ) {
         self.id = id
         self.tool = tool
@@ -39,13 +41,25 @@ public struct AnnotationItem: Identifiable, Sendable {
         self.fontSize = fontSize
         self.rotationAngle = rotationAngle
         self.scaleFactor = scaleFactor
+        self.curveOffset = curveOffset
     }
     
     /// Линейные элементы (стрелка, маркер) поворачиваются изменением концов отрезка
-    public var isLineLike: Bool { tool == .arrow || tool == .highlighter }
+    public var isLineLike: Bool { tool == .arrow || tool == .curvedArrow || tool == .highlighter }
     /// Элементы, у которых можно тянуть углы
-    public var isRectLike: Bool { tool == .rectangle || tool == .roundedRect || tool == .blur || tool == .ellipse || tool == .magnifier }
-    public var supportsRotation: Bool { tool != .counter && tool != .select && tool != .blur && tool != .magnifier }
+    public var isRectLike: Bool { tool == .rectangle || tool == .roundedRect || tool == .blur || tool == .spotlight || tool == .ellipse || tool == .magnifier }
+    public var supportsRotation: Bool { tool != .counter && tool != .select && tool != .blur && tool != .spotlight && tool != .magnifier }
+    
+    /// Точка вершины дуги изогнутой стрелки (t = 0.5)
+    public var curveApex: CGPoint {
+        let dx = endPoint.x - startPoint.x
+        let dy = endPoint.y - startPoint.y
+        let len = hypot(dx, dy)
+        guard len > 1 else { return center }
+        let normal = CGPoint(x: -dy / len, y: dx / len)
+        let mid = CGPoint(x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2)
+        return CGPoint(x: mid.x + normal.x * curveOffset * 0.5, y: mid.y + normal.y * curveOffset * 0.5)
+    }
     
     /// Измеренный размер текстового блока (совпадает с рендером)
     public var textSize: CGSize {
@@ -61,6 +75,10 @@ public struct AnnotationItem: Identifiable, Sendable {
         case .text:
             let s = textSize
             return CGPoint(x: startPoint.x + s.width / 2, y: startPoint.y + s.height / 2)
+        case .curvedArrow:
+            let apex = curveApex
+            let mid = CGPoint(x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2)
+            return CGPoint(x: (mid.x + apex.x) / 2, y: (mid.y + apex.y) / 2)
         default:
             return CGPoint(x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2)
         }
@@ -76,10 +94,18 @@ public struct AnnotationItem: Identifiable, Sendable {
         case .text:
             let s = textSize
             return CGRect(x: startPoint.x - 4, y: startPoint.y - 2, width: s.width + 8, height: s.height + 4)
-        case .arrow, .highlighter:
-            let minX = min(startPoint.x, endPoint.x), minY = min(startPoint.y, endPoint.y)
-            return CGRect(x: minX, y: minY, width: abs(startPoint.x - endPoint.x), height: abs(startPoint.y - endPoint.y))
-        case .rectangle, .roundedRect, .blur, .ellipse, .magnifier:
+        case .arrow, .curvedArrow, .highlighter:
+            var minX = min(startPoint.x, endPoint.x), maxX = max(startPoint.x, endPoint.x)
+            var minY = min(startPoint.y, endPoint.y), maxY = max(startPoint.y, endPoint.y)
+            if tool == .curvedArrow {
+                let apex = curveApex
+                minX = min(minX, apex.x)
+                maxX = max(maxX, apex.x)
+                minY = min(minY, apex.y)
+                maxY = max(maxY, apex.y)
+            }
+            return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        case .rectangle, .roundedRect, .blur, .spotlight, .ellipse, .magnifier:
             let minX = min(startPoint.x, endPoint.x), minY = min(startPoint.y, endPoint.y)
             let w = abs(startPoint.x - endPoint.x), h = abs(startPoint.y - endPoint.y)
             return CGRect(x: minX - 3, y: minY - 3, width: w + 6, height: h + 6)
@@ -150,7 +176,16 @@ public struct AnnotationItem: Identifiable, Sendable {
     }
     
     private func distanceToSegment(_ p: CGPoint) -> CGFloat {
-        let a = startPoint, b = endPoint
+        if tool == .curvedArrow && curveOffset != 0 {
+            let apex = curveApex
+            let d1 = distToLine(p: p, a: startPoint, b: apex)
+            let d2 = distToLine(p: p, a: apex, b: endPoint)
+            return min(d1, d2)
+        }
+        return distToLine(p: p, a: startPoint, b: endPoint)
+    }
+    
+    private func distToLine(p: CGPoint, a: CGPoint, b: CGPoint) -> CGFloat {
         let dx = b.x - a.x, dy = b.y - a.y
         let len2 = dx * dx + dy * dy
         guard len2 > 0 else { return hypot(p.x - a.x, p.y - a.y) }
@@ -164,6 +199,7 @@ extension AnnotationItem: Equatable {
         l.id == r.id && l.tool == r.tool && l.startPoint == r.startPoint && l.endPoint == r.endPoint &&
         l.color == r.color && l.lineWidth == r.lineWidth && l.text == r.text &&
         l.counterNumber == r.counterNumber && l.fontSize == r.fontSize &&
-        l.rotationAngle == r.rotationAngle && l.scaleFactor == r.scaleFactor
+        l.rotationAngle == r.rotationAngle && l.scaleFactor == r.scaleFactor &&
+        l.curveOffset == r.curveOffset
     }
 }

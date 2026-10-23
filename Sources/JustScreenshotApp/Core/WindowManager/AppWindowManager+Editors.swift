@@ -81,9 +81,9 @@ extension AppWindowManager {
         }
     }
     
-    public func openVideoEditor(videoURL: URL) {
+    public func openVideoEditor(videoURL: URL, cursorTrack: CursorTrack? = nil) {
         let editorID = UUID()
-        let model = VideoEditorModel(videoURL: videoURL)
+        let model = VideoEditorModel(videoURL: videoURL, cursorTrack: cursorTrack)
         let view = VideoEditorWindowView(
             model: model,
             onClose: { [weak self] in self?.closeVideoEditor(id: editorID) }

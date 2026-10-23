@@ -97,11 +97,11 @@ public struct EditorSelectedItemBar: View {
                                 .frame(width: 36)
                         }
                         
-                        if item.tool != .blur && item.tool != .magnifier {
+                        if item.tool != .blur && item.tool != .magnifier && item.tool != .spotlight {
                             ColorDropdown(selection: Binding(get: { item.color }, set: { onColorChange($0) }))
                         }
                         
-                        if item.tool != .text && item.tool != .counter && item.tool != .blur && item.tool != .magnifier {
+                        if item.tool != .text && item.tool != .counter && item.tool != .blur && item.tool != .magnifier && item.tool != .spotlight {
                             WidthDropdown(selection: Binding(get: { item.lineWidth }, set: { onLineWidthChange($0) }))
                         }
                         

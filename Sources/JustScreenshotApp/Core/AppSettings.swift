@@ -29,6 +29,7 @@ public final class AppSettings: ObservableObject {
         static let lastRecordingRect = "settings_last_recording_rect"
         static let recordingCountdown = "settings_recording_countdown"
         static let dimOutsideRecording = "settings_dim_outside_recording"
+        static let smartZoomDuringRecording = "settings_smart_zoom_during_recording"
     }
     
     // Язык интерфейса
@@ -81,6 +82,11 @@ public final class AppSettings: ObservableObject {
     // Затемнять экран вокруг выбранной области записи
     @Published public var dimOutsideRecordingArea: Bool {
         didSet { UserDefaults.standard.set(dimOutsideRecordingArea, forKey: Keys.dimOutsideRecording) }
+    }
+    
+    // Умный зум на курсор (Smart Zoom / Camera Follow)
+    @Published public var smartZoomDuringRecording: Bool {
+        didSet { UserDefaults.standard.set(smartZoomDuringRecording, forKey: Keys.smartZoomDuringRecording) }
     }
     
     // Горячие клавиши (Основной вариант + Альтернативный)
@@ -146,6 +152,7 @@ public final class AppSettings: ObservableObject {
         self.lastRecordingRect = AppSettings.loadRect(key: Keys.lastRecordingRect)
         self.recordingCountdownSeconds = defaults.object(forKey: Keys.recordingCountdown) as? Int ?? 0
         self.dimOutsideRecordingArea = defaults.object(forKey: Keys.dimOutsideRecording) as? Bool ?? true
+        self.smartZoomDuringRecording = defaults.object(forKey: Keys.smartZoomDuringRecording) as? Bool ?? false
         
         self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? DefaultShortcuts.area
         self.shortcutAreaAlt = AppSettings.loadShortcut(key: Keys.shortcutAreaAlt)

@@ -32,9 +32,28 @@ public final class VideoEditorModel: ObservableObject {
         didSet { EditorPreferences.videoFontSize = annotationFontSize }
     }
     
-    // Кадрирование (Crop)
+    // Кадрирование (Crop) и Умный Зум (Smart Zoom)
     @Published public var isCropping: Bool = false
     @Published public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
+    @Published public var isSmartZoomEnabled: Bool = false {
+        didSet { updateCameraState() }
+    }
+    
+    // Настройки умного зума (масштаб, режим слежения, отъезд при бездействии)
+    @Published public var smartZoomScale: SmartZoomScale = .balanced {
+        didSet { updateCameraState() }
+    }
+    @Published public var smartZoomMode: SmartZoomMode = .onClicks {
+        didSet { updateCameraState() }
+    }
+    @Published public var autoZoomOutOnIdle: Bool = true {
+        didSet { updateCameraState() }
+    }
+    
+    // Траектория курсора мыши и динамическая камера (Smart Zoom / Camera Follow)
+    @Published public var cursorTrack: CursorTrack
+    @Published public var currentCameraFocus: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    @Published public var currentCameraZoom: CGFloat = 1.0
     
     // Аннотации
     @Published public var annotations: [VideoAnnotationItem] = []
@@ -54,13 +73,32 @@ public final class VideoEditorModel: ObservableObject {
     private var timeObserverToken: Any?
     private var cancellables = Set<AnyCancellable>()
     
-    public init(videoURL: URL) {
+    public init(videoURL: URL, cursorTrack: CursorTrack? = nil) {
         self.videoURL = videoURL
+        let loaded = cursorTrack ?? CursorTrackRecorder.loadTrack(forVideoURL: videoURL) ?? CursorTrack()
+        self.cursorTrack = loaded
         let playerItem = AVPlayerItem(url: videoURL)
         self.player = AVPlayer(playerItem: playerItem)
         
         setupPlayerObserver()
         loadVideoMetadata()
+        updateCameraState()
+    }
+    
+    public func updateCameraState() {
+        if isSmartZoomEnabled {
+            let state = cursorTrack.cameraState(
+                at: currentTime,
+                scale: smartZoomScale,
+                mode: smartZoomMode,
+                autoZoomOutOnIdle: autoZoomOutOnIdle
+            )
+            currentCameraFocus = state.focus
+            currentCameraZoom = state.zoom
+        } else {
+            currentCameraFocus = CGPoint(x: 0.5, y: 0.5)
+            currentCameraZoom = 1.0
+        }
     }
     
     public func videoContentRect(in containerSize: CGSize) -> CGRect {
@@ -91,6 +129,7 @@ public final class VideoEditorModel: ObservableObject {
                 let sec = time.seconds
                 if !sec.isNaN {
                     self.currentTime = sec
+                    self.updateCameraState()
                     // Зацикливание внутри диапазона trimStart...trimEnd
                     if sec >= self.trimEnd {
                         self.seek(to: self.trimStart)
@@ -196,6 +235,7 @@ public final class VideoEditorModel: ObservableObject {
     public func seek(to time: Double) {
         let clamped = max(0, min(duration, time))
         currentTime = clamped
+        updateCameraState()
         let cmTime = CMTime(seconds: clamped, preferredTimescale: 600)
         player.seek(to: cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
     }

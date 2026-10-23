@@ -9,6 +9,11 @@ public struct VideoExportOptions: Sendable {
     public var cropRect: CGRect?  // нормализованные координаты [0...1]
     public var gifFPS: Int
     public var annotations: [VideoAnnotationItem]
+    public var smartZoom: Bool
+    public var smartZoomScale: SmartZoomScale
+    public var smartZoomMode: SmartZoomMode
+    public var autoZoomOutOnIdle: Bool
+    public var cursorTrack: CursorTrack?
     
     public init(
         trimStart: Double = 0,
@@ -16,7 +21,12 @@ public struct VideoExportOptions: Sendable {
         playbackRate: Float = 1.0,
         cropRect: CGRect? = nil,
         gifFPS: Int = 15,
-        annotations: [VideoAnnotationItem] = []
+        annotations: [VideoAnnotationItem] = [],
+        smartZoom: Bool = false,
+        smartZoomScale: SmartZoomScale = .balanced,
+        smartZoomMode: SmartZoomMode = .onClicks,
+        autoZoomOutOnIdle: Bool = true,
+        cursorTrack: CursorTrack? = nil
     ) {
         self.trimStart = trimStart
         self.trimEnd = trimEnd
@@ -24,6 +34,11 @@ public struct VideoExportOptions: Sendable {
         self.cropRect = cropRect
         self.gifFPS = gifFPS
         self.annotations = annotations
+        self.smartZoom = smartZoom
+        self.smartZoomScale = smartZoomScale
+        self.smartZoomMode = smartZoomMode
+        self.autoZoomOutOnIdle = autoZoomOutOnIdle
+        self.cursorTrack = cursorTrack
     }
 }
 

@@ -4,6 +4,7 @@ enum AnnotationHandle: Equatable {
     case rotate
     case start
     case end
+    case curveControl
     case corner(left: Bool, top: Bool)
 }
 
@@ -30,6 +31,9 @@ struct AnnotationCanvasInteractions {
         var result: [(AnnotationHandle, CGPoint)] = []
         if item.isLineLike {
             result.append((.start, item.startPoint))
+            if item.tool == .curvedArrow {
+                result.append((.curveControl, item.curveApex))
+            }
             result.append((.end, item.endPoint))
         } else {
             let box = item.boundingBox
@@ -70,6 +74,16 @@ struct AnnotationCanvasInteractions {
             item.startPoint = loc
         case .end:
             item.endPoint = loc
+        case .curveControl:
+            let dx = snap.endPoint.x - snap.startPoint.x
+            let dy = snap.endPoint.y - snap.startPoint.y
+            let len = hypot(dx, dy)
+            if len > 1 {
+                let normal = CGPoint(x: -dy / len, y: dx / len)
+                let mid = CGPoint(x: (snap.startPoint.x + snap.endPoint.x) / 2, y: (snap.startPoint.y + snap.endPoint.y) / 2)
+                let proj = (loc.x - mid.x) * normal.x + (loc.y - mid.y) * normal.y
+                item.curveOffset = proj * 2.0
+            }
         case .corner(let left, let top):
             let local = snap.unrotated(loc)
             let minX = min(snap.startPoint.x, snap.endPoint.x), maxX = max(snap.startPoint.x, snap.endPoint.x)

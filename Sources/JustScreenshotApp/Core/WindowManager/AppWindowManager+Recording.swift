@@ -295,6 +295,7 @@ extension AppWindowManager {
         
         do {
             try await ScreenRecorderService.shared.startRecording(rect: quartzRect, destinationURL: outputURL)
+            CursorTrackRecorder.shared.start(recordingRect: appKitRect)
             isRecording = true
             isRecordingPreparing = false
             isRecordingPaused = false
@@ -341,13 +342,15 @@ extension AppWindowManager {
     }
     
     public func stopScreenRecording() {
+        let cursorTrack = CursorTrackRecorder.shared.stop()
         cleanupRecordingSession()
         
         Task {
             do {
                 if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
+                    CursorTrackRecorder.saveTrack(cursorTrack, forVideoURL: savedURL)
                     await MainActor.run {
-                        self.openVideoEditor(videoURL: savedURL)
+                        self.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
                     }
                 }
             } catch {
@@ -359,6 +362,7 @@ extension AppWindowManager {
     }
     
     public func cancelScreenRecording() {
+        _ = CursorTrackRecorder.shared.stop()
         cleanupRecordingSession()
         
         Task {
@@ -367,6 +371,7 @@ extension AppWindowManager {
     }
     
     func cleanupRecordingSession() {
+        _ = CursorTrackRecorder.shared.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
         isRecording = false

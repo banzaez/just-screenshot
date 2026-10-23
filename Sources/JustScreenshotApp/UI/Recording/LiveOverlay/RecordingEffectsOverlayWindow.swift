@@ -88,7 +88,8 @@ private final class RecordingEffectsNSView: NSView {
                 if windowFrame.contains(clickScreenLoc) {
                     let localX = clickScreenLoc.x - windowFrame.origin.x
                     let localY = clickScreenLoc.y - windowFrame.origin.y
-                    self.addRipple(at: CGPoint(x: localX, y: localY))
+                    let isRight = event.type == .rightMouseDown
+                    self.addRipple(at: CGPoint(x: localX, y: localY), isRightClick: isRight)
                 }
             }
         }
@@ -123,8 +124,8 @@ private final class RecordingEffectsNSView: NSView {
         needsDisplay = true
     }
     
-    private func addRipple(at point: CGPoint) {
-        ripples.append(RecordingOverlayRenderer.ClickRipple(center: point, startTime: Date()))
+    private func addRipple(at point: CGPoint, isRightClick: Bool = false) {
+        ripples.append(RecordingOverlayRenderer.ClickRipple(center: point, startTime: Date(), isRightClick: isRightClick))
         startAnimationIfNeeded()
         needsDisplay = true
     }

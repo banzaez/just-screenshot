@@ -60,6 +60,10 @@ enum AnnotationCanvasDrawer {
                 handleCtx.fill(path, with: .color(accent))
                 let ring = Path(ellipseIn: rect.insetBy(dx: -2 * px, dy: -2 * px))
                 handleCtx.stroke(ring, with: .color(.white), lineWidth: px * 1.5)
+            } else if h == .curveControl {
+                handleCtx.fill(path, with: .color(Color.orange))
+                let ring = Path(ellipseIn: rect.insetBy(dx: -1.5 * px, dy: -1.5 * px))
+                handleCtx.stroke(ring, with: .color(.white), lineWidth: px * 1.5)
             } else {
                 handleCtx.fill(path, with: .color(.white))
                 handleCtx.stroke(path, with: .color(accent), lineWidth: 1.5 * px)
@@ -86,6 +90,10 @@ enum AnnotationCanvasDrawer {
             var p = Path()
             drawArrow(from: item.startPoint, to: item.endPoint, path: &p, headLength: max(14, item.lineWidth * 3.2))
             context.stroke(p, with: .color(item.color), style: style)
+        case .curvedArrow:
+            var p = Path()
+            drawCurvedArrow(from: item.startPoint, to: item.endPoint, curveOffset: item.curveOffset, path: &p, headLength: max(14, item.lineWidth * 3.2))
+            context.stroke(p, with: .color(item.color), style: style)
         case .rectangle:
             context.stroke(Path(rect), with: .color(item.color), style: style)
         case .roundedRect:
@@ -110,6 +118,14 @@ enum AnnotationCanvasDrawer {
                 context.fill(Path(rect), with: .color(Color.gray.opacity(0.7)))
             }
             context.stroke(Path(rect), with: .color(.white.opacity(0.35)), lineWidth: 1)
+        case .spotlight:
+            if let baseImage {
+                var dimPath = Path()
+                dimPath.addRect(CGRect(origin: .zero, size: baseImage.size))
+                dimPath.addRoundedRect(in: rect, cornerSize: CGSize(width: 8, height: 8))
+                context.fill(dimPath, with: .color(Color.black.opacity(0.55)), style: FillStyle(eoFill: true))
+            }
+            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 8, height: 8)), with: .color(.white.opacity(0.85)), lineWidth: 2)
         case .highlighter:
             var p = Path()
             p.move(to: item.startPoint)
@@ -168,5 +184,26 @@ enum AnnotationCanvasDrawer {
         path.addLine(to: CGPoint(x: end.x - headLength * cos(angle - spread), y: end.y - headLength * sin(angle - spread)))
         path.move(to: end)
         path.addLine(to: CGPoint(x: end.x - headLength * cos(angle + spread), y: end.y - headLength * sin(angle + spread)))
+    }
+    
+    private static func drawCurvedArrow(from start: CGPoint, to end: CGPoint, curveOffset: CGFloat, path: inout Path, headLength: CGFloat) {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let len = hypot(dx, dy)
+        guard len > 1 else { return }
+        
+        let normal = CGPoint(x: -dy / len, y: dx / len)
+        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
+        let control = CGPoint(x: mid.x + normal.x * curveOffset, y: mid.y + normal.y * curveOffset)
+        
+        path.move(to: start)
+        path.addQuadCurve(to: end, control: control)
+        
+        let tangentAngle = atan2(end.y - control.y, end.x - control.x)
+        let spread: CGFloat = .pi / 6
+        path.move(to: end)
+        path.addLine(to: CGPoint(x: end.x - headLength * cos(tangentAngle - spread), y: end.y - headLength * sin(tangentAngle - spread)))
+        path.move(to: end)
+        path.addLine(to: CGPoint(x: end.x - headLength * cos(tangentAngle + spread), y: end.y - headLength * sin(tangentAngle + spread)))
     }
 }

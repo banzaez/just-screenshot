@@ -114,6 +114,9 @@ public enum AnnotationRenderer {
         case .arrow:
             drawArrow(p1: p1, p2: p2, in: context, headLength: max(14, item.lineWidth * 3.2))
             
+        case .curvedArrow:
+            drawCurvedArrow(p1: p1, p2: p2, curveOffset: item.curveOffset, in: context, headLength: max(14, item.lineWidth * 3.2))
+            
         case .ellipse:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             context.strokeEllipse(in: rect)
@@ -159,6 +162,30 @@ public enum AnnotationRenderer {
             context.setStrokeColor(CGColor(gray: 1, alpha: 0.35))
             context.setLineWidth(1)
             context.stroke(rect)
+            
+        case .spotlight:
+            let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
+            let cornerRadius: CGFloat = 8.0
+            
+            // Затемнение вокруг выделенной области фокуса
+            context.saveGState()
+            let fullRect = CGRect(origin: .zero, size: imageSize)
+            let path = CGMutablePath()
+            path.addRect(fullRect)
+            path.addRoundedRect(in: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius)
+            context.addPath(path)
+            context.setFillColor(CGColor(gray: 0.0, alpha: 0.55))
+            context.fillPath(using: .evenOdd)
+            context.restoreGState()
+            
+            // Подсветка контура фокуса
+            context.saveGState()
+            let strokePath = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+            context.addPath(strokePath)
+            context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.85))
+            context.setLineWidth(2.0)
+            context.strokePath()
+            context.restoreGState()
             
         case .highlighter:
             context.setStrokeColor(nsColor.withAlphaComponent(0.45).cgColor)
@@ -233,6 +260,32 @@ public enum AnnotationRenderer {
         let angle = atan2(p2.y - p1.y, p2.x - p1.x)
         let tip1 = CGPoint(x: p2.x - headLength * cos(angle - .pi / 6), y: p2.y - headLength * sin(angle - .pi / 6))
         let tip2 = CGPoint(x: p2.x - headLength * cos(angle + .pi / 6), y: p2.y - headLength * sin(angle + .pi / 6))
+        context.move(to: p2)
+        context.addLine(to: tip1)
+        context.move(to: p2)
+        context.addLine(to: tip2)
+        context.strokePath()
+    }
+    
+    private static func drawCurvedArrow(p1: CGPoint, p2: CGPoint, curveOffset: CGFloat, in context: CGContext, headLength: CGFloat) {
+        let dx = p2.x - p1.x
+        let dy = p2.y - p1.y
+        let len = hypot(dx, dy)
+        guard len > 1 else { return }
+        
+        let normal = CGPoint(x: -dy / len, y: dx / len)
+        let mid = CGPoint(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2)
+        // curveOffset инвертирован для зеркальной системы координат CoreGraphics
+        let control = CGPoint(x: mid.x - normal.x * curveOffset, y: mid.y - normal.y * curveOffset)
+        
+        context.move(to: p1)
+        context.addQuadCurve(to: p2, control: control)
+        context.strokePath()
+        
+        let tangentAngle = atan2(p2.y - control.y, p2.x - control.x)
+        let spread: CGFloat = .pi / 6
+        let tip1 = CGPoint(x: p2.x - headLength * cos(tangentAngle - spread), y: p2.y - headLength * sin(tangentAngle - spread))
+        let tip2 = CGPoint(x: p2.x - headLength * cos(tangentAngle + spread), y: p2.y - headLength * sin(tangentAngle + spread))
         context.move(to: p2)
         context.addLine(to: tip1)
         context.move(to: p2)

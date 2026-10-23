@@ -31,6 +31,7 @@ public final class RecordingDimOverlayWindow: NSWindow {
         self.ignoresMouseEvents = true // Никогда не блокирует клики мыши пользователя
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.animationBehavior = .none
+        self.isReleasedWhenClosed = false
         
         self.contentView = dimView
     }

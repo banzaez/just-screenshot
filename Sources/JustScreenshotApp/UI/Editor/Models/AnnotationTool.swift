@@ -4,12 +4,14 @@ import SwiftUI
 public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     case select = "Выбор / Перемещение"
     case arrow = "Стрелка"
+    case curvedArrow = "Изогнутая стрелка"
     case rectangle = "Прямоугольник"
     case roundedRect = "Скругленный"
     case ellipse = "Овал"
     case text = "Текст"
     case counter = "Счетчик (1-2-3)"
     case blur = "Размытие"
+    case spotlight = "Фокус / Прожектор"
     case highlighter = "Маркер"
     case magnifier = "Лупа"
     
@@ -20,12 +22,14 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .select: return "select"
         case .arrow: return "arrow"
+        case .curvedArrow: return "curvedArrow"
         case .rectangle: return "rectangle"
         case .roundedRect: return "roundedRect"
         case .ellipse: return "ellipse"
         case .text: return "text"
         case .counter: return "counter"
         case .blur: return "blur"
+        case .spotlight: return "spotlight"
         case .highlighter: return "highlighter"
         case .magnifier: return "magnifier"
         }
@@ -37,20 +41,22 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     
     /// Группы для тулбара
     public static let selectGroup: [AnnotationTool] = [.select]
-    public static let shapesGroup: [AnnotationTool] = [.arrow, .rectangle, .roundedRect, .ellipse]
+    public static let shapesGroup: [AnnotationTool] = [.arrow, .curvedArrow, .rectangle, .roundedRect, .ellipse]
     public static let annotateGroup: [AnnotationTool] = [.text, .counter, .highlighter]
-    public static let redactGroup: [AnnotationTool] = [.blur, .magnifier]
+    public static let redactGroup: [AnnotationTool] = [.blur, .spotlight, .magnifier]
     
     public var iconName: String {
         switch self {
         case .select: return "cursorarrow"
         case .arrow: return "arrow.up.right"
+        case .curvedArrow: return "arrow.turn.up.right"
         case .rectangle: return "square"
         case .roundedRect: return "square.dashed"
         case .ellipse: return "circle"
         case .text: return "textformat"
         case .counter: return "1.circle.fill"
         case .blur: return "checkerboard.rectangle"
+        case .spotlight: return "scope"
         case .highlighter: return "highlighter"
         case .magnifier: return "plus.magnifyingglass"
         }
@@ -61,12 +67,14 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .select: return L("editor.tool.select")
         case .arrow: return L("editor.tool.arrow")
+        case .curvedArrow: return L("editor.tool.curved_arrow")
         case .rectangle: return L("editor.tool.rectangle")
         case .roundedRect: return L("editor.tool.rounded_rect")
         case .ellipse: return L("editor.tool.ellipse")
         case .text: return L("editor.tool.text")
         case .counter: return L("editor.tool.counter")
         case .blur: return L("editor.tool.blur")
+        case .spotlight: return L("editor.tool.spotlight")
         case .highlighter: return L("editor.tool.highlighter")
         case .magnifier: return L("editor.tool.magnifier")
         }

@@ -24,13 +24,34 @@ public struct VideoEditorWindowView: View {
             // 2. Контекстная панель выбранного элемента (свойства, цвет, поворот, дублирование, удаление)
             VideoSelectedItemBar(model: model)
             
-            // 3. Основная рабочая область (Плеер + Canvas оверлей)
+            // 3. Основная рабочая область (Плеер + Canvas оверлей с поддержкой Smart Zoom и следования камеры)
             ZStack {
                 Color.black
                 
-                VideoPlayerRepresentable(player: model.player)
-                
-                VideoOverlayCanvasView(model: model)
+                GeometryReader { geo in
+                    let containerSize = geo.size
+                    let videoRect = model.videoContentRect(in: containerSize)
+                    
+                    let zoom = model.isSmartZoomEnabled ? model.currentCameraZoom : 1.0
+                    let maxPanX = max(0, (videoRect.width * (zoom - 1.0)) / 2)
+                    let maxPanY = max(0, (videoRect.height * (zoom - 1.0)) / 2)
+                    
+                    let rawPanX = (0.5 - model.currentCameraFocus.x) * videoRect.width * (zoom - 1.0)
+                    let rawPanY = (0.5 - model.currentCameraFocus.y) * videoRect.height * (zoom - 1.0)
+                    
+                    let panX = min(maxPanX, max(-maxPanX, rawPanX))
+                    let panY = min(maxPanY, max(-maxPanY, rawPanY))
+                    
+                    Group {
+                        VideoPlayerRepresentable(player: model.player)
+                        VideoOverlayCanvasView(model: model)
+                    }
+                    .scaleEffect(zoom, anchor: .center)
+                    .offset(x: panX, y: panY)
+                    .animation(.interpolatingSpring(stiffness: 110, damping: 16), value: model.currentCameraFocus)
+                    .animation(.easeInOut(duration: 0.28), value: model.isSmartZoomEnabled)
+                }
+                .clipped()
                 
                 // Оверлей процесса экспорта
                 if model.isExporting {
@@ -153,7 +174,12 @@ public struct VideoEditorWindowView: View {
             playbackRate: model.playbackRate,
             cropRect: model.isCropping ? model.cropRect : nil,
             gifFPS: 15,
-            annotations: model.annotations
+            annotations: model.annotations,
+            smartZoom: model.isSmartZoomEnabled,
+            smartZoomScale: model.smartZoomScale,
+            smartZoomMode: model.smartZoomMode,
+            autoZoomOutOnIdle: model.autoZoomOutOnIdle,
+            cursorTrack: model.cursorTrack
         )
         let sourceURL = model.videoURL
         

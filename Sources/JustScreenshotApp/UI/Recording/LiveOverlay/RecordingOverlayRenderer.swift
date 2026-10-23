@@ -6,6 +6,13 @@ enum RecordingOverlayRenderer {
     struct ClickRipple: Sendable {
         let center: CGPoint
         let startTime: Date
+        let isRightClick: Bool
+        
+        init(center: CGPoint, startTime: Date = Date(), isRightClick: Bool = false) {
+            self.center = center
+            self.startTime = startTime
+            self.isRightClick = isRightClick
+        }
     }
     
     struct KeystrokeInfo: Sendable {
@@ -58,11 +65,29 @@ enum RecordingOverlayRenderer {
             let alpha = 1.0 - progress
             
             let rect = CGRect(x: ripple.center.x - radius, y: ripple.center.y - radius, width: radius * 2, height: radius * 2)
-            context.setStrokeColor(CGColor(red: 1.0, green: 0.85, blue: 0.2, alpha: alpha * 0.85))
-            context.setFillColor(CGColor(red: 1.0, green: 0.85, blue: 0.2, alpha: alpha * 0.25))
-            context.setLineWidth(2.5)
-            context.fillEllipse(in: rect)
-            context.strokeEllipse(in: rect)
+            
+            if ripple.isRightClick {
+                // ПКМ: Кораллово-красный двойной импульс
+                context.setStrokeColor(CGColor(red: 1.0, green: 0.25, blue: 0.35, alpha: alpha * 0.95))
+                context.setFillColor(CGColor(red: 1.0, green: 0.25, blue: 0.35, alpha: alpha * 0.35))
+                context.setLineWidth(3.0)
+                context.fillEllipse(in: rect)
+                context.strokeEllipse(in: rect)
+                
+                // Внутреннее контрастное кольцо для ПКМ
+                let innerR = max(2.0, radius * 0.45)
+                let innerRect = CGRect(x: ripple.center.x - innerR, y: ripple.center.y - innerR, width: innerR * 2, height: innerR * 2)
+                context.setStrokeColor(CGColor(gray: 1.0, alpha: alpha * 0.95))
+                context.setLineWidth(1.5)
+                context.strokeEllipse(in: innerRect)
+            } else {
+                // ЛКМ: Яркий лазурно-синий круговой импульс
+                context.setStrokeColor(CGColor(red: 0.15, green: 0.65, blue: 1.0, alpha: alpha * 0.95))
+                context.setFillColor(CGColor(red: 0.15, green: 0.65, blue: 1.0, alpha: alpha * 0.25))
+                context.setLineWidth(2.5)
+                context.fillEllipse(in: rect)
+                context.strokeEllipse(in: rect)
+            }
         }
     }
     

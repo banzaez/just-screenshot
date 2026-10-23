@@ -60,7 +60,7 @@ public final class VideoExportService: @unchecked Sendable {
             : naturalSize
         
         let burnIn = await MainActor.run { BurnInAnnotation.from(options.annotations) }
-        let needsComposition = options.cropRect != nil || !burnIn.isEmpty
+        let needsComposition = options.cropRect != nil || !burnIn.isEmpty || options.smartZoom
         
         var videoComposition: AVMutableVideoComposition?
         
@@ -90,7 +90,17 @@ public final class VideoExportService: @unchecked Sendable {
                 let ty = -(crop.origin.y * displaySize.height)
                 transform = transform.concatenating(CGAffineTransform(translationX: tx, y: ty))
             }
-            layerInstruction.setTransform(transform, at: .zero)
+            if options.smartZoom {
+                applySmartZoom(
+                    layerInstruction: layerInstruction,
+                    baseTransform: transform,
+                    displaySize: displaySize,
+                    duration: composition.duration.seconds,
+                    options: options
+                )
+            } else {
+                layerInstruction.setTransform(transform, at: .zero)
+            }
             
             instruction.layerInstructions = [layerInstruction]
             vComp.instructions = [instruction]
@@ -165,5 +175,84 @@ public final class VideoExportService: @unchecked Sendable {
             options: options,
             progressHandler: progressHandler
         )
+    }
+    
+    // MARK: - Smart Zoom Animation
+    
+    private func applySmartZoom(
+        layerInstruction: AVMutableVideoCompositionLayerInstruction,
+        baseTransform: CGAffineTransform,
+        displaySize: CGSize,
+        duration: Double,
+        options: VideoExportOptions
+    ) {
+        let makeTransform: (CGPoint, CGFloat) -> CGAffineTransform = { focus, scale in
+            let fx = min(1.0, max(0.0, focus.x)) * displaySize.width
+            let fy = min(1.0, max(0.0, 1.0 - focus.y)) * displaySize.height
+            var zt = baseTransform
+            zt = zt.translatedBy(x: fx, y: fy)
+            zt = zt.scaledBy(x: scale, y: scale)
+            zt = zt.translatedBy(x: -fx, y: -fy)
+            return zt
+        }
+        
+        guard let track = options.cursorTrack, !track.keyframes.isEmpty, duration > 1.0 else {
+            // Фолбэк на точку первой аннотации или центр
+            let focusCenter: CGPoint
+            if let firstAnno = options.annotations.first {
+                focusCenter = CGPoint(x: firstAnno.rect.midX, y: 1.0 - firstAnno.rect.midY)
+            } else {
+                focusCenter = CGPoint(x: 0.5, y: 0.5)
+            }
+            let zoomTransform = makeTransform(focusCenter, 1.25)
+            let tIn = CMTime(seconds: min(1.0, duration * 0.2), preferredTimescale: 600)
+            let tOut = CMTime(seconds: max(0.5, duration - 0.7), preferredTimescale: 600)
+            layerInstruction.setTransformRamp(fromStart: baseTransform, toEnd: zoomTransform, timeRange: CMTimeRange(start: .zero, duration: tIn))
+            layerInstruction.setTransform(zoomTransform, at: tIn)
+            layerInstruction.setTransformRamp(fromStart: zoomTransform, toEnd: baseTransform, timeRange: CMTimeRange(start: tOut, duration: CMTime(seconds: duration - tOut.seconds, preferredTimescale: 600)))
+            return
+        }
+        
+        // Генерация путевых точек (waypoints) по треку курсора с учетом выбранного режима и масштаба
+        var waypoints: [(time: Double, transform: CGAffineTransform)] = []
+        let step: Double = 1.0
+        var t: Double = 0.0
+        while t <= duration {
+            let state = track.cameraState(
+                at: t,
+                scale: options.smartZoomScale,
+                mode: options.smartZoomMode,
+                autoZoomOutOnIdle: options.autoZoomOutOnIdle
+            )
+            let trans = makeTransform(state.focus, state.zoom)
+            waypoints.append((time: t, transform: trans))
+            t += step
+        }
+        if let last = waypoints.last, last.time < duration {
+            let state = track.cameraState(
+                at: duration,
+                scale: options.smartZoomScale,
+                mode: options.smartZoomMode,
+                autoZoomOutOnIdle: options.autoZoomOutOnIdle
+            )
+            waypoints.append((time: duration, transform: makeTransform(state.focus, state.zoom)))
+        }
+        
+        guard waypoints.count >= 2 else {
+            layerInstruction.setTransform(waypoints.first?.transform ?? baseTransform, at: .zero)
+            return
+        }
+        
+        for i in 0..<(waypoints.count - 1) {
+            let wp0 = waypoints[i]
+            let wp1 = waypoints[i + 1]
+            let startCM = CMTime(seconds: wp0.time, preferredTimescale: 600)
+            let durCM = CMTime(seconds: max(0.01, wp1.time - wp0.time), preferredTimescale: 600)
+            layerInstruction.setTransformRamp(
+                fromStart: wp0.transform,
+                toEnd: wp1.transform,
+                timeRange: CMTimeRange(start: startCM, duration: durCM)
+            )
+        }
     }
 }
