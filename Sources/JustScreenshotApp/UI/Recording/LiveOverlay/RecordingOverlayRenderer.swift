@@ -68,31 +68,39 @@ enum RecordingOverlayRenderer {
     
     static func drawKeystrokeBadge(text: String, alpha: CGFloat, bounds: CGRect, in context: CGContext) {
         let nsText = text as NSString
-        let font = NSFont.systemFont(ofSize: 15, weight: .bold)
+        let font = NSFont.systemFont(ofSize: 18, weight: .bold)
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: NSColor.white.withAlphaComponent(alpha)
         ]
         let textSize = nsText.size(withAttributes: attrs)
+        let horizontalPadding: CGFloat = 20
+        let verticalPadding: CGFloat = 12
+        let badgeWidth = textSize.width + horizontalPadding * 2
+        let badgeHeight = textSize.height + verticalPadding * 2
         let badgeRect = CGRect(
-            x: bounds.midX - textSize.width / 2 - 14,
-            y: max(16, bounds.minY + 20),
-            width: textSize.width + 28,
-            height: textSize.height + 14
+            x: bounds.midX - badgeWidth / 2,
+            y: max(20, bounds.minY + 36),
+            width: badgeWidth,
+            height: badgeHeight
         )
-        let path = CGPath(roundedRect: badgeRect, cornerWidth: 8, cornerHeight: 8, transform: nil)
+        let path = CGPath(roundedRect: badgeRect, cornerWidth: 10, cornerHeight: 10, transform: nil)
         context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: CGColor(gray: 0, alpha: 0.5 * alpha))
-        context.setFillColor(CGColor(gray: 0.08, alpha: 0.88 * alpha))
+        context.setShadow(offset: CGSize(width: 0, height: -3), blur: 12, color: CGColor(gray: 0, alpha: 0.65 * alpha))
+        context.setFillColor(CGColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 0.94 * alpha))
         context.addPath(path)
         context.fillPath()
         
-        context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.25 * alpha))
-        context.setLineWidth(1.0)
+        context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.35 * alpha))
+        context.setLineWidth(1.5)
         context.addPath(path)
         context.strokePath()
         context.restoreGState()
         
-        nsText.draw(at: CGPoint(x: badgeRect.origin.x + 14, y: badgeRect.origin.y + 7), withAttributes: attrs)
+        let textPoint = CGPoint(
+            x: badgeRect.origin.x + horizontalPadding,
+            y: badgeRect.origin.y + verticalPadding - 1
+        )
+        nsText.draw(at: textPoint, withAttributes: attrs)
     }
 }

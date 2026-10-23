@@ -24,6 +24,7 @@ public final class AppSettings: ObservableObject {
         static let shortcutHistoryAlt = "settings_shortcut_history_alt"
         static let showFloatingBar = "settings_show_floating_bar"
         static let showKeystrokes = "settings_show_keystrokes"
+        static let showClicks = "settings_show_clicks"
     }
     
     // Язык интерфейса
@@ -52,6 +53,10 @@ public final class AppSettings: ObservableObject {
     
     @Published public var showKeystrokesDuringRecording: Bool {
         didSet { UserDefaults.standard.set(showKeystrokesDuringRecording, forKey: Keys.showKeystrokes) }
+    }
+    
+    @Published public var showClicksDuringRecording: Bool {
+        didSet { UserDefaults.standard.set(showClicksDuringRecording, forKey: Keys.showClicks) }
     }
     
     // Последняя захваченная область для быстрого повтора (Repeat Last Capture)
@@ -115,6 +120,7 @@ public final class AppSettings: ObservableObject {
         self.defaultSaveDirectoryPath = defaults.string(forKey: Keys.defaultSaveDirectory) ?? defaultMovies
         self.showFloatingBarDuringRecording = defaults.object(forKey: Keys.showFloatingBar) as? Bool ?? true
         self.showKeystrokesDuringRecording = defaults.object(forKey: Keys.showKeystrokes) as? Bool ?? true
+        self.showClicksDuringRecording = defaults.object(forKey: Keys.showClicks) as? Bool ?? true
         
         self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? DefaultShortcuts.area
         self.shortcutAreaAlt = AppSettings.loadShortcut(key: Keys.shortcutAreaAlt)

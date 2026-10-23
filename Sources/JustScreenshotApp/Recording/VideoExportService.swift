@@ -152,4 +152,18 @@ public final class VideoExportService: @unchecked Sendable {
             progressHandler: progressHandler
         )
     }
+    
+    public func exportWebP(
+        sourceURL: URL,
+        destinationURL: URL,
+        options: VideoExportOptions,
+        progressHandler: @Sendable @escaping (Double) -> Void
+    ) async throws {
+        try await WebPExportService.shared.exportWebP(
+            sourceURL: sourceURL,
+            destinationURL: destinationURL,
+            options: options,
+            progressHandler: progressHandler
+        )
+    }
 }

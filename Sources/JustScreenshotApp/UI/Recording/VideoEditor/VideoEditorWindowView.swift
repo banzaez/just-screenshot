@@ -16,8 +16,9 @@ public struct VideoEditorWindowView: View {
             // 1. Верхний тулбар
             VideoEditorToolbarView(
                 model: model,
-                onExportMP4: { performExport(isGIF: false) },
-                onExportGIF: { performExport(isGIF: true) }
+                onExportMP4: { performExport(format: .mp4) },
+                onExportGIF: { performExport(format: .gif) },
+                onExportWebP: { performExport(format: .webp) }
             )
             
             // 2. Контекстная панель выбранного элемента (свойства, цвет, поворот, дублирование, удаление)
@@ -114,20 +115,37 @@ public struct VideoEditorWindowView: View {
         )
     }
     
-    private func performExport(isGIF: Bool) {
+    private enum ExportFormat {
+        case mp4
+        case gif
+        case webp
+    }
+    
+    private func performExport(format: ExportFormat) {
         model.pause()
         
         let savePanel = NSSavePanel()
-        savePanel.allowedContentTypes = isGIF ? [.gif] : [.mpeg4Movie]
+        switch format {
+        case .mp4:
+            savePanel.allowedContentTypes = [.mpeg4Movie]
+            savePanel.nameFieldStringValue = "VideoEdit.mp4"
+            model.exportStatusText = L("video_editor.exporting_mp4")
+        case .gif:
+            savePanel.allowedContentTypes = [.gif]
+            savePanel.nameFieldStringValue = "Animation.gif"
+            model.exportStatusText = L("video_editor.exporting_gif")
+        case .webp:
+            savePanel.allowedContentTypes = [.webP]
+            savePanel.nameFieldStringValue = "Animation.webp"
+            model.exportStatusText = L("video_editor.exporting_webp")
+        }
         savePanel.canCreateDirectories = true
-        savePanel.nameFieldStringValue = isGIF ? "Animation.gif" : "VideoEdit.mp4"
         
         NSApp.activate(ignoringOtherApps: true)
         guard savePanel.runModal() == .OK, let targetURL = savePanel.url else { return }
         
         model.isExporting = true
         model.exportProgress = 0.0
-        model.exportStatusText = isGIF ? L("video_editor.exporting_gif") : L("video_editor.exporting_mp4")
         
         let options = VideoExportService.ExportOptions(
             trimStart: model.trimStart,
@@ -146,15 +164,23 @@ public struct VideoEditorWindowView: View {
                         self.model.exportProgress = progress
                     }
                 }
-                if isGIF {
+                switch format {
+                case .mp4:
+                    try await VideoExportService.shared.exportVideo(
+                        sourceURL: sourceURL,
+                        destinationURL: targetURL,
+                        options: options,
+                        progressHandler: onProgress
+                    )
+                case .gif:
                     try await VideoExportService.shared.exportGIF(
                         sourceURL: sourceURL,
                         destinationURL: targetURL,
                         options: options,
                         progressHandler: onProgress
                     )
-                } else {
-                    try await VideoExportService.shared.exportVideo(
+                case .webp:
+                    try await VideoExportService.shared.exportWebP(
                         sourceURL: sourceURL,
                         destinationURL: targetURL,
                         options: options,

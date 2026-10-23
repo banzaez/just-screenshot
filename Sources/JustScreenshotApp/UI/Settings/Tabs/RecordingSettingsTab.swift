@@ -18,9 +18,41 @@ struct RecordingSettingsTab: View {
 
             Toggle(
                 L("settings.recording.show_keystrokes"),
-                isOn: $settings.showKeystrokesDuringRecording)
+                isOn: $settings.showKeystrokesDuringRecording
+            )
+            .onChange(of: settings.showKeystrokesDuringRecording) { _, newValue in
+                if newValue && !AccessibilityPermissionHelper.isGranted {
+                    AccessibilityPermissionHelper.requestAccess()
+                }
+            }
 
             Text(L("settings.recording.show_keystrokes_desc"))
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            if settings.showKeystrokesDuringRecording && !AccessibilityPermissionHelper.isGranted {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(L("settings.recording.accessibility_needed"))
+                        .font(.caption)
+                    Spacer()
+                    Button(L("settings.recording.accessibility_button")) {
+                        AccessibilityPermissionHelper.requestAccess()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12))
+                .cornerRadius(8)
+            }
+
+            Toggle(
+                L("settings.recording.show_clicks"),
+                isOn: $settings.showClicksDuringRecording)
+
+            Text(L("settings.recording.show_clicks_desc"))
                 .font(.caption)
                 .foregroundColor(.secondary)
 

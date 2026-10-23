@@ -7,6 +7,7 @@ enum JustScreenshotWindowTitles {
     static let countdownOverlay = "JustScreenshotCountdownOverlay"
     static let recordingFrame = "JustScreenshotRecordingFrame"
     static let recordingBar = "JustScreenshotRecordingBar"
+    static let recordingEffects = "JustScreenshotRecordingEffects"
     
     static let allOverlayTitles: Set<String> = [
         areaOverlay,
@@ -24,6 +25,9 @@ enum JustScreenshotWindowTitles {
     nonisolated static func shouldExcludeFromCapture(_ window: SCWindow, currentPID: pid_t? = nil) -> Bool {
         let pid = currentPID ?? ProcessInfo.processInfo.processIdentifier
         guard window.owningApplication?.processID == pid else { return false }
+        if window.title == recordingEffects {
+            return false
+        }
         return isOverlayTitle(window.title) || window.windowLayer >= 1000
     }
 }

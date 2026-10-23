@@ -6,6 +6,7 @@ struct JustScreenshotApp: App {
     @StateObject private var windowManager = AppWindowManager.shared
     @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
     @StateObject private var localization = LocalizationManager.shared
+    @StateObject private var updaterManager = UpdaterManager.shared
     
     var body: some Scene {
         MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : "camera.viewfinder") {
@@ -105,6 +106,13 @@ struct JustScreenshotApp: App {
                     Label(L("menu.settings"), systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: [.command])
+                
+                Button {
+                    updaterManager.checkForUpdates()
+                } label: {
+                    Label(L("menu.check_updates"), systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!updaterManager.canCheckForUpdates)
                 
                 Button(L("menu.check_permissions")) {
                     Task {

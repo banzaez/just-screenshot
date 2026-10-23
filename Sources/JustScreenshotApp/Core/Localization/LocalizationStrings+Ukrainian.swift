@@ -20,6 +20,7 @@ extension LocalizationCatalog {
         "menu.open_image": "Відкрити зображення…",
         "menu.edit_clipboard": "Редагувати з буфера обміну",
         "menu.settings": "Налаштування…",
+        "menu.check_updates": "Перевірити оновлення…",
         "menu.check_permissions": "Перевірити дозволи на запис екрана",
         "menu.quit": "Вихід",
         "settings.title": "Налаштування",

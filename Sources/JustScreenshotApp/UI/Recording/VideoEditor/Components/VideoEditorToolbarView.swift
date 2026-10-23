@@ -6,15 +6,18 @@ public struct VideoEditorToolbarView: View {
     @ObservedObject var model: VideoEditorModel
     var onExportMP4: () -> Void
     var onExportGIF: () -> Void
+    var onExportWebP: () -> Void
     
     public init(
         model: VideoEditorModel,
         onExportMP4: @escaping () -> Void,
-        onExportGIF: @escaping () -> Void
+        onExportGIF: @escaping () -> Void,
+        onExportWebP: @escaping () -> Void
     ) {
         self.model = model
         self.onExportMP4 = onExportMP4
         self.onExportGIF = onExportGIF
+        self.onExportWebP = onExportWebP
     }
     
     public var body: some View {
@@ -104,6 +107,24 @@ public struct VideoEditorToolbarView: View {
             .frame(width: 80)
             
             Spacer()
+            
+            Button(action: onExportWebP) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles.tv")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(L("video_editor.export_webp"))
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 32)
+                .foregroundStyle(.white)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(Color(red: 0.1, green: 0.65, blue: 0.6))
+                )
+            }
+            .buttonStyle(.plain)
+            .help(L("video_editor.export_webp_help"))
             
             Button(action: onExportGIF) {
                 HStack(spacing: 6) {

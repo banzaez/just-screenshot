@@ -4,6 +4,7 @@ import AppKit
 struct GeneralSettingsTab: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var launchAtLogin = LaunchAtLoginManager.shared
+    @ObservedObject var updater = UpdaterManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -76,6 +77,26 @@ struct GeneralSettingsTab: View {
                 Button(L("settings.choose")) {
                     selectSaveDirectory()
                 }
+            }
+
+            Divider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Just Screenshot \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0.0")")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    Text("Sparkle Autoupdate")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Button(L("menu.check_updates")) {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
             }
         }
     }

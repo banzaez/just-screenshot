@@ -40,6 +40,18 @@ extension AppWindowManager {
         let moviesDir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
         let outputURL = moviesDir.appendingPathComponent("ScreenRecording-\(Int(Date().timeIntervalSince1970)).mp4")
         
+        let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: rect)
+        
+        let frameWin = RecordingFrameWindow(screenRect: appKitRect)
+        frameWin.orderFrontRegardless()
+        recordingFrameWindow = frameWin
+        
+        if AppSettings.shared.showClicksDuringRecording || AppSettings.shared.showKeystrokesDuringRecording {
+            let effectsWin = RecordingEffectsOverlayWindow(screenRect: appKitRect)
+            effectsWin.orderFrontRegardless()
+            recordingEffectsWindow = effectsWin
+        }
+        
         do {
             try await ScreenRecorderService.shared.startRecording(rect: rect, destinationURL: outputURL)
             isRecording = true
@@ -52,12 +64,6 @@ extension AppWindowManager {
             if AppSettings.shared.playSound {
                 NSSound(named: "Purr")?.play()
             }
-            
-            let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: rect)
-            
-            let frameWin = RecordingFrameWindow(screenRect: appKitRect)
-            frameWin.orderFrontRegardless()
-            recordingFrameWindow = frameWin
             
             if AppSettings.shared.showFloatingBarDuringRecording {
                 var barCenter = NSPoint(x: appKitRect.midX, y: appKitRect.minY - 35)
@@ -146,6 +152,9 @@ extension AppWindowManager {
         
         recordingFrameWindow?.orderOut(nil)
         recordingFrameWindow = nil
+        
+        recordingEffectsWindow?.orderOut(nil)
+        recordingEffectsWindow = nil
         
         recordingBarWindow?.orderOut(nil)
         recordingBarWindow = nil

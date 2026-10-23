@@ -19,6 +19,7 @@ public final class AppWindowManager: ObservableObject {
     var overlayEscLocalMonitor: Any?
     var overlayEscGlobalMonitor: Any?
     var recordingFrameWindow: RecordingFrameWindow?
+    var recordingEffectsWindow: RecordingEffectsOverlayWindow?
     var recordingBarWindow: RecordingControlBarWindow?
     let hudStack = HUDStackManager()
     var editors: [UUID: ManagedWindow] = [:]

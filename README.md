@@ -47,13 +47,23 @@
 
 ---
 
-## Сборка и запуск
+## Сборка и управление проектом
 
-Сборка готового приложения `.app`:
+Для удобного управления проектом доступен единый центр управления **`manage.sh`** (с интерактивным меню) и **`Makefile`**:
 
 ```bash
-chmod +x build_app.sh
-./build_app.sh
+# Интерактивное меню (сборка, запуск, релизы, тесты, очистка)
+./manage.sh
+# или
+make menu
+
+# Быстрые команды:
+./manage.sh run      # или make run     — собрать и сразу запустить
+./manage.sh build    # или make build   — собрать Just Screenshot.app
+./manage.sh release  # или make release — мастер публикации релиза (Sparkle + GitHub)
+./manage.sh test     # или make test    — запуск тестов
+./manage.sh status   # или make status  — проверка сертификатов и ключей
 ```
 
-После завершения скрипт создаст подписанный бандл `Just Screenshot.app`, готовый к запуску.
+Также сохранена обратная совместимость со скриптами `./build_app.sh` и `./release.sh`.
+
