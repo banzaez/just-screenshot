@@ -19,6 +19,16 @@ enum ScreenCoordinateSpace {
         )
     }
     
+    /// AppKit global CGRect → Quartz CGRect
+    static func quartzRect(fromAppKit rect: CGRect, primaryHeight: CGFloat = primaryDisplayHeight) -> CGRect {
+        CGRect(
+            x: rect.origin.x,
+            y: primaryHeight - rect.origin.y - rect.height,
+            width: rect.width,
+            height: rect.height
+        )
+    }
+    
     /// Точка в системе экрана (AppKit, относительно screen.frame) → Quartz global
     static func quartzPoint(
         fromScreenLocal point: CGPoint,

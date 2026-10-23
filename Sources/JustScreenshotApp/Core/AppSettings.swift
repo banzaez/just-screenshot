@@ -25,6 +25,10 @@ public final class AppSettings: ObservableObject {
         static let showFloatingBar = "settings_show_floating_bar"
         static let showKeystrokes = "settings_show_keystrokes"
         static let showClicks = "settings_show_clicks"
+        static let lastCapturedRect = "settings_last_captured_rect"
+        static let lastRecordingRect = "settings_last_recording_rect"
+        static let recordingCountdown = "settings_recording_countdown"
+        static let dimOutsideRecording = "settings_dim_outside_recording"
     }
     
     // Язык интерфейса
@@ -60,7 +64,24 @@ public final class AppSettings: ObservableObject {
     }
     
     // Последняя захваченная область для быстрого повтора (Repeat Last Capture)
-    @Published public var lastCapturedRect: CGRect?
+    @Published public var lastCapturedRect: CGRect? {
+        didSet { AppSettings.saveRect(lastCapturedRect, key: Keys.lastCapturedRect) }
+    }
+    
+    // Последняя выбранная область для записи видео
+    @Published public var lastRecordingRect: CGRect? {
+        didSet { AppSettings.saveRect(lastRecordingRect, key: Keys.lastRecordingRect) }
+    }
+    
+    // Обратный отсчет перед записью (0 = без отсчета, 3 = 3 сек)
+    @Published public var recordingCountdownSeconds: Int {
+        didSet { UserDefaults.standard.set(recordingCountdownSeconds, forKey: Keys.recordingCountdown) }
+    }
+    
+    // Затемнять экран вокруг выбранной области записи
+    @Published public var dimOutsideRecordingArea: Bool {
+        didSet { UserDefaults.standard.set(dimOutsideRecordingArea, forKey: Keys.dimOutsideRecording) }
+    }
     
     // Горячие клавиши (Основной вариант + Альтернативный)
     @Published public var shortcutArea: ShortcutKey {
@@ -121,6 +142,10 @@ public final class AppSettings: ObservableObject {
         self.showFloatingBarDuringRecording = defaults.object(forKey: Keys.showFloatingBar) as? Bool ?? true
         self.showKeystrokesDuringRecording = defaults.object(forKey: Keys.showKeystrokes) as? Bool ?? true
         self.showClicksDuringRecording = defaults.object(forKey: Keys.showClicks) as? Bool ?? true
+        self.lastCapturedRect = AppSettings.loadRect(key: Keys.lastCapturedRect)
+        self.lastRecordingRect = AppSettings.loadRect(key: Keys.lastRecordingRect)
+        self.recordingCountdownSeconds = defaults.object(forKey: Keys.recordingCountdown) as? Int ?? 0
+        self.dimOutsideRecordingArea = defaults.object(forKey: Keys.dimOutsideRecording) as? Bool ?? true
         
         self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? DefaultShortcuts.area
         self.shortcutAreaAlt = AppSettings.loadShortcut(key: Keys.shortcutAreaAlt)
@@ -158,6 +183,28 @@ public final class AppSettings: ObservableObject {
             return nil
         }
         return shortcut
+    }
+    
+    private static func saveRect(_ rect: CGRect?, key: String) {
+        if let rect {
+            let dict: [String: Double] = [
+                "x": Double(rect.origin.x),
+                "y": Double(rect.origin.y),
+                "w": Double(rect.size.width),
+                "h": Double(rect.size.height)
+            ]
+            UserDefaults.standard.set(dict, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+    }
+    
+    private static func loadRect(key: String) -> CGRect? {
+        guard let dict = UserDefaults.standard.dictionary(forKey: key) as? [String: Double],
+              let x = dict["x"], let y = dict["y"], let w = dict["w"], let h = dict["h"] else {
+            return nil
+        }
+        return CGRect(x: CGFloat(x), y: CGFloat(y), width: CGFloat(w), height: CGFloat(h))
     }
     
     public func resetHotkeysToDefaults() {

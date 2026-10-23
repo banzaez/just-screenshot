@@ -53,25 +53,25 @@ public struct EditorBottomBarView: View {
     // MARK: - Backdrop
     
     private var backdropCapsule: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             EditorIconButton(
                 "rectangle.on.rectangle.angled",
                 title: L("editor.backdrop"),
                 isActive: showBackdrop,
-                width: 30
+                width: 32
             ) {
                 showBackdrop.toggle()
             }
             
             if showBackdrop {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     ForEach(BackdropPreset.allCases) { preset in
                         Button {
                             backdropPreset = preset
                         } label: {
                             Circle()
                                 .fill(preset.gradient)
-                                .frame(width: 16, height: 16)
+                                .frame(width: 18, height: 18)
                                 .overlay(
                                     Circle()
                                         .strokeBorder(
@@ -89,7 +89,7 @@ public struct EditorBottomBarView: View {
                     "slider.horizontal.3",
                     title: L("editor.padding"),
                     isActive: showAdjustPopover,
-                    width: 28
+                    width: 30
                 ) {
                     showAdjustPopover.toggle()
                 }
@@ -101,13 +101,13 @@ public struct EditorBottomBarView: View {
                     "shadow",
                     title: L("editor.shadow_help"),
                     isActive: addShadow,
-                    width: 28
+                    width: 30
                 ) {
                     addShadow.toggle()
                 }
             }
         }
-        .padding(3)
+        .padding(4)
         .background(capsuleBackground)
         .animation(.easeInOut(duration: 0.18), value: showBackdrop)
     }
@@ -170,11 +170,11 @@ public struct EditorBottomBarView: View {
     // MARK: - Actions
     
     private var actionsCapsule: some View {
-        HStack(spacing: 2) {
-            EditorIconButton("xmark", title: L("editor.close"), width: 30, action: onClose)
+        HStack(spacing: 4) {
+            EditorIconButton("xmark", title: L("editor.close"), width: 32, action: onClose)
                 .keyboardShortcut("w", modifiers: [.command])
             
-            EditorIconButton("doc.on.doc", title: L("editor.copy"), width: 30, action: onCopy)
+            EditorIconButton("doc.on.doc", title: L("editor.copy"), width: 32, action: onCopy)
                 .keyboardShortcut("c", modifiers: [.command, .shift])
             
             Button {
@@ -187,8 +187,8 @@ public struct EditorBottomBarView: View {
             } label: {
                 Image(systemName: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down")
                     .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(justSavedToHistory ? Color.white : Color.white)
+                    .frame(width: 32, height: 30)
+                    .foregroundStyle(Color.white)
                     .background(
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(justSavedToHistory ? Color.green : Color.accentColor)
@@ -199,10 +199,10 @@ public struct EditorBottomBarView: View {
             .keyboardShortcut("s", modifiers: [.command])
             .accessibilityLabel(justSavedToHistory ? L("editor.saved") : L("editor.save"))
             
-            EditorIconButton("square.and.arrow.up", title: L("editor.export"), width: 30, action: onSave)
+            EditorIconButton("square.and.arrow.up", title: L("editor.export"), width: 32, action: onSave)
                 .keyboardShortcut("e", modifiers: [.command])
         }
-        .padding(3)
+        .padding(4)
         .background(capsuleBackground)
     }
     

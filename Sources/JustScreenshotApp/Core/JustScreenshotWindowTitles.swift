@@ -8,12 +8,14 @@ enum JustScreenshotWindowTitles {
     static let recordingFrame = "JustScreenshotRecordingFrame"
     static let recordingBar = "JustScreenshotRecordingBar"
     static let recordingEffects = "JustScreenshotRecordingEffects"
+    static let recordingDim = "JustScreenshotRecordingDim"
     
     static let allOverlayTitles: Set<String> = [
         areaOverlay,
         countdownOverlay,
         recordingFrame,
-        recordingBar
+        recordingBar,
+        recordingDim
     ]
     
     static func isOverlayTitle(_ title: String?) -> Bool {

@@ -28,9 +28,9 @@ extension AppWindowManager {
         )
         
         let window = makeEditorWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
+            contentRect: NSRect(x: 0, y: 0, width: 1140, height: 780),
             title: L("editor.title", Int(item.image.size.width), Int(item.image.size.height)),
-            minSize: NSSize(width: 640, height: 460),
+            minSize: NSSize(width: 880, height: 560),
             rootView: view,
             resetCascade: editors.isEmpty
         )
@@ -90,9 +90,9 @@ extension AppWindowManager {
         )
         
         let window = makeEditorWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 740),
             title: L("video_editor.title", videoURL.lastPathComponent),
-            minSize: NSSize(width: 720, height: 500),
+            minSize: NSSize(width: 860, height: 540),
             rootView: view,
             resetCascade: videoEditors.isEmpty
         )

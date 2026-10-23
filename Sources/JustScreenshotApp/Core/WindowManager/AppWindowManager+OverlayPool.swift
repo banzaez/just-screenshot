@@ -52,6 +52,11 @@ extension AppWindowManager {
         for window in windows {
             window.prepareForReuse()
         }
+        
+        if isRecordingPreparing {
+            recordingFrameWindow?.orderFrontRegardless()
+            recordingBarWindow?.orderFrontRegardless()
+        }
     }
     
     func installOverlayEscMonitors() {

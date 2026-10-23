@@ -4,11 +4,17 @@ import AppKit
 /// Плавающий оверлей обратного отсчета перед созданием скриншота
 public final class CountdownOverlayWindow: NSWindow {
     
-    public init(seconds: Int, onComplete: @escaping () -> Void) {
-        let screen = NSScreen.main ?? NSScreen.screens[0]
+    public init(seconds: Int, centerPoint: CGPoint? = nil, onComplete: @escaping () -> Void) {
+        let center: CGPoint
+        if let centerPoint {
+            center = centerPoint
+        } else {
+            let screen = NSScreen.main ?? NSScreen.screens[0]
+            center = CGPoint(x: screen.frame.midX, y: screen.frame.midY)
+        }
         let rect = NSRect(
-            x: screen.frame.midX - 70,
-            y: screen.frame.midY - 70,
+            x: center.x - 70,
+            y: center.y - 70,
             width: 140,
             height: 140
         )

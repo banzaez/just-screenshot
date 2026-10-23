@@ -7,9 +7,11 @@ public final class AppWindowManager: ObservableObject {
     public static let shared = AppWindowManager()
     
     @Published public var currentCapturedItem: CapturedItem?
+    @Published public var isRecordingPreparing: Bool = false
     @Published public var isRecording: Bool = false
     @Published public var isRecordingPaused: Bool = false
     @Published public var recordingDuration: TimeInterval = 0
+    @Published public var recordingRect: CGRect = .zero
     
     var overlayWindows: [AreaOverlayWindow] = []
     /// Пул оверлеев по displayID — без повторного alloc на каждый хоткей.
@@ -21,6 +23,7 @@ public final class AppWindowManager: ObservableObject {
     var recordingFrameWindow: RecordingFrameWindow?
     var recordingEffectsWindow: RecordingEffectsOverlayWindow?
     var recordingBarWindow: RecordingControlBarWindow?
+    var recordingDimWindows: [RecordingDimOverlayWindow] = []
     let hudStack = HUDStackManager()
     var editors: [UUID: ManagedWindow] = [:]
     var videoEditors: [UUID: ManagedWindow] = [:]

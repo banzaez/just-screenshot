@@ -9,7 +9,7 @@ struct JustScreenshotApp: App {
     @StateObject private var updaterManager = UpdaterManager.shared
     
     var body: some Scene {
-        MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : "camera.viewfinder") {
+        MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : (windowManager.isRecordingPreparing ? "viewfinder.circle.fill" : "camera.viewfinder")) {
             VStack(alignment: .leading, spacing: 4) {
                 if windowManager.isRecording {
                     HStack {
@@ -31,6 +31,24 @@ struct JustScreenshotApp: App {
                     Button(L("menu.cancel_recording")) {
                         windowManager.cancelScreenRecording()
                     }
+                    
+                    Divider()
+                } else if windowManager.isRecordingPreparing {
+                    HStack {
+                        Circle().fill(Color.blue).frame(width: 8, height: 8)
+                        Text("\(L("recording.bar.start_record")): \(Int(windowManager.recordingRect.width)) × \(Int(windowManager.recordingRect.height))")
+                            .font(.headline)
+                    }
+                    
+                    Button(L("recording.bar.start_record")) {
+                        windowManager.startActiveRecording()
+                    }
+                    .keyboardShortcut(.return, modifiers: [])
+                    
+                    Button(L("alert.cancel")) {
+                        windowManager.cancelRecordingSetup()
+                    }
+                    .keyboardShortcut(.escape, modifiers: [])
                     
                     Divider()
                 } else {

@@ -3,7 +3,7 @@ import SwiftUI
 /// Общие куски контекстной панели выбранной аннотации (image + video)
 enum SelectedAnnotationBarControls {
     
-    static let barHeight: CGFloat = 38
+    static let barHeight: CGFloat = 42
     
     struct EmptyHint: View {
         var showShortcuts: Bool = false

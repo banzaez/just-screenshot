@@ -63,30 +63,38 @@ public struct AnnotationEditorWindowView: View {
         }
     }
     
+    private var topToolbar: some View {
+        EditorToolbarView(
+            selectedTool: Binding(
+                get: { model.selectedTool },
+                set: { model.selectTool($0) }
+            ),
+            selectedColor: $model.selectedColor,
+            lineWidth: $model.lineWidth,
+            zoomPercent: Int((zoom * 100).rounded()),
+            isFitMode: fitMode,
+            canUndo: model.canUndo,
+            canRedo: model.canRedo,
+            onUndo: { model.undo() },
+            onRedo: { model.redo() },
+            onZoomIn: { setZoom(zoom * 1.25) },
+            onZoomOut: { setZoom(zoom / 1.25) },
+            onFit: { fitMode = true },
+            onActualSize: { setZoom(1.0) },
+            onAutoRedact: autoRedactSensitiveData
+        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+    
     public var body: some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                EditorToolbarView(
-                    selectedTool: Binding(
-                        get: { model.selectedTool },
-                        set: { model.selectTool($0) }
-                    ),
-                    selectedColor: $model.selectedColor,
-                    lineWidth: $model.lineWidth,
-                    zoomPercent: Int((zoom * 100).rounded()),
-                    isFitMode: fitMode,
-                    canUndo: model.canUndo,
-                    canRedo: model.canRedo,
-                    onUndo: { model.undo() },
-                    onRedo: { model.redo() },
-                    onZoomIn: { setZoom(zoom * 1.25) },
-                    onZoomOut: { setZoom(zoom / 1.25) },
-                    onFit: { fitMode = true },
-                    onActualSize: { setZoom(1.0) },
-                    onAutoRedact: autoRedactSensitiveData
-                )
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+            ViewThatFits(in: .horizontal) {
+                topToolbar
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    topToolbar
+                }
             }
             .background(Color(nsColor: .controlBackgroundColor))
             
@@ -178,7 +186,7 @@ public struct AnnotationEditorWindowView: View {
             .padding(.vertical, 8)
             .background(Color(nsColor: .controlBackgroundColor))
         }
-        .frame(minWidth: 640, minHeight: 460)
+        .frame(minWidth: 880, minHeight: 560)
         .task {
             blurredImage = await BlurFilter.makeBlurredAsync(capturedItem.image)
             model.finishInitialLoading()
