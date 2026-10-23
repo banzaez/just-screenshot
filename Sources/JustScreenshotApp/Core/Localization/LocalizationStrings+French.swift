@@ -201,6 +201,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "Flèche",
         "video_editor.type_rect": "Cadre",
         "video_editor.type_blur": "Flou",
+        "video_editor.blur_help": "Ajouter une zone de flou pour masquer les mots de passe ou e-mails",
         "video_editor.smart_zoom_help": "Smart Zoom: autofocus sur les clics et le curseur",
         "video_editor.smart_zoom_enable": "Activer Smart Zoom",
         "video_editor.smart_zoom_scale_header": "Intensité du zoom",

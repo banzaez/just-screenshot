@@ -20,57 +20,20 @@ struct VideoAnnotationItemView: View {
         let itemCenterY = videoRect.origin.y + (item.rect.origin.y + item.rect.height / 2) * videoRect.height
         
         ZStack {
-            Group {
-                switch item.type {
-                case .text:
-                    Text(item.text.isEmpty ? " " : item.text)
-                        .font(.system(size: item.fontSize, weight: .bold))
-                        .foregroundColor(item.color)
-                        .multilineTextAlignment(.center)
-                        .frame(width: itemWidth, height: itemHeight)
-                        .background(Color.black.opacity(0.65))
-                        .cornerRadius(6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                        )
-                    
-                case .rect:
+            RoundedRectangle(cornerRadius: 6)
+                .fill(.ultraThinMaterial)
+                .frame(width: itemWidth, height: itemHeight)
+                .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(item.color, lineWidth: item.lineWidth)
-                        .frame(width: itemWidth, height: itemHeight)
-                    
-                case .arrow:
-                    Path { p in
-                        let geometry = AnnotationArrowGeometry.diagonal(in: CGSize(width: itemWidth, height: itemHeight), lineWidth: item.lineWidth)
-                        p.move(to: geometry.start)
-                        p.addLine(to: geometry.end)
-                        p.move(to: geometry.end)
-                        p.addLine(to: geometry.headLeft)
-                        p.move(to: geometry.end)
-                        p.addLine(to: geometry.headRight)
-                    }
-                    .stroke(item.color, style: StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round))
-                    .frame(width: itemWidth, height: itemHeight)
-                    
-                case .blur:
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(.ultraThinMaterial)
-                        .frame(width: itemWidth, height: itemHeight)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color.white.opacity(0.4), lineWidth: 1)
-                        )
-                }
-            }
-            .contentShape(Rectangle())
+                        .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.4), lineWidth: isSelected ? 1.5 : 1)
+                )
+                .contentShape(Rectangle())
             
             if isSelected {
                 selectionControls(width: itemWidth, height: itemHeight)
             }
         }
         .frame(width: itemWidth, height: itemHeight)
-        .rotationEffect(.degrees(item.rotationAngle))
         .position(x: itemCenterX, y: itemCenterY)
         .background(
             GeometryReader { geo in
@@ -115,41 +78,24 @@ struct VideoAnnotationItemView: View {
         ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                .frame(width: width + 10, height: height + 10)
+                .frame(width: width + 8, height: height + 8)
             
-            VStack(spacing: 0) {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 12, height: 12)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+            // Кнопка удаления в верхнем правом углу
+            Button {
+                onDelete()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.white, Color.red)
                     .shadow(radius: 2)
-                    .gesture(
-                        DragGesture(coordinateSpace: .global)
-                            .onChanged { val in
-                                let loc = val.location
-                                var deg = atan2(loc.y - globalCenter.y, loc.x - globalCenter.x) * 180 / .pi + 90
-                                if deg > 180 { deg -= 360 }
-                                if deg < -180 { deg += 360 }
-                                let snapped = (deg / 15).rounded() * 15
-                                if abs(deg - snapped) < 4 { deg = snapped }
-                                var updated = item
-                                updated.rotationAngle = deg
-                                onUpdate(updated)
-                            }
-                    )
-                
-                Rectangle()
-                    .fill(Color.accentColor)
-                    .frame(width: 1.5, height: 16)
             }
-            .offset(y: -(height / 2 + 18))
+            .buttonStyle(.plain)
+            .offset(x: width / 2 + 6, y: -(height / 2 + 6))
             
-            if item.type != .text {
-                resizeHandle(width: width, height: height, isLeft: true, isTop: true)
-                resizeHandle(width: width, height: height, isLeft: false, isTop: true)
-                resizeHandle(width: width, height: height, isLeft: true, isTop: false)
-                resizeHandle(width: width, height: height, isLeft: false, isTop: false)
-            }
+            resizeHandle(width: width, height: height, isLeft: true, isTop: true)
+            resizeHandle(width: width, height: height, isLeft: false, isTop: true)
+            resizeHandle(width: width, height: height, isLeft: true, isTop: false)
+            resizeHandle(width: width, height: height, isLeft: false, isTop: false)
         }
         .frame(width: width, height: height)
     }

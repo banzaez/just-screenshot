@@ -201,6 +201,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "Pfeil",
         "video_editor.type_rect": "Rahmen",
         "video_editor.type_blur": "Weichzeichnen",
+        "video_editor.blur_help": "Unschärfebereich hinzufügen, um Passwörter oder E-Mails zu verbergen",
         "video_editor.smart_zoom_help": "Smart Zoom: Autofokus auf Klicks und Cursor",
         "video_editor.smart_zoom_enable": "Smart Zoom aktivieren",
         "video_editor.smart_zoom_scale_header": "Zoom-Intensität",

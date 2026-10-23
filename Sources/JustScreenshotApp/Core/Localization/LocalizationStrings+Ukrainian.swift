@@ -202,6 +202,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "Стрілка",
         "video_editor.type_rect": "Рамка",
         "video_editor.type_blur": "Розмиття",
+        "video_editor.blur_help": "Додати зону розмиття для приховання паролів, пошти чи токенів",
         "video_editor.smart_zoom_help": "Smart Zoom: авто-фокусування на кліках та курсорі",
         "video_editor.smart_zoom_enable": "Увімкнути Smart Zoom",
         "video_editor.smart_zoom_scale_header": "Масштаб зуму",

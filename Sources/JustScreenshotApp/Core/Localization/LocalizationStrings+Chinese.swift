@@ -201,6 +201,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "箭头",
         "video_editor.type_rect": "框选",
         "video_editor.type_blur": "模糊",
+        "video_editor.blur_help": "添加模糊区域以遮盖密码、邮箱或令牌",
         "video_editor.smart_zoom_help": "智能缩放: 自动聚焦于点击与光标",
         "video_editor.smart_zoom_enable": "启用智能缩放",
         "video_editor.smart_zoom_scale_header": "缩放强度",

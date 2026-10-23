@@ -247,16 +247,13 @@ public final class VideoEditorModel: ObservableObject {
         }
     }
     
-    // Аннотации
-    public func addAnnotation(type: VideoAnnotationType) {
-        let text = type == .text ? L("video_editor.type_text") : ""
-        let newItem = VideoAnnotationItem(
-            type: type,
-            text: text,
-            color: annotationColor,
-            lineWidth: annotationLineWidth,
-            fontSize: annotationFontSize
-        )
+    // Размытие конфиденциальных данных (Blur / Redact)
+    public var hasBlurAnnotations: Bool {
+        annotations.contains(where: { $0.type == .blur })
+    }
+    
+    public func addAnnotation(type: VideoAnnotationType = .blur) {
+        let newItem = VideoAnnotationItem(type: .blur)
         annotations.append(newItem)
         selectedAnnotationID = newItem.id
     }

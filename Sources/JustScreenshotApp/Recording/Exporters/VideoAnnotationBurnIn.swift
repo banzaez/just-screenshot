@@ -29,9 +29,6 @@ public struct BurnInAnnotation: Sendable {
             ns.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
             let kind: Kind
             switch item.type {
-            case .text: kind = .text
-            case .rect: kind = .rect
-            case .arrow: kind = .arrow
             case .blur: kind = .blur
             }
             return BurnInAnnotation(

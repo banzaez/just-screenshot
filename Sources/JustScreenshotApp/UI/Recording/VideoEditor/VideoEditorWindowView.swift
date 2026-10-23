@@ -21,10 +21,7 @@ public struct VideoEditorWindowView: View {
                 onExportWebP: { performExport(format: .webp) }
             )
             
-            // 2. Контекстная панель выбранного элемента (свойства, цвет, поворот, дублирование, удаление)
-            VideoSelectedItemBar(model: model)
-            
-            // 3. Основная рабочая область (Плеер + Canvas оверлей с поддержкой Smart Zoom и следования камеры)
+            // 2. Основная рабочая область (Плеер + Canvas оверлей с поддержкой Smart Zoom и следования камеры)
             ZStack {
                 Color.black
                 

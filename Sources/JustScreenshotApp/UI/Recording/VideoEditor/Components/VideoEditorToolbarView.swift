@@ -34,48 +34,6 @@ public struct VideoEditorToolbarView: View {
     
     private var toolbarContent: some View {
         HStack(spacing: 12) {
-            // Добавление аннотаций
-            HStack(spacing: 2) {
-                ForEach(VideoAnnotationType.allCases) { type in
-                    EditorIconButton(
-                        type.icon,
-                        title: L("video_editor.add_annotation", type.localizedTitle),
-                        width: 34
-                    ) {
-                        model.addAnnotation(type: type)
-                    }
-                }
-            }
-            .padding(3)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
-            )
-            .fixedSize()
-            
-            // Стиль новых / выбранных
-            HStack(spacing: 8) {
-                ColorDropdown(
-                    selection: Binding(
-                        get: { model.annotationColor },
-                        set: { model.setAnnotationColor($0) }
-                    )
-                )
-                WidthDropdown(
-                    selection: Binding(
-                        get: { model.annotationLineWidth },
-                        set: { model.setAnnotationLineWidth($0) }
-                    )
-                )
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color.white.opacity(0.08))
-            )
-            .fixedSize()
-            
             // Обрезка кадра (Crop)
             Button {
                 model.isCropping.toggle()
@@ -99,6 +57,30 @@ public struct VideoEditorToolbarView: View {
             .buttonStyle(.plain)
             .fixedSize()
             .help(L("video_editor.crop_help"))
+            
+            // Размытие конфиденциальных данных (Blur / Redact)
+            Button {
+                model.addAnnotation(type: .blur)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(L("video_editor.type_blur"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .foregroundStyle(model.hasBlurAnnotations ? Color.white : Color.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(model.hasBlurAnnotations ? Color.indigo.opacity(0.85) : Color.white.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help(L("video_editor.blur_help"))
             
             // Умный зум на курсор (Smart Zoom / Camera Follow) с настройками
             HStack(spacing: 0) {

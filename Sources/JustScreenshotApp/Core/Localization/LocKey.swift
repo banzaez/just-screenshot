@@ -208,6 +208,7 @@ public enum LocKey: String, Sendable {
     case videoEditorTypeArrow = "video_editor.type_arrow"
     case videoEditorTypeRect = "video_editor.type_rect"
     case videoEditorTypeBlur = "video_editor.type_blur"
+    case videoEditorBlurHelp = "video_editor.blur_help"
     case videoEditorSmartZoomHelp = "video_editor.smart_zoom_help"
     case videoEditorSmartZoomEnable = "video_editor.smart_zoom_enable"
     case videoEditorSmartZoomScaleHeader = "video_editor.smart_zoom_scale_header"

@@ -210,6 +210,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "Arrow",
         "video_editor.type_rect": "Frame",
         "video_editor.type_blur": "Blur",
+        "video_editor.blur_help": "Add blur area to hide passwords, emails, or tokens",
         "video_editor.smart_zoom_help": "Smart Zoom: autofocus on clicks and cursor",
         "video_editor.smart_zoom_enable": "Enable Smart Zoom",
         "video_editor.smart_zoom_scale_header": "Zoom Intensity",

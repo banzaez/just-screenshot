@@ -201,6 +201,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "矢印",
         "video_editor.type_rect": "フレーム",
         "video_editor.type_blur": "ぼかし",
+        "video_editor.blur_help": "パスワードやメールを隠すぼかし領域を追加",
         "video_editor.smart_zoom_help": "スマートズーム: クリックとカーソルへの自動フォーカス",
         "video_editor.smart_zoom_enable": "スマートズームを有効化",
         "video_editor.smart_zoom_scale_header": "拡大倍率",

@@ -201,6 +201,7 @@ extension LocalizationCatalog {
         "video_editor.type_arrow": "Flecha",
         "video_editor.type_rect": "Marco",
         "video_editor.type_blur": "Desenfoque",
+        "video_editor.blur_help": "Agregar zona de desenfoque para ocultar contraseñas o correos",
         "video_editor.smart_zoom_help": "Smart Zoom: enfoque automático en clics y cursor",
         "video_editor.smart_zoom_enable": "Activar Smart Zoom",
         "video_editor.smart_zoom_scale_header": "Intensidad del zoom",
