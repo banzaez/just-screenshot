@@ -21,17 +21,6 @@ public final class VideoEditorModel: ObservableObject {
         didSet { EditorPreferences.videoPlaybackRate = playbackRate }
     }
     
-    // Стиль новых аннотаций (персистентный)
-    @Published public var annotationColor: Color = EditorPreferences.videoColor {
-        didSet { EditorPreferences.videoColor = annotationColor }
-    }
-    @Published public var annotationLineWidth: CGFloat = EditorPreferences.videoLineWidth {
-        didSet { EditorPreferences.videoLineWidth = annotationLineWidth }
-    }
-    @Published public var annotationFontSize: CGFloat = EditorPreferences.videoFontSize {
-        didSet { EditorPreferences.videoFontSize = annotationFontSize }
-    }
-    
     // Кадрирование (Crop) и Умный Зум (Smart Zoom)
     @Published public var isCropping: Bool = false
     @Published public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
@@ -258,20 +247,6 @@ public final class VideoEditorModel: ObservableObject {
         selectedAnnotationID = newItem.id
     }
     
-    public func setAnnotationColor(_ color: Color) {
-        annotationColor = color
-        guard let id = selectedAnnotationID,
-              let idx = annotations.firstIndex(where: { $0.id == id }) else { return }
-        annotations[idx].color = color
-    }
-    
-    public func setAnnotationLineWidth(_ width: CGFloat) {
-        annotationLineWidth = width
-        guard let id = selectedAnnotationID,
-              let idx = annotations.firstIndex(where: { $0.id == id }) else { return }
-        annotations[idx].lineWidth = width
-    }
-    
     public func updateAnnotation(_ item: VideoAnnotationItem) {
         if let idx = annotations.firstIndex(where: { $0.id == item.id }) {
             annotations[idx] = item
@@ -283,29 +258,5 @@ public final class VideoEditorModel: ObservableObject {
             selectedAnnotationID = nil
         }
         annotations.removeAll { $0.id == id }
-    }
-    
-    public func duplicateAnnotation(id: UUID) {
-        guard let item = annotations.first(where: { $0.id == id }) else { return }
-        let copy = item
-        let newID = UUID()
-        // Смещаем немного вправо-вниз
-        let offset: CGFloat = 0.03
-        var newRect = copy.rect
-        newRect.origin.x = min(0.9, newRect.origin.x + offset)
-        newRect.origin.y = min(0.9, newRect.origin.y + offset)
-        
-        let duplicated = VideoAnnotationItem(
-            id: newID,
-            type: copy.type,
-            rect: newRect,
-            text: copy.text,
-            color: copy.color,
-            lineWidth: copy.lineWidth,
-            fontSize: copy.fontSize,
-            rotationAngle: copy.rotationAngle
-        )
-        annotations.append(duplicated)
-        selectedAnnotationID = duplicated.id
     }
 }

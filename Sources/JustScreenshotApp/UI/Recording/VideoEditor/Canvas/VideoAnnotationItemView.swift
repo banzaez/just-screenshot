@@ -11,7 +11,6 @@ struct VideoAnnotationItemView: View {
     
     @State private var dragInitialOrigin: CGPoint?
     @State private var resizeInitialRect: CGRect?
-    @State private var globalCenter: CGPoint = .zero
     
     var body: some View {
         let itemWidth = max(24, item.rect.width * videoRect.width)
@@ -35,18 +34,6 @@ struct VideoAnnotationItemView: View {
         }
         .frame(width: itemWidth, height: itemHeight)
         .position(x: itemCenterX, y: itemCenterY)
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        let frame = geo.frame(in: .global)
-                        globalCenter = CGPoint(x: frame.midX, y: frame.midY)
-                    }
-                    .onChange(of: geo.frame(in: .global)) { _, frame in
-                        globalCenter = CGPoint(x: frame.midX, y: frame.midY)
-                    }
-            }
-        )
         .gesture(
             DragGesture()
                 .onChanged { val in
