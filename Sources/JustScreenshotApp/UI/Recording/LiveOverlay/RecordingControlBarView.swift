@@ -5,8 +5,8 @@ import AppKit
 /// В режиме подготовки (.isRecordingPreparing) отображает настройки (разрешение/пресеты, нажатия клавиш, клики, затемнение экрана, таймер) и кнопку «Запись».
 /// В режиме активной записи (.isRecording) отображает таймер, паузу/возобновление, стоп (Done) и отмену (Trash).
 public struct RecordingControlBarView: View {
-    @ObservedObject var windowManager: AppWindowManager
-    @ObservedObject var settings: AppSettings = .shared
+    var windowManager: AppWindowManager
+    var settings: AppSettings = .shared
     
     var onStartRecording: () -> Void
     var onSelectPreset: (CGRect) -> Void

@@ -1,15 +1,17 @@
 import SwiftUI
 import AppKit
+import Observation
 
 /// Наблюдаемая модель состояния редактора: элементы, сессия UI, фон, undo/redo
+@Observable
 @MainActor
-public final class AnnotationEditorModel: ObservableObject {
+public final class AnnotationEditorModel {
     public let capturedItem: CapturedItem
     
-    @Published public var items: [AnnotationItem] = []
-    @Published public var selectedItemID: UUID? = nil
+    public var items: [AnnotationItem] = []
+    public var selectedItemID: UUID? = nil
     
-    @Published public var selectedTool: AnnotationTool = EditorPreferences.tool {
+    public var selectedTool: AnnotationTool = EditorPreferences.tool {
         didSet {
             // Не затираем «рисовалку» при переходе в режим выбора
             if selectedTool != .select {
@@ -17,68 +19,68 @@ public final class AnnotationEditorModel: ObservableObject {
             }
         }
     }
-    @Published public var selectedColor: Color = EditorPreferences.color {
+    public var selectedColor: Color = EditorPreferences.color {
         didSet { EditorPreferences.color = selectedColor }
     }
-    @Published public var lineWidth: CGFloat = EditorPreferences.lineWidth {
+    public var lineWidth: CGFloat = EditorPreferences.lineWidth {
         didSet { EditorPreferences.lineWidth = lineWidth }
     }
-    @Published public var fontSize: CGFloat = EditorPreferences.fontSize {
+    public var fontSize: CGFloat = EditorPreferences.fontSize {
         didSet { EditorPreferences.fontSize = fontSize }
     }
-    @Published public var textInputString: String = ""
+    public var textInputString: String = ""
     /// Запрос фокуса на поле текста в selected bar после создания/даблклика
-    @Published public var shouldFocusTextEditor: Bool = false
+    public var shouldFocusTextEditor: Bool = false
     
-    @Published public var showBackdrop: Bool = EditorPreferences.showBackdrop {
+    public var showBackdrop: Bool = EditorPreferences.showBackdrop {
         didSet {
             EditorPreferences.showBackdrop = showBackdrop
             markModified()
         }
     }
-    @Published public var backdropPreset: BackdropPreset = EditorPreferences.backdropPreset {
+    public var backdropPreset: BackdropPreset = EditorPreferences.backdropPreset {
         didSet {
             EditorPreferences.backdropPreset = backdropPreset
             markModified()
         }
     }
-    @Published public var backdropPadding: CGFloat = EditorPreferences.backdropPadding {
+    public var backdropPadding: CGFloat = EditorPreferences.backdropPadding {
         didSet {
             EditorPreferences.backdropPadding = backdropPadding
             markModified()
         }
     }
-    @Published public var backdropCornerRadius: CGFloat = EditorPreferences.backdropCornerRadius {
+    public var backdropCornerRadius: CGFloat = EditorPreferences.backdropCornerRadius {
         didSet {
             EditorPreferences.backdropCornerRadius = backdropCornerRadius
             markModified()
         }
     }
-    @Published public var backdropShadowRadius: CGFloat = EditorPreferences.backdropShadowRadius {
+    public var backdropShadowRadius: CGFloat = EditorPreferences.backdropShadowRadius {
         didSet {
             EditorPreferences.backdropShadowRadius = backdropShadowRadius
             markModified()
         }
     }
-    @Published public var addShadow: Bool = EditorPreferences.addShadow {
+    public var addShadow: Bool = EditorPreferences.addShadow {
         didSet {
             EditorPreferences.addShadow = addShadow
             markModified()
         }
     }
     
-    @Published public private(set) var canUndo: Bool = false
-    @Published public private(set) var canRedo: Bool = false
+    public private(set) var canUndo: Bool = false
+    public private(set) var canRedo: Bool = false
     
-    private var undoStack: [[AnnotationItem]] = []
-    private var redoStack: [[AnnotationItem]] = []
-    private var isRestoring = false
+    @ObservationIgnored private var undoStack: [[AnnotationItem]] = []
+    @ObservationIgnored private var redoStack: [[AnnotationItem]] = []
+    @ObservationIgnored private var isRestoring = false
     /// Снимок до текущего жеста (move/resize/draw commit)
-    private var gestureBaseline: [AnnotationItem]?
-    private var liveEditFinalizeTask: Task<Void, Never>?
+    @ObservationIgnored private var gestureBaseline: [AnnotationItem]?
+    @ObservationIgnored private var liveEditFinalizeTask: Task<Void, Never>?
     
-    public private(set) var hasUnsavedChanges: Bool = false
-    private var initialLoaded = false
+    @ObservationIgnored public private(set) var hasUnsavedChanges: Bool = false
+    @ObservationIgnored private var initialLoaded = false
     
     public var selectedItemIndex: Int? {
         guard let id = selectedItemID else { return nil }
@@ -279,7 +281,8 @@ public final class AnnotationEditorModel: ObservableObject {
             padding: backdropPadding,
             cornerRadius: backdropCornerRadius,
             shadowRadius: backdropShadowRadius,
-            shadow: addShadow
+            shadow: addShadow,
+            imageID: capturedItem.id
         )
     }
 }

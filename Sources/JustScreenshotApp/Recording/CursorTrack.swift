@@ -43,10 +43,52 @@ public enum SmartZoomMode: String, CaseIterable, Identifiable, Codable, Sendable
 
 /// Траектория движения мыши и событий кликов для умного автозума (Smart Zoom / Camera Follow)
 public struct CursorTrack: Codable, Sendable {
-    public var keyframes: [CursorKeyframe]
+    public var keyframes: [CursorKeyframe] {
+        didSet {
+            clickKeyframes = keyframes.filter(\.isClick)
+        }
+    }
+    
+    /// Предвычисленный индекс кликов для O(log N) поиска без аллокаций на каждый кадр
+    private var clickKeyframes: [CursorKeyframe]
+    
+    private enum CodingKeys: String, CodingKey {
+        case keyframes
+    }
     
     public init(keyframes: [CursorKeyframe] = []) {
         self.keyframes = keyframes
+        self.clickKeyframes = keyframes.filter(\.isClick)
+    }
+    
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decoded = try container.decode([CursorKeyframe].self, forKey: .keyframes)
+        self.keyframes = decoded
+        self.clickKeyframes = decoded.filter(\.isClick)
+    }
+    
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(keyframes, forKey: .keyframes)
+    }
+    
+    /// Бинарный поиск последнего ключевого кадра с `timestamp <= targetTime` за O(log N)
+    private static func lastKeyframe(in list: [CursorKeyframe], atOrBefore targetTime: Double) -> CursorKeyframe? {
+        guard !list.isEmpty, list[0].timestamp <= targetTime else { return nil }
+        var low = 0
+        var high = list.count - 1
+        var best = 0
+        while low <= high {
+            let mid = (low + high) / 2
+            if list[mid].timestamp <= targetTime {
+                best = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        return list[best]
     }
     
     /// Состояние камеры (точка фокуса 0...1 и масштаб) в момент времени `time` (в секундах)
@@ -63,9 +105,9 @@ public struct CursorTrack: Codable, Sendable {
             return (CGPoint(x: 0.5, y: 0.5), mode == .onClicks ? 1.0 : restingZoom)
         }
         
-        // 1. Проверяем клик в диапазоне [-0.2s ... +1.6s]
-        let clickEvents = keyframes.filter { $0.isClick }
-        if let recentClick = clickEvents.last(where: { $0.timestamp <= time && (time - $0.timestamp) < 1.6 }) {
+        // 1. Проверяем клик в диапазоне [0 ... +1.6s] через O(log N) бинарный поиск без аллокаций
+        if let recentClick = Self.lastKeyframe(in: clickKeyframes, atOrBefore: time),
+           (time - recentClick.timestamp) < 1.6 {
             let elapsed = time - recentClick.timestamp
             let startZoom: CGFloat = mode == .onClicks ? 1.0 : restingZoom
             let zoom: CGFloat
@@ -114,11 +156,11 @@ public struct CursorTrack: Codable, Sendable {
             interpolatedPoint = CGPoint(x: min(1.0, max(0.0, px)), y: min(1.0, max(0.0, py)))
         }
         
-        // Проверка на бездействие: если курсор неподвижен > 2.0с, отъезжаем к 1.0x
+        // Проверка на бездействие за O(log N): если курсор неподвижен > 2.0с, отъезжаем к 1.0x
         var zoom = restingZoom
         if autoZoomOutOnIdle {
             let recentTime = max(0, time - 2.0)
-            if let recentPastKf = keyframes.last(where: { $0.timestamp <= recentTime }) {
+            if let recentPastKf = Self.lastKeyframe(in: keyframes, atOrBefore: recentTime) {
                 let dist = hypot(interpolatedPoint.x - recentPastKf.point.x, interpolatedPoint.y - recentPastKf.point.y)
                 if dist < 0.02 {
                     zoom = 1.0
@@ -199,11 +241,27 @@ public final class CursorTrackRecorder {
         
         let clampedX = min(1.0, max(0.0, normX))
         let clampedY = min(1.0, max(0.0, normY))
+        let newPoint = CGPoint(x: clampedX, y: clampedY)
+        
+        // Дедупликация покоя: если две последние точки не были кликами и совпадают с текущей,
+        // обновляем timestamp последней точки вместо раздувания массива (сохраняя начало и конец паузы)
+        if !isClick, keyframes.count >= 2 {
+            let last = keyframes[keyframes.count - 1]
+            let prev = keyframes[keyframes.count - 2]
+            if !last.isClick && !prev.isClick {
+                let dLast = hypot(newPoint.x - last.point.x, newPoint.y - last.point.y)
+                let dPrev = hypot(last.point.x - prev.point.x, last.point.y - prev.point.y)
+                if dLast < 0.0005 && dPrev < 0.0005 {
+                    keyframes[keyframes.count - 1] = CursorKeyframe(timestamp: elapsed, point: newPoint, isClick: false)
+                    return
+                }
+            }
+        }
         
         keyframes.append(
             CursorKeyframe(
                 timestamp: elapsed,
-                point: CGPoint(x: clampedX, y: clampedY),
+                point: newPoint,
                 isClick: isClick
             )
         )

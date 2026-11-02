@@ -12,65 +12,101 @@ public enum AnnotationRenderer {
         padding: CGFloat,
         cornerRadius: CGFloat = 12,
         shadowRadius: CGFloat = 24,
-        shadow: Bool
+        shadow: Bool,
+        imageID: UUID? = nil
     ) -> NSImage {
-        let inner = render(baseImage: baseImage, items: items)
+        let inner = render(baseImage: baseImage, items: items, imageID: imageID)
         guard let backdrop else { return inner }
         
         let pad = padding
         let outSize = NSSize(width: inner.size.width + pad * 2, height: inner.size.height + pad * 2)
-        let out = NSImage(size: outSize)
-        out.lockFocus()
+        let scale = backingScale(for: inner)
         
-        let cols = backdrop.colors.map { NSColor($0) }
-        let bgRect = NSRect(origin: .zero, size: outSize)
-        let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 0, yRadius: 0)
-        NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
-        
-        let innerRect = NSRect(x: pad, y: pad, width: inner.size.width, height: inner.size.height)
-        let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
-        
-        if shadow && shadowRadius > 0 {
+        return renderInBitmapContext(pointSize: outSize, scale: scale) { _ in
+            let cols = backdrop.colors.map { NSColor($0) }
+            let bgRect = NSRect(origin: .zero, size: outSize)
+            let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 0, yRadius: 0)
+            NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
+            
+            let innerRect = NSRect(x: pad, y: pad, width: inner.size.width, height: inner.size.height)
+            let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
+            
+            if shadow && shadowRadius > 0 {
+                NSGraphicsContext.saveGraphicsState()
+                let sh = NSShadow()
+                sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
+                sh.shadowBlurRadius = shadowRadius
+                sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
+                sh.set()
+                NSColor.black.setFill()
+                clip.fill()
+                NSGraphicsContext.restoreGraphicsState()
+            }
+            
             NSGraphicsContext.saveGraphicsState()
-            let sh = NSShadow()
-            sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
-            sh.shadowBlurRadius = shadowRadius
-            sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
-            sh.set()
-            NSColor.black.setFill()
-            clip.fill()
+            clip.addClip()
+            inner.draw(in: innerRect)
             NSGraphicsContext.restoreGraphicsState()
-        }
-        
-        NSGraphicsContext.saveGraphicsState()
-        clip.addClip()
-        inner.draw(in: innerRect)
-        NSGraphicsContext.restoreGraphicsState()
-        
-        out.unlockFocus()
-        return out
+        } ?? inner
     }
     
-    /// Отрисовка исходного изображения со списком аннотаций
+    /// Отрисовка исходного изображения со списком аннотаций в точном Retina-разрешении без lockFocus()
     public static func render(
         baseImage: NSImage,
-        items: [AnnotationItem]
+        items: [AnnotationItem],
+        imageID: UUID? = nil
     ) -> NSImage {
         let size = baseImage.size
-        let targetImage = NSImage(size: size)
+        guard size.width > 0, size.height > 0 else { return baseImage }
+        let scale = backingScale(for: baseImage)
+        let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage, id: imageID) : nil
         
-        targetImage.lockFocus()
-        baseImage.draw(at: .zero, from: NSRect(origin: .zero, size: size), operation: .copy, fraction: 1.0)
-        
-        if let context = NSGraphicsContext.current?.cgContext {
-            let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage) : nil
+        return renderInBitmapContext(pointSize: size, scale: scale) { context in
+            baseImage.draw(at: .zero, from: NSRect(origin: .zero, size: size), operation: .copy, fraction: 1.0)
             for item in items {
                 renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
             }
+        } ?? baseImage
+    }
+    
+    private static func backingScale(for image: NSImage) -> CGFloat {
+        guard image.size.width > 0,
+              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return NSScreen.main?.backingScaleFactor ?? 2.0
+        }
+        return max(1.0, CGFloat(cg.width) / image.size.width)
+    }
+    
+    private static func renderInBitmapContext(
+        pointSize: NSSize,
+        scale: CGFloat,
+        drawBlock: (CGContext) -> Void
+    ) -> NSImage? {
+        let pixelWidth = max(1, Int((pointSize.width * scale).rounded()))
+        let pixelHeight = max(1, Int((pointSize.height * scale).rounded()))
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        
+        guard let cgContext = CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return nil
         }
         
-        targetImage.unlockFocus()
-        return targetImage
+        cgContext.scaleBy(x: scale, y: scale)
+        let nsContext = NSGraphicsContext(cgContext: cgContext, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsContext
+        drawBlock(cgContext)
+        NSGraphicsContext.restoreGraphicsState()
+        
+        guard let cgImage = cgContext.makeImage() else { return nil }
+        return NSImage(cgImage: cgImage, size: pointSize)
     }
     
     private static func renderItem(_ item: AnnotationItem, in context: CGContext, imageSize: CGSize, baseImage: NSImage, blurred: NSImage?) {

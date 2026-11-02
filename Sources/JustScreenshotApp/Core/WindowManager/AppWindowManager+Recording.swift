@@ -273,8 +273,15 @@ extension AppWindowManager {
     }
     
     private func beginActiveRecording(appKitRect: CGRect) async {
-        let moviesDir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
-        let outputURL = moviesDir.appendingPathComponent("ScreenRecording-\(Int(Date().timeIntervalSince1970)).mp4")
+        let customPath = AppSettings.shared.defaultSaveDirectoryPath
+        var isDir: ObjCBool = false
+        let baseDir: URL
+        if !customPath.isEmpty, FileManager.default.fileExists(atPath: customPath, isDirectory: &isDir), isDir.boolValue {
+            baseDir = URL(fileURLWithPath: customPath, isDirectory: true)
+        } else {
+            baseDir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
+        }
+        let outputURL = baseDir.appendingPathComponent("ScreenRecording-\(Int(Date().timeIntervalSince1970)).mp4")
         
         let quartzRect = ScreenCoordinateSpace.quartzRect(fromAppKit: appKitRect)
         
@@ -342,6 +349,9 @@ extension AppWindowManager {
     }
     
     public func stopScreenRecording() {
+        tickRecordingDuration()
+        let recordedRect = recordingRect
+        let recordedDuration = max(0.1, recordingDuration)
         let cursorTrack = CursorTrackRecorder.shared.stop()
         cleanupRecordingSession()
         
@@ -350,6 +360,12 @@ extension AppWindowManager {
                 if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
                     CursorTrackRecorder.saveTrack(cursorTrack, forVideoURL: savedURL)
                     await MainActor.run {
+                        self.history.addVideo(
+                            url: savedURL,
+                            width: Int(recordedRect.width),
+                            height: Int(recordedRect.height),
+                            duration: recordedDuration
+                        )
                         self.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
                     }
                 }

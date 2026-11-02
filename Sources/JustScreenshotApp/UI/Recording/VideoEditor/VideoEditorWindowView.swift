@@ -3,11 +3,17 @@ import AVKit
 
 /// Главное окно профессионального видеоредактора
 public struct VideoEditorWindowView: View {
-    @ObservedObject var model: VideoEditorModel
+    var model: VideoEditorModel
+    var onDelete: (() -> Void)?
     var onClose: () -> Void
     
-    public init(model: VideoEditorModel, onClose: @escaping () -> Void) {
+    public init(
+        model: VideoEditorModel,
+        onDelete: (() -> Void)? = nil,
+        onClose: @escaping () -> Void
+    ) {
         self.model = model
+        self.onDelete = onDelete
         self.onClose = onClose
     }
     
@@ -18,7 +24,8 @@ public struct VideoEditorWindowView: View {
                 model: model,
                 onExportMP4: { performExport(format: .mp4) },
                 onExportGIF: { performExport(format: .gif) },
-                onExportWebP: { performExport(format: .webp) }
+                onExportWebP: { performExport(format: .webp) },
+                onDelete: onDelete
             )
             
             // 2. Основная рабочая область (Плеер + Canvas оверлей с поддержкой Smart Zoom и следования камеры)
@@ -213,6 +220,18 @@ public struct VideoEditorWindowView: View {
                 
                 await MainActor.run {
                     self.model.isExporting = false
+                    if format == .mp4 {
+                        let crop = self.model.isCropping ? self.model.cropRect : CGRect(x: 0, y: 0, width: 1, height: 1)
+                        let outW = max(1, Int(self.model.naturalSize.width * crop.width))
+                        let outH = max(1, Int(self.model.naturalSize.height * crop.height))
+                        let outDur = max(0.1, (self.model.trimEnd - self.model.trimStart) / Double(max(0.1, self.model.playbackRate)))
+                        HistoryStore.shared.addVideo(
+                            url: targetURL,
+                            width: outW,
+                            height: outH,
+                            duration: outDur
+                        )
+                    }
                     NSWorkspace.shared.activateFileViewerSelecting([targetURL])
                 }
             } catch {

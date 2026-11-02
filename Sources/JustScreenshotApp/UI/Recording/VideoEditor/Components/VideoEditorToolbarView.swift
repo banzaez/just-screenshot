@@ -3,21 +3,26 @@ import AppKit
 
 /// Верхняя панель инструментов видеоредактора: аннотации, стили, обрезка, скорость, экспорт
 public struct VideoEditorToolbarView: View {
-    @ObservedObject var model: VideoEditorModel
+    @Bindable var model: VideoEditorModel
     var onExportMP4: () -> Void
     var onExportGIF: () -> Void
     var onExportWebP: () -> Void
+    var onDelete: (() -> Void)?
+    
+    @State private var justCopied = false
     
     public init(
         model: VideoEditorModel,
         onExportMP4: @escaping () -> Void,
         onExportGIF: @escaping () -> Void,
-        onExportWebP: @escaping () -> Void
+        onExportWebP: @escaping () -> Void,
+        onDelete: (() -> Void)? = nil
     ) {
         self.model = model
         self.onExportMP4 = onExportMP4
         self.onExportGIF = onExportGIF
         self.onExportWebP = onExportWebP
+        self.onDelete = onDelete
     }
     
     public var body: some View {
@@ -200,8 +205,55 @@ public struct VideoEditorToolbarView: View {
             
             Spacer(minLength: 16)
             
-            // Группа экспорта (WebP, GIF, MP4)
+            // Группа управления, копирования и экспорта (Удалить | Копировать, WebP, GIF, Сохранить MP4)
             HStack(spacing: 8) {
+                if let onDelete {
+                    Button(action: onDelete) {
+                        Image(systemName: "trash")
+                            .font(.system(size: 12, weight: .semibold))
+                            .frame(width: 34, height: 30)
+                            .foregroundStyle(.red)
+                            .background(
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(Color.red.opacity(0.14))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                            .strokeBorder(Color.red.opacity(0.25), lineWidth: 0.8)
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .fixedSize()
+                    .help(L("history.delete_button"))
+                    
+                    Divider()
+                        .frame(height: 18)
+                }
+                
+                // Копировать видеофайл в буфер обмена (только иконка)
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.writeObjects([model.videoURL as NSURL])
+                    withAnimation(.easeInOut(duration: 0.15)) { justCopied = true }
+                    Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(1.4))
+                        withAnimation(.easeInOut(duration: 0.15)) { justCopied = false }
+                    }
+                } label: {
+                    Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 34, height: 30)
+                        .foregroundStyle(.white)
+                        .background(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .fill(justCopied ? Color.green : Color.white.opacity(0.1))
+                        )
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+                .help(L("editor.copy"))
+                
                 Button(action: onExportWebP) {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles.tv")
@@ -246,7 +298,7 @@ public struct VideoEditorToolbarView: View {
                 
                 Button(action: onExportMP4) {
                     HStack(spacing: 6) {
-                        Image(systemName: "arrow.down.circle.fill")
+                        Image(systemName: "arrow.down.to.line")
                             .font(.system(size: 12, weight: .semibold))
                         Text(L("video_editor.save_mp4"))
                             .font(.system(size: 12, weight: .semibold))

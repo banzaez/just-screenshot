@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import CoreGraphics
 @testable import JustScreenshotApp
 
 @Suite("Localization Tests")
@@ -117,5 +118,99 @@ struct SmartZoomTests {
         // В момент t=5.0 клик уже далеко позади — в режиме onClicks должен быть общий план 1.0x
         let state = track.cameraState(at: 5.0, mode: .onClicks)
         #expect(state.zoom == 1.0)
+    }
+    
+    @Test func testCursorTrackCodablePreservesClickIndex() throws {
+        let kf1 = CursorKeyframe(timestamp: 0.5, point: CGPoint(x: 0.4, y: 0.6), isClick: true)
+        let kf2 = CursorKeyframe(timestamp: 2.0, point: CGPoint(x: 0.8, y: 0.8), isClick: false)
+        let original = CursorTrack(keyframes: [kf1, kf2])
+        
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(CursorTrack.self, from: data)
+        
+        let state = decoded.cameraState(at: 0.8, scale: .closeup, mode: .onClicks)
+        #expect(state.focus == CGPoint(x: 0.4, y: 0.6))
+        #expect(state.zoom >= 1.45)
+    }
+}
+
+@Suite("Pixel Sampler & Renderer Tests")
+struct PixelSamplerAndRendererTests {
+    
+    @Test func testScreenPixelSamplerReadsExactRGB() {
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+        let bitmapInfo = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        guard let ctx = CGContext(
+            data: nil,
+            width: 4,
+            height: 4,
+            bitsPerComponent: 8,
+            bytesPerRow: 16,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo
+        ) else {
+            Issue.record("Failed to create CGContext")
+            return
+        }
+        ctx.setFillColor(CGColor(srgbRed: 1.0, green: 0.0, blue: 0.0, alpha: 1.0))
+        ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        
+        guard let cgImage = ctx.makeImage() else {
+            Issue.record("Failed to make CGImage")
+            return
+        }
+        let sampler = ScreenPixelSampler(image: cgImage)
+        let hex = sampler.getPixelHex(at: CGPoint(x: 2, y: 2), viewBounds: CGRect(x: 0, y: 0, width: 4, height: 4))
+        #expect(hex == "#FF0000")
+    }
+    
+    @Test func testHistoryEntryBackwardCompatibilityAndVideoSupport() throws {
+        // Legacy JSON без полей kind, duration, externalFilePath
+        let legacyID = UUID()
+        let legacyJSON = """
+        {"id":"\(legacyID.uuidString)","date":1000000,"width":1920,"height":1080}
+        """.data(using: .utf8)!
+        
+        let decodedLegacy = try JSONDecoder().decode(HistoryEntry.self, from: legacyJSON)
+        #expect(decodedLegacy.id == legacyID)
+        #expect(decodedLegacy.kind == .image)
+        #expect(decodedLegacy.duration == nil)
+        #expect(decodedLegacy.externalFilePath == nil)
+        
+        // Video entry
+        let videoEntry = HistoryEntry(
+            width: 1280,
+            height: 720,
+            kind: .video,
+            duration: 14.5,
+            externalFilePath: "/tmp/test_recording.mp4"
+        )
+        let encoded = try JSONEncoder().encode(videoEntry)
+        let decodedVideo = try JSONDecoder().decode(HistoryEntry.self, from: encoded)
+        #expect(decodedVideo.kind == .video)
+        #expect(decodedVideo.duration == 14.5)
+        #expect(decodedVideo.externalFilePath == "/tmp/test_recording.mp4")
+    }
+    
+    @Test func testShortcutKeyNamesAndFunctionKeys() {
+        // Проверка всех функциональных клавиш F1, F5, F12, F19 (в Carbon kVK_F1 = 122, kVK_F5 = 96, kVK_F12 = 111)
+        #expect(ShortcutKey.isFunctionKey(122)) // F1
+        #expect(ShortcutKey.isFunctionKey(96))  // F5
+        #expect(ShortcutKey.isFunctionKey(111)) // F12
+        #expect(ShortcutKey.isFunctionKey(80))  // F19
+        
+        let f1 = ShortcutKey(keyCode: 122, keyChar: "\u{F704}", modifiers: 0)
+        #expect(f1.keySymbols == ["F1"])
+        
+        let pageUp = ShortcutKey(keyCode: 116, keyChar: "", modifiers: 256) // cmdKey = 256
+        #expect(pageUp.keySymbols == ["⌘", "⇞ PgUp"])
+        
+        let numpadPlus = ShortcutKey(keyCode: 69, keyChar: "+", modifiers: 0)
+        #expect(ShortcutKey.canBeUsedWithoutModifiers(69))
+        #expect(numpadPlus.keySymbols == ["Num +"])
+        
+        // Проверка независимости от раскладки (например русская "Й" на физической клавише Q = keyCode 12)
+        let qKey = ShortcutKey(keyCode: 12, keyChar: "й", modifiers: 768) // cmdKey | shiftKey
+        #expect(qKey.keySymbols == ["⇧", "⌘", "Q"])
     }
 }

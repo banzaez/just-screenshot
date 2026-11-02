@@ -2,9 +2,9 @@ import SwiftUI
 import AppKit
 
 struct GeneralSettingsTab: View {
-    @ObservedObject var settings = AppSettings.shared
-    @ObservedObject var launchAtLogin = LaunchAtLoginManager.shared
-    @ObservedObject var updater = UpdaterManager.shared
+    @Bindable var settings = AppSettings.shared
+    var launchAtLogin = LaunchAtLoginManager.shared
+    var updater = UpdaterManager.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {

@@ -1,15 +1,17 @@
 import Foundation
 import Sparkle
 import Combine
+import Observation
 
+@Observable
 @MainActor
-public final class UpdaterManager: ObservableObject {
+public final class UpdaterManager {
     public static let shared = UpdaterManager()
     
-    @Published public var canCheckForUpdates: Bool = false
+    public var canCheckForUpdates: Bool = false
     
-    public let updaterController: SPUStandardUpdaterController
-    private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored public let updaterController: SPUStandardUpdaterController
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
     private init() {
         self.updaterController = SPUStandardUpdaterController(
@@ -20,7 +22,10 @@ public final class UpdaterManager: ObservableObject {
         
         updaterController.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: DispatchQueue.main)
-            .assign(to: &$canCheckForUpdates)
+            .sink { [weak self] value in
+                self?.canCheckForUpdates = value
+            }
+            .store(in: &cancellables)
     }
     
     public func checkForUpdates() {

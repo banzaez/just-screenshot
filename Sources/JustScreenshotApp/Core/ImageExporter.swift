@@ -23,6 +23,11 @@ public enum ImageExporter {
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
+        return pngData(from: cgImage)
+    }
+    
+    /// Потокобезопасное кодирование CGImage в PNG (можно вызывать вне MainActor)
+    nonisolated public static func pngData(from cgImage: CGImage) -> Data? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, "public.png" as CFString, 1, nil) else {
             return nil

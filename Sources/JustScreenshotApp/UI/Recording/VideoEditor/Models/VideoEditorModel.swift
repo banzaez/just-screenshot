@@ -1,66 +1,68 @@
 import SwiftUI
 import AVKit
 import Combine
+import Observation
 
 /// Модель состояния профессионального редактора видео
+@Observable
 @MainActor
-public final class VideoEditorModel: ObservableObject {
+public final class VideoEditorModel {
     public let videoURL: URL
     public let player: AVPlayer
     
-    @Published public var isPlaying: Bool = false
-    @Published public var currentTime: Double = 0.0
-    @Published public var duration: Double = 1.0
+    public var isPlaying: Bool = false
+    public var currentTime: Double = 0.0
+    public var duration: Double = 1.0
     
     // Обрезка (Trim In / Trim Out)
-    @Published public var trimStart: Double = 0.0
-    @Published public var trimEnd: Double = 1.0
+    public var trimStart: Double = 0.0
+    public var trimEnd: Double = 1.0
     
     // Скорость воспроизведения (0.5x, 1x, 1.5x, 2x)
-    @Published public var playbackRate: Float = EditorPreferences.videoPlaybackRate {
+    public var playbackRate: Float = EditorPreferences.videoPlaybackRate {
         didSet { EditorPreferences.videoPlaybackRate = playbackRate }
     }
     
     // Кадрирование (Crop) и Умный Зум (Smart Zoom)
-    @Published public var isCropping: Bool = false
-    @Published public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
-    @Published public var isSmartZoomEnabled: Bool = false {
+    public var isCropping: Bool = false
+    public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
+    public var isSmartZoomEnabled: Bool = false {
         didSet { updateCameraState() }
     }
     
     // Настройки умного зума (масштаб, режим слежения, отъезд при бездействии)
-    @Published public var smartZoomScale: SmartZoomScale = .balanced {
+    public var smartZoomScale: SmartZoomScale = .balanced {
         didSet { updateCameraState() }
     }
-    @Published public var smartZoomMode: SmartZoomMode = .onClicks {
+    public var smartZoomMode: SmartZoomMode = .onClicks {
         didSet { updateCameraState() }
     }
-    @Published public var autoZoomOutOnIdle: Bool = true {
+    public var autoZoomOutOnIdle: Bool = true {
         didSet { updateCameraState() }
     }
     
     // Траектория курсора мыши и динамическая камера (Smart Zoom / Camera Follow)
-    @Published public var cursorTrack: CursorTrack
-    @Published public var currentCameraFocus: CGPoint = CGPoint(x: 0.5, y: 0.5)
-    @Published public var currentCameraZoom: CGFloat = 1.0
+    public var cursorTrack: CursorTrack
+    public var currentCameraFocus: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    public var currentCameraZoom: CGFloat = 1.0
     
     // Аннотации
-    @Published public var annotations: [VideoAnnotationItem] = []
-    @Published public var selectedAnnotationID: UUID?
+    public var annotations: [VideoAnnotationItem] = []
+    public var selectedAnnotationID: UUID?
     
     // Экспорт
-    @Published public var isExporting: Bool = false
-    @Published public var exportProgress: Double = 0.0
-    @Published public var exportStatusText: String = ""
+    public var isExporting: Bool = false
+    public var exportProgress: Double = 0.0
+    public var exportStatusText: String = ""
     
     // Превью-кадры таймлайна (thumbnails)
-    @Published public var thumbnails: [NSImage] = []
+    public var thumbnails: [NSImage] = []
     
     // Истинный размер видео (пиксели)
-    @Published public var naturalSize: CGSize = .zero
+    public var naturalSize: CGSize = .zero
     
-    private var timeObserverToken: Any?
-    private var cancellables = Set<AnyCancellable>()
+    @ObservationIgnored private var timeObserverToken: Any?
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
     public init(videoURL: URL, cursorTrack: CursorTrack? = nil) {
         self.videoURL = videoURL

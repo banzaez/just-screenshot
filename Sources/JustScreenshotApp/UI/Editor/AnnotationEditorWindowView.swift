@@ -3,9 +3,10 @@ import AppKit
 
 /// Главное окно редактора аннотаций: адаптивное вписывание, undo/redo, красивый фон
 public struct AnnotationEditorWindowView: View {
-    @ObservedObject public var model: AnnotationEditorModel
+    @Bindable public var model: AnnotationEditorModel
     public let onSave: (NSImage) -> Void
     public let onSaveToHistory: ((NSImage) -> Void)?
+    public let onDelete: () -> Void
     public let onClose: () -> Void
     
     @State private var fitMode: Bool = true
@@ -17,11 +18,13 @@ public struct AnnotationEditorWindowView: View {
         model: AnnotationEditorModel,
         onSave: @escaping (NSImage) -> Void,
         onSaveToHistory: ((NSImage) -> Void)? = nil,
+        onDelete: @escaping () -> Void = {},
         onClose: @escaping () -> Void
     ) {
         self.model = model
         self.onSave = onSave
         self.onSaveToHistory = onSaveToHistory
+        self.onDelete = onDelete
         self.onClose = onClose
     }
     
@@ -168,6 +171,7 @@ public struct AnnotationEditorWindowView: View {
                 backdropShadowRadius: $model.backdropShadowRadius,
                 addShadow: $model.addShadow,
                 onClose: onClose,
+                onDelete: onDelete,
                 onCopy: { ImageExporter.copyToClipboard(model.renderFinalImage()) },
                 onSaveToHistory: {
                     let img = model.renderFinalImage()
@@ -188,7 +192,7 @@ public struct AnnotationEditorWindowView: View {
         }
         .frame(minWidth: 880, minHeight: 560)
         .task {
-            blurredImage = await BlurFilter.makeBlurredAsync(capturedItem.image)
+            blurredImage = await BlurFilter.makeBlurredAsync(capturedItem.image, id: capturedItem.id)
             model.finishInitialLoading()
         }
         .editorKeyHandler(

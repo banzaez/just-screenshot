@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Оверлей поверх плеера для добавления аннотаций и интерактивного кадрирования (Crop)
 public struct VideoOverlayCanvasView: View {
-    @ObservedObject var model: VideoEditorModel
+    var model: VideoEditorModel
     
     public init(model: VideoEditorModel) {
         self.model = model

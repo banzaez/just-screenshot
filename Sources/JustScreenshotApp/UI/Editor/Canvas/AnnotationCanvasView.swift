@@ -4,7 +4,7 @@ import AppKit
 /// Холст аннотаций: рисование, выбор, перемещение, resize и поворот.
 /// Move/resize идут через локальный preview — модель коммитится только в onEnded.
 public struct AnnotationCanvasView: View {
-    @ObservedObject public var model: AnnotationEditorModel
+    public var model: AnnotationEditorModel
     public let baseImage: NSImage
     public let zoomScale: CGFloat
     public let blurredImage: NSImage?

@@ -83,72 +83,64 @@ public final class ShortcutRecorderNSView: NSView {
     
     @discardableResult
     private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        if event.keyCode == 53 { // ESC для отмены записи
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        
+        // Преобразуем флаги NSEvent.modifierFlags в Carbon modifiers
+        var carbonModifiers: UInt32 = 0
+        if flags.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
+        if flags.contains(.shift)   { carbonModifiers |= UInt32(shiftKey) }
+        if flags.contains(.option)  { carbonModifiers |= UInt32(optionKey) }
+        if flags.contains(.control) { carbonModifiers |= UInt32(controlKey) }
+        
+        let keyCode = UInt32(event.keyCode)
+        
+        // Одиночный ESC (без модификаторов) отменяет запись шортката
+        if Int(keyCode) == kVK_Escape && carbonModifiers == 0 {
             onCancel?()
             return true
         }
         
-        // Преобразуем флаги NSEvent.modifierFlags в Carbon modifiers
-        var carbonModifiers: UInt32 = 0
-        if event.modifierFlags.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
-        if event.modifierFlags.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
-        if event.modifierFlags.contains(.option) { carbonModifiers |= UInt32(optionKey) }
-        if event.modifierFlags.contains(.control) { carbonModifiers |= UInt32(controlKey) }
+        let allowsNoModifiers = ShortcutKey.canBeUsedWithoutModifiers(keyCode)
+        let hasPrimaryModifier = (carbonModifiers & UInt32(cmdKey | optionKey | controlKey)) != 0
         
-        let keyCode = UInt32(event.keyCode)
+        // Специальные клавиши (Space, Return, Tab, Delete, стрелки) можно сочетать даже с одним Shift,
+        // а обычные буквы и цифры требуют хотя бы ⌘, ⌥ или ⌃ (чтобы не сломать обычный ввод заглавных букв)
+        let isSpecialNavigationOrActionKey: Bool = {
+            switch Int(keyCode) {
+            case kVK_Space, kVK_Return, kVK_Tab, kVK_Delete,
+                 kVK_LeftArrow, kVK_RightArrow, kVK_DownArrow, kVK_UpArrow,
+                 kVK_ISO_Section, kVK_ANSI_Grave:
+                return true
+            default:
+                return false
+            }
+        }()
         
-        // Проверяем, является ли клавиша функциональной (F1-F20)
-        let isFunctionKey = (keyCode >= UInt32(kVK_F1) && keyCode <= UInt32(kVK_F12)) ||
-                            keyCode == UInt32(kVK_F13) || keyCode == UInt32(kVK_F14) ||
-                            keyCode == UInt32(kVK_F15) || keyCode == UInt32(kVK_F16) ||
-                            keyCode == UInt32(kVK_F17) || keyCode == UInt32(kVK_F18) ||
-                            keyCode == UInt32(kVK_F19) || keyCode == UInt32(kVK_F20)
-        
-        // Если модификаторов нет и это не функциональная клавиша F1-F20 — отклоняем
-        if carbonModifiers == 0 && !isFunctionKey {
-            NSSound.beep()
-            return true
+        if !allowsNoModifiers {
+            if carbonModifiers == 0 {
+                NSSound.beep()
+                return true
+            }
+            if !hasPrimaryModifier && !isSpecialNavigationOrActionKey {
+                NSSound.beep()
+                return true
+            }
         }
         
-        // Проверка защиты системных шорткатов (⌘Q, ⌘W, ⌘H, ⌘Tab, ⌘Space и т.д.)
+        // Проверка защиты системных шорткатов (⌘Q, ⌘W, ⌘H, ⌘Tab, ⌘Space, ⌘⌥Esc)
         if ShortcutKey.isProtectedSystemShortcut(keyCode: keyCode, modifiers: carbonModifiers) {
             NSSound.beep()
             return true
         }
         
-        var keyChar = ""
-        if isFunctionKey {
-            switch keyCode {
-            case UInt32(kVK_F1): keyChar = "F1"
-            case UInt32(kVK_F2): keyChar = "F2"
-            case UInt32(kVK_F3): keyChar = "F3"
-            case UInt32(kVK_F4): keyChar = "F4"
-            case UInt32(kVK_F5): keyChar = "F5"
-            case UInt32(kVK_F6): keyChar = "F6"
-            case UInt32(kVK_F7): keyChar = "F7"
-            case UInt32(kVK_F8): keyChar = "F8"
-            case UInt32(kVK_F9): keyChar = "F9"
-            case UInt32(kVK_F10): keyChar = "F10"
-            case UInt32(kVK_F11): keyChar = "F11"
-            case UInt32(kVK_F12): keyChar = "F12"
-            case UInt32(kVK_F13): keyChar = "F13"
-            case UInt32(kVK_F14): keyChar = "F14"
-            case UInt32(kVK_F15): keyChar = "F15"
-            case UInt32(kVK_F16): keyChar = "F16"
-            case UInt32(kVK_F17): keyChar = "F17"
-            case UInt32(kVK_F18): keyChar = "F18"
-            case UInt32(kVK_F19): keyChar = "F19"
-            case UInt32(kVK_F20): keyChar = "F20"
-            default: keyChar = "F"
-            }
-        } else {
-            let chars = event.charactersIgnoringModifiers ?? ""
-            keyChar = chars.isEmpty ? "?" : chars
-        }
+        let keyLabel = ShortcutKey.keyName(
+            for: keyCode,
+            fallback: event.charactersIgnoringModifiers ?? ""
+        )
         
         let newShortcut = ShortcutKey(
             keyCode: keyCode,
-            keyChar: keyChar,
+            keyChar: keyLabel,
             modifiers: carbonModifiers
         )
         

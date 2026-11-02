@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Затемнение и интерактивная рамка кадрирования поверх видеокадра
 struct CropOverlayView: View {
-    @ObservedObject var model: VideoEditorModel
+    var model: VideoEditorModel
     let containerSize: CGSize
     let videoRect: CGRect
     

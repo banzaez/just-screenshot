@@ -1,14 +1,22 @@
 import Foundation
 import ScreenCaptureKit
 import Cocoa
+import os.lock
 
 /// Сервис захвата экрана через ScreenCaptureKit и CoreGraphics
 @MainActor
 public final class ScreenCaptureService {
     public static let shared = ScreenCaptureService()
     
+    private struct ContentCacheEntry: @unchecked Sendable {
+        let excludeDesktop: Bool
+        let onScreenOnly: Bool
+        let content: SCShareableContent
+        let date: Date
+    }
+    
     nonisolated private static let contentCacheTTL: TimeInterval = 0.2
-    nonisolated(unsafe) private static var contentCache: (excludeDesktop: Bool, onScreenOnly: Bool, content: SCShareableContent, date: Date)?
+    nonisolated private static let contentCacheLock = OSAllocatedUnfairLock<ContentCacheEntry?>(initialState: nil)
     
     private init() {}
     
@@ -102,17 +110,31 @@ public final class ScreenCaptureService {
         excludeDesktopWindows: Bool,
         onScreenWindowsOnly: Bool
     ) async throws -> SCShareableContent {
-        if let cache = contentCache,
-           cache.excludeDesktop == excludeDesktopWindows,
-           cache.onScreenOnly == onScreenWindowsOnly,
-           Date().timeIntervalSince(cache.date) < contentCacheTTL {
-            return cache.content
+        let cachedEntry: ContentCacheEntry? = contentCacheLock.withLock { entry in
+            guard let entry,
+                  entry.excludeDesktop == excludeDesktopWindows,
+                  entry.onScreenOnly == onScreenWindowsOnly,
+                  Date().timeIntervalSince(entry.date) < contentCacheTTL else {
+                return nil
+            }
+            return entry
+        }
+        if let cachedEntry {
+            return cachedEntry.content
         }
         let content = try await SCShareableContent.excludingDesktopWindows(
             excludeDesktopWindows,
             onScreenWindowsOnly: onScreenWindowsOnly
         )
-        contentCache = (excludeDesktopWindows, onScreenWindowsOnly, content, Date())
+        let newEntry = ContentCacheEntry(
+            excludeDesktop: excludeDesktopWindows,
+            onScreenOnly: onScreenWindowsOnly,
+            content: content,
+            date: Date()
+        )
+        contentCacheLock.withLock { entry in
+            entry = newEntry
+        }
         return content
     }
     

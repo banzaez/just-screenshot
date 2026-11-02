@@ -53,7 +53,7 @@ struct HotkeyDualCardView: View {
                         onClear: nil
                     )
                 }
-                .frame(width: 128, alignment: .trailing)
+                .frame(minWidth: 136, alignment: .trailing)
 
                 // 2. Альтернативный шорткат
                 VStack(alignment: .trailing, spacing: 4) {
@@ -105,7 +105,7 @@ struct HotkeyDualCardView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .frame(width: 128, alignment: .trailing)
+                .frame(minWidth: 136, alignment: .trailing)
             }
         }
         .padding(10)

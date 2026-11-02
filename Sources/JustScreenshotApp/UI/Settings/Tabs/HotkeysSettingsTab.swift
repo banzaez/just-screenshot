@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HotkeysSettingsTab: View {
-    @ObservedObject var settings = AppSettings.shared
+    @Bindable var settings = AppSettings.shared
     @State private var recordingTarget: HotkeyTarget?
 
     var body: some View {

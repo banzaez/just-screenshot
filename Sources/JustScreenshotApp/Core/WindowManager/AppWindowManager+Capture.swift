@@ -238,9 +238,19 @@ extension AppWindowManager {
                 onSave: { ImageExporter.saveImageWithDialog(item.image, defaultName: "Screenshot") },
                 onCopy: { ImageExporter.copyToClipboard(item.image) },
                 onPin: { [weak self] in self?.pin(image: item.image, id: item.id) },
-                onOCR: { [weak self] completion in self?.recognizeText(in: item.image, completion: completion) }
+                onOCR: { [weak self] completion in self?.recognizeText(in: item.image, completion: completion) },
+                onDelete: { [weak self] in self?.deleteCapturedItem(id: item.id) }
             )
         )
+    }
+    
+    public func deleteCapturedItem(id: UUID) {
+        history.delete(id: id)
+        if currentCapturedItem?.id == id {
+            currentCapturedItem = nil
+        }
+        hudStack.dismiss(itemID: id)
+        closeEditorSilently(id: id)
     }
     
     // MARK: - OCR

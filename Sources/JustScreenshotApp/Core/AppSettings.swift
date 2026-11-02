@@ -1,10 +1,12 @@
 import Foundation
 import Carbon
 import SwiftUI
+import Observation
 
 /// Сервис настроек приложения
+@Observable
 @MainActor
-public final class AppSettings: ObservableObject {
+public final class AppSettings {
     public static let shared = AppSettings()
     
     // UserDefaults Keys
@@ -28,100 +30,100 @@ public final class AppSettings: ObservableObject {
         static let lastCapturedRect = "settings_last_captured_rect"
         static let lastRecordingRect = "settings_last_recording_rect"
         static let recordingCountdown = "settings_recording_countdown"
-        static let dimOutsideRecording = "settings_dim_outside_recording"
+        static let dimOutsideRecordingArea = "settings_dim_outside_recording"
         static let smartZoomDuringRecording = "settings_smart_zoom_during_recording"
     }
     
     // Язык интерфейса
-    @Published public var language: AppLanguage {
+    public var language: AppLanguage {
         didSet {
             LocalizationManager.shared.setLanguage(language)
         }
     }
     
     // Настройки захвата
-    @Published public var playSound: Bool {
+    public var playSound: Bool {
         didSet { UserDefaults.standard.set(playSound, forKey: Keys.playSound) }
     }
     
-    @Published public var copyToClipboardOnCapture: Bool {
+    public var copyToClipboardOnCapture: Bool {
         didSet { UserDefaults.standard.set(copyToClipboardOnCapture, forKey: Keys.copyToClipboardOnCapture) }
     }
     
-    @Published public var defaultSaveDirectoryPath: String {
+    public var defaultSaveDirectoryPath: String {
         didSet { UserDefaults.standard.set(defaultSaveDirectoryPath, forKey: Keys.defaultSaveDirectory) }
     }
     
-    @Published public var showFloatingBarDuringRecording: Bool {
+    public var showFloatingBarDuringRecording: Bool {
         didSet { UserDefaults.standard.set(showFloatingBarDuringRecording, forKey: Keys.showFloatingBar) }
     }
     
-    @Published public var showKeystrokesDuringRecording: Bool {
+    public var showKeystrokesDuringRecording: Bool {
         didSet { UserDefaults.standard.set(showKeystrokesDuringRecording, forKey: Keys.showKeystrokes) }
     }
     
-    @Published public var showClicksDuringRecording: Bool {
+    public var showClicksDuringRecording: Bool {
         didSet { UserDefaults.standard.set(showClicksDuringRecording, forKey: Keys.showClicks) }
     }
     
     // Последняя захваченная область для быстрого повтора (Repeat Last Capture)
-    @Published public var lastCapturedRect: CGRect? {
+    public var lastCapturedRect: CGRect? {
         didSet { AppSettings.saveRect(lastCapturedRect, key: Keys.lastCapturedRect) }
     }
     
     // Последняя выбранная область для записи видео
-    @Published public var lastRecordingRect: CGRect? {
+    public var lastRecordingRect: CGRect? {
         didSet { AppSettings.saveRect(lastRecordingRect, key: Keys.lastRecordingRect) }
     }
     
     // Обратный отсчет перед записью (0 = без отсчета, 3 = 3 сек)
-    @Published public var recordingCountdownSeconds: Int {
+    public var recordingCountdownSeconds: Int {
         didSet { UserDefaults.standard.set(recordingCountdownSeconds, forKey: Keys.recordingCountdown) }
     }
     
     // Затемнять экран вокруг выбранной области записи
-    @Published public var dimOutsideRecordingArea: Bool {
-        didSet { UserDefaults.standard.set(dimOutsideRecordingArea, forKey: Keys.dimOutsideRecording) }
+    public var dimOutsideRecordingArea: Bool {
+        didSet { UserDefaults.standard.set(dimOutsideRecordingArea, forKey: Keys.dimOutsideRecordingArea) }
     }
     
     // Умный зум на курсор (Smart Zoom / Camera Follow)
-    @Published public var smartZoomDuringRecording: Bool {
+    public var smartZoomDuringRecording: Bool {
         didSet { UserDefaults.standard.set(smartZoomDuringRecording, forKey: Keys.smartZoomDuringRecording) }
     }
     
     // Горячие клавиши (Основной вариант + Альтернативный)
-    @Published public var shortcutArea: ShortcutKey {
+    public var shortcutArea: ShortcutKey {
         didSet { saveShortcut(shortcutArea, key: Keys.shortcutArea) }
     }
-    @Published public var shortcutAreaAlt: ShortcutKey? {
+    public var shortcutAreaAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutAreaAlt, key: Keys.shortcutAreaAlt) }
     }
     
-    @Published public var shortcutWindow: ShortcutKey {
+    public var shortcutWindow: ShortcutKey {
         didSet { saveShortcut(shortcutWindow, key: Keys.shortcutWindow) }
     }
-    @Published public var shortcutWindowAlt: ShortcutKey? {
+    public var shortcutWindowAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutWindowAlt, key: Keys.shortcutWindowAlt) }
     }
     
-    @Published public var shortcutRecording: ShortcutKey {
+    public var shortcutRecording: ShortcutKey {
         didSet { saveShortcut(shortcutRecording, key: Keys.shortcutRecording) }
     }
-    @Published public var shortcutRecordingAlt: ShortcutKey? {
+    public var shortcutRecordingAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutRecordingAlt, key: Keys.shortcutRecordingAlt) }
     }
     
-    @Published public var shortcutRepeat: ShortcutKey {
+    public var shortcutRepeat: ShortcutKey {
         didSet { saveShortcut(shortcutRepeat, key: Keys.shortcutRepeat) }
     }
-    @Published public var shortcutRepeatAlt: ShortcutKey? {
+    public var shortcutRepeatAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutRepeatAlt, key: Keys.shortcutRepeatAlt) }
     }
     
-    @Published public var shortcutHistory: ShortcutKey {
+    public var shortcutHistory: ShortcutKey {
         didSet { saveShortcut(shortcutHistory, key: Keys.shortcutHistory) }
     }
-    @Published public var shortcutHistoryAlt: ShortcutKey? {
+    public var shortcutHistoryAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutHistoryAlt, key: Keys.shortcutHistoryAlt) }
     }
     
@@ -151,7 +153,7 @@ public final class AppSettings: ObservableObject {
         self.lastCapturedRect = AppSettings.loadRect(key: Keys.lastCapturedRect)
         self.lastRecordingRect = AppSettings.loadRect(key: Keys.lastRecordingRect)
         self.recordingCountdownSeconds = defaults.object(forKey: Keys.recordingCountdown) as? Int ?? 0
-        self.dimOutsideRecordingArea = defaults.object(forKey: Keys.dimOutsideRecording) as? Bool ?? true
+        self.dimOutsideRecordingArea = defaults.object(forKey: Keys.dimOutsideRecordingArea) as? Bool ?? true
         self.smartZoomDuringRecording = defaults.object(forKey: Keys.smartZoomDuringRecording) as? Bool ?? false
         
         self.shortcutArea = AppSettings.loadShortcut(key: Keys.shortcutArea) ?? DefaultShortcuts.area

@@ -28,8 +28,6 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     
     /// Запуск записи выбранной области экрана
     public func startRecording(rect: CGRect, destinationURL: URL) async throws {
-        self.outputURL = destinationURL
-        
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
             let dispRect = CGRect(x: CGFloat(disp.frame.origin.x),
@@ -96,21 +94,25 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         
         writer.startWriting()
         
-        self.assetWriter = writer
-        self.videoInput = input
-        self.pixelBufferAdaptor = adaptor
-        self.recordingStartTime = nil
-        self.pauseStartTime = nil
-        self.totalPausedDuration = .zero
-        self.isPaused = false
-        self.isRecording = true
+        let scStream = SCStream(filter: filter, configuration: config, delegate: self)
+        
+        recordingQueue.sync {
+            self.outputURL = destinationURL
+            self.assetWriter = writer
+            self.videoInput = input
+            self.pixelBufferAdaptor = adaptor
+            self.recordingStartTime = nil
+            self.pauseStartTime = nil
+            self.totalPausedDuration = .zero
+            self.isPaused = false
+            self.isRecording = true
+            self.stream = scStream
+        }
         
         // Запуск потока ScreenCaptureKit с отказоустойчивым откатом при ошибке
         do {
-            let scStream = SCStream(filter: filter, configuration: config, delegate: self)
             try scStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: recordingQueue)
             try await scStream.startCapture()
-            self.stream = scStream
         } catch {
             await cancelRecording()
             throw error
@@ -135,20 +137,35 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     
     /// Остановка записи и сохранение файла
     public func stopRecording() async throws -> URL? {
-        guard isRecording, let scStream = stream else { return nil }
+        let activeStream: SCStream? = recordingQueue.sync {
+            guard self.isRecording else { return nil }
+            return self.stream
+        }
+        guard let scStream = activeStream else { return nil }
         
         try await scStream.stopCapture()
-        self.stream = nil
-        self.isRecording = false
-        self.isPaused = false
         
-        guard let writer = self.assetWriter, let input = self.videoInput else {
-            return self.outputURL
+        let finalizeContext: (writer: AVAssetWriter?, url: URL?) = recordingQueue.sync {
+            self.stream = nil
+            self.isRecording = false
+            self.isPaused = false
+            let writer = self.assetWriter
+            let input = self.videoInput
+            let url = self.outputURL
+            if self.recordingStartTime != nil {
+                input?.markAsFinished()
+            }
+            self.assetWriter = nil
+            self.videoInput = nil
+            self.pixelBufferAdaptor = nil
+            return (writer, url)
         }
         
-        input.markAsFinished()
+        guard let writer = finalizeContext.writer else {
+            return finalizeContext.url
+        }
         
-        let outputURL = self.outputURL
+        let outputURL = finalizeContext.url
         // AVAssetWriter не Sendable; finishWriting вызывает completion на своей очереди после завершения.
         nonisolated(unsafe) let finishingWriter = writer
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<URL?, Error>) in
@@ -170,21 +187,29 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     
     /// Отмена записи с удалением неполного файла
     public func cancelRecording() async {
-        guard isRecording, let scStream = stream else { return }
+        let activeStream: SCStream? = recordingQueue.sync {
+            guard self.isRecording else { return nil }
+            return self.stream
+        }
+        if let scStream = activeStream {
+            try? await scStream.stopCapture()
+        }
         
-        try? await scStream.stopCapture()
-        self.stream = nil
-        self.isRecording = false
-        self.isPaused = false
-        
-        self.assetWriter?.cancelWriting()
-        self.assetWriter = nil
-        self.videoInput = nil
-        self.pixelBufferAdaptor = nil
-        
-        if let outputURL = self.outputURL {
-            try? FileManager.default.removeItem(at: outputURL)
+        let urlToRemove: URL? = recordingQueue.sync {
+            self.stream = nil
+            self.isRecording = false
+            self.isPaused = false
+            self.assetWriter?.cancelWriting()
+            self.assetWriter = nil
+            self.videoInput = nil
+            self.pixelBufferAdaptor = nil
+            let url = self.outputURL
             self.outputURL = nil
+            return url
+        }
+        
+        if let urlToRemove {
+            try? FileManager.default.removeItem(at: urlToRemove)
         }
     }
     

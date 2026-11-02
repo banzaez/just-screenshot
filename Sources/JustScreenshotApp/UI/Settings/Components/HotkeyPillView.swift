@@ -55,20 +55,22 @@ struct SingleShortcutPillView: View {
                         recordingTarget = target
                     } label: {
                         HStack(spacing: 3) {
-                            ForEach(shortcut.keySymbols, id: \.self) { sym in
+                            ForEach(Array(shortcut.keySymbols.enumerated()), id: \.offset) { _, sym in
                                 Text(sym)
                                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                                     .foregroundColor(.primary)
-                                    .frame(minWidth: 20, minHeight: 20)
-                                    .padding(.horizontal, 3)
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                                    .padding(.horizontal, sym.count > 1 ? 6 : 4)
+                                    .frame(minWidth: 22, minHeight: 22)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 4)
+                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                                             .fill(Color(NSColor.controlBackgroundColor))
                                             .shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1)
                                     )
                                     .overlay(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                            .stroke(Color.primary.opacity(0.16), lineWidth: 1)
                                     )
                             }
                         }

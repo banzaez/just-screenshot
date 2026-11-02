@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Observation
 
 /// Поддерживаемые языки интерфейса приложения Just Screenshot
 public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
@@ -61,13 +62,14 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 }
 
 /// Высокопроизводительный типизированный менеджер локализации
+@Observable
 @MainActor
-public final class LocalizationManager: ObservableObject {
+public final class LocalizationManager {
     public static let shared = LocalizationManager()
     
-    private let languageKey = "settings_appLanguage"
+    @ObservationIgnored private let languageKey = "settings_appLanguage"
     
-    @Published public private(set) var currentLanguage: AppLanguage {
+    public private(set) var currentLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(currentLanguage.rawValue, forKey: languageKey)
         }

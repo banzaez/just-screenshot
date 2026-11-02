@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RecordingSettingsTab: View {
-    @ObservedObject var settings = AppSettings.shared
+    @Bindable var settings = AppSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

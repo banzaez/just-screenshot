@@ -24,6 +24,9 @@ extension AppWindowManager {
                 self?.history.add(finalImage)
                 model.markSaved()
             },
+            onDelete: { [weak self] in
+                self?.deleteCapturedItem(id: id)
+            },
             onClose: { [weak self] in self?.closeEditor(id: id) }
         )
         
@@ -81,11 +84,27 @@ extension AppWindowManager {
         }
     }
     
+    func closeEditorSilently(id: UUID) {
+        guard let managed = editors.removeValue(forKey: id) else { return }
+        managed.closeSilently()
+    }
+    
     public func openVideoEditor(videoURL: URL, cursorTrack: CursorTrack? = nil) {
+        let standardizedPath = videoURL.standardizedFileURL.path
+        if let existingPair = videoEditors.first(where: { $0.value.window.representedURL?.standardizedFileURL.path == standardizedPath }) {
+            existingPair.value.bringToFront()
+            return
+        }
+        
         let editorID = UUID()
-        let model = VideoEditorModel(videoURL: videoURL, cursorTrack: cursorTrack)
+        let resolvedTrack = cursorTrack ?? CursorTrackRecorder.loadTrack(forVideoURL: videoURL)
+        let model = VideoEditorModel(videoURL: videoURL, cursorTrack: resolvedTrack)
         let view = VideoEditorWindowView(
             model: model,
+            onDelete: { [weak self] in
+                self?.closeVideoEditor(id: editorID)
+                self?.history.deleteVideo(at: videoURL)
+            },
             onClose: { [weak self] in self?.closeVideoEditor(id: editorID) }
         )
         
@@ -96,6 +115,7 @@ extension AppWindowManager {
             rootView: view,
             resetCascade: videoEditors.isEmpty
         )
+        window.representedURL = videoURL
         
         let managed = ManagedWindow(window: window) { [weak self] closed in
             model.cleanup()

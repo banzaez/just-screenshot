@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Интерактивный таймлайн для покадрового скраббинга и точной обрезки Trim In / Trim Out
 public struct VideoTimelineView: View {
-    @ObservedObject var model: VideoEditorModel
+    var model: VideoEditorModel
     @State private var isDraggingPlayhead = false
     
     public init(model: VideoEditorModel) {

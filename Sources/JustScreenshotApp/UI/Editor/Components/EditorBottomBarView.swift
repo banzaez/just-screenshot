@@ -11,11 +11,13 @@ public struct EditorBottomBarView: View {
     @Binding public var addShadow: Bool
     
     public let onClose: () -> Void
+    public let onDelete: () -> Void
     public let onCopy: () -> Void
     public let onSaveToHistory: () -> Void
     public let onSave: () -> Void
     
     @State private var justSavedToHistory: Bool = false
+    @State private var justCopied: Bool = false
     @State private var showAdjustPopover: Bool = false
     
     public init(
@@ -26,6 +28,7 @@ public struct EditorBottomBarView: View {
         backdropShadowRadius: Binding<CGFloat>,
         addShadow: Binding<Bool>,
         onClose: @escaping () -> Void,
+        onDelete: @escaping () -> Void = {},
         onCopy: @escaping () -> Void,
         onSaveToHistory: @escaping () -> Void,
         onSave: @escaping () -> Void
@@ -37,6 +40,7 @@ public struct EditorBottomBarView: View {
         self._backdropShadowRadius = backdropShadowRadius
         self._addShadow = addShadow
         self.onClose = onClose
+        self.onDelete = onDelete
         self.onCopy = onCopy
         self.onSaveToHistory = onSaveToHistory
         self.onSave = onSave
@@ -53,17 +57,20 @@ public struct EditorBottomBarView: View {
     // MARK: - Backdrop
     
     private var backdropCapsule: some View {
-        HStack(spacing: 8) {
-            EditorIconButton(
-                "rectangle.on.rectangle.angled",
-                title: L("editor.backdrop"),
-                isActive: showBackdrop,
-                width: 32
+        HStack(spacing: 6) {
+            EditorActionIconButton(
+                icon: "rectangle.on.rectangle.angled",
+                style: showBackdrop ? .primary : .secondary,
+                tooltip: L("editor.backdrop")
             ) {
                 showBackdrop.toggle()
             }
             
             if showBackdrop {
+                Divider()
+                    .frame(height: 18)
+                    .padding(.horizontal, 2)
+                
                 HStack(spacing: 5) {
                     ForEach(BackdropPreset.allCases) { preset in
                         Button {
@@ -85,11 +92,10 @@ public struct EditorBottomBarView: View {
                     }
                 }
                 
-                EditorIconButton(
-                    "slider.horizontal.3",
-                    title: L("editor.padding"),
-                    isActive: showAdjustPopover,
-                    width: 30
+                EditorActionIconButton(
+                    icon: "slider.horizontal.3",
+                    style: showAdjustPopover ? .primary : .secondary,
+                    tooltip: L("editor.padding")
                 ) {
                     showAdjustPopover.toggle()
                 }
@@ -97,17 +103,16 @@ public struct EditorBottomBarView: View {
                     adjustPopover
                 }
                 
-                EditorIconButton(
-                    "shadow",
-                    title: L("editor.shadow_help"),
-                    isActive: addShadow,
-                    width: 30
+                EditorActionIconButton(
+                    icon: "shadow",
+                    style: addShadow ? .primary : .secondary,
+                    tooltip: L("editor.shadow_help")
                 ) {
                     addShadow.toggle()
                 }
             }
         }
-        .padding(4)
+        .padding(5)
         .background(capsuleBackground)
         .animation(.easeInOut(duration: 0.18), value: showBackdrop)
     }
@@ -170,44 +175,146 @@ public struct EditorBottomBarView: View {
     // MARK: - Actions
     
     private var actionsCapsule: some View {
-        HStack(spacing: 4) {
-            EditorIconButton("xmark", title: L("editor.close"), width: 32, action: onClose)
-                .keyboardShortcut("w", modifiers: [.command])
+        HStack(spacing: 6) {
+            // 1. Удалить (из истории и закрыть)
+            EditorActionIconButton(
+                icon: "trash",
+                style: .destructive,
+                tooltip: L("history.delete_button"),
+                action: onDelete
+            )
             
-            EditorIconButton("doc.on.doc", title: L("editor.copy"), width: 32, action: onCopy)
-                .keyboardShortcut("c", modifiers: [.command, .shift])
+            // 2. Закрыть окно редактора
+            EditorActionIconButton(
+                icon: "xmark",
+                style: .secondary,
+                tooltip: L("editor.close"),
+                action: onClose
+            )
+            .keyboardShortcut("w", modifiers: [.command])
             
-            Button {
+            Divider()
+                .frame(height: 18)
+                .padding(.horizontal, 2)
+            
+            // 3. Копировать в буфер обмена (с визуальным откликом)
+            EditorActionIconButton(
+                icon: justCopied ? "checkmark" : "doc.on.doc",
+                style: justCopied ? .success : .secondary,
+                tooltip: justCopied ? L("hud.copied") : L("editor.copy")
+            ) {
+                onCopy()
+                withAnimation(.easeInOut(duration: 0.18)) { justCopied = true }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    withAnimation(.easeInOut(duration: 0.18)) { justCopied = false }
+                }
+            }
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            
+            // 4. Сохранить в историю приложения
+            EditorActionIconButton(
+                icon: justSavedToHistory ? "checkmark.circle.fill" : "clock.arrow.circlepath",
+                style: justSavedToHistory ? .success : .secondary,
+                tooltip: L("editor.save_history_help")
+            ) {
                 onSaveToHistory()
                 withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
                 Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 1_600_000_000)
                     withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
                 }
-            } label: {
-                Image(systemName: justSavedToHistory ? "checkmark.circle.fill" : "square.and.arrow.down")
-                    .font(.system(size: 13, weight: .semibold))
-                    .frame(width: 32, height: 30)
-                    .foregroundStyle(Color.white)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(justSavedToHistory ? Color.green : Color.accentColor)
-                    )
             }
-            .buttonStyle(.plain)
-            .help(L("editor.save_history_help"))
             .keyboardShortcut("s", modifiers: [.command])
-            .accessibilityLabel(justSavedToHistory ? L("editor.saved") : L("editor.save"))
             
-            EditorIconButton("square.and.arrow.up", title: L("editor.export"), width: 32, action: onSave)
-                .keyboardShortcut("e", modifiers: [.command])
+            // 5. Сохранить как… (скачать в файл на диск)
+            EditorActionIconButton(
+                icon: "arrow.down.to.line",
+                style: .primary,
+                tooltip: L("editor.export_help"),
+                action: onSave
+            )
+            .keyboardShortcut("e", modifiers: [.command])
         }
-        .padding(4)
+        .padding(5)
         .background(capsuleBackground)
     }
     
     private var capsuleBackground: some View {
-        RoundedRectangle(cornerRadius: 10, style: .continuous)
+        RoundedRectangle(cornerRadius: 11, style: .continuous)
             .fill(Color.primary.opacity(0.05))
+    }
+}
+
+private struct EditorActionIconButton: View {
+    enum Style {
+        case primary
+        case secondary
+        case destructive
+        case success
+    }
+    
+    let icon: String
+    let style: Style
+    let tooltip: String
+    let action: () -> Void
+    
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 36, height: 30)
+                .foregroundStyle(foregroundColor)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(backgroundColor)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .strokeBorder(borderColor, lineWidth: 0.8)
+                        )
+                )
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(tooltip)
+        .accessibilityLabel(tooltip)
+    }
+    
+    private var foregroundColor: Color {
+        switch style {
+        case .primary, .success:
+            return .white
+        case .destructive:
+            return isHovered ? .white : .red
+        case .secondary:
+            return .primary.opacity(0.9)
+        }
+    }
+    
+    private var backgroundColor: Color {
+        switch style {
+        case .primary:
+            return isHovered ? Color.accentColor.opacity(0.9) : Color.accentColor
+        case .success:
+            return Color.green
+        case .destructive:
+            return isHovered ? Color.red.opacity(0.85) : Color.red.opacity(0.12)
+        case .secondary:
+            return isHovered ? Color.primary.opacity(0.12) : Color.primary.opacity(0.05)
+        }
+    }
+    
+    private var borderColor: Color {
+        switch style {
+        case .primary, .success:
+            return Color.white.opacity(0.18)
+        case .destructive:
+            return Color.red.opacity(isHovered ? 0.4 : 0.2)
+        case .secondary:
+            return Color.primary.opacity(isHovered ? 0.16 : 0.06)
+        }
     }
 }

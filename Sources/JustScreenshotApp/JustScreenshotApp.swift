@@ -3,10 +3,10 @@ import AppKit
 
 @main
 struct JustScreenshotApp: App {
-    @StateObject private var windowManager = AppWindowManager.shared
-    @StateObject private var launchAtLogin = LaunchAtLoginManager.shared
-    @StateObject private var localization = LocalizationManager.shared
-    @StateObject private var updaterManager = UpdaterManager.shared
+    private var windowManager = AppWindowManager.shared
+    private var launchAtLogin = LaunchAtLoginManager.shared
+    private var localization = LocalizationManager.shared
+    private var updaterManager = UpdaterManager.shared
     
     var body: some Scene {
         MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : (windowManager.isRecordingPreparing ? "viewfinder.circle.fill" : "camera.viewfinder")) {

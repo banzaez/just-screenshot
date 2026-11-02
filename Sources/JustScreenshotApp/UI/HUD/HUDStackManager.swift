@@ -11,17 +11,22 @@ final class HUDStackManager {
         var onCopy: () -> Void
         var onPin: () -> Void
         var onOCR: (@escaping (String) -> Void) -> Void
+        var onDelete: () -> Void
     }
     
     private final class Entry {
         let id = UUID()
+        let itemID: UUID
         let window: NSWindow
         var timeout: Task<Void, Never>?
-        init(window: NSWindow) { self.window = window }
+        init(itemID: UUID, window: NSWindow) {
+            self.itemID = itemID
+            self.window = window
+        }
     }
     
-    private static let width: CGFloat = 440
-    private static let height: CGFloat = 124
+    private static let width: CGFloat = 362
+    private static let height: CGFloat = 122
     private static let spacing: CGFloat = 10
     private static let margin: CGFloat = 24
     private static let maxVisible = 4
@@ -43,7 +48,7 @@ final class HUDStackManager {
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.alphaValue = 0
         
-        let entry = Entry(window: window)
+        let entry = Entry(itemID: item.id, window: window)
         let id = entry.id
         
         let view = QuickAccessOverlayView(
@@ -53,10 +58,11 @@ final class HUDStackManager {
             onCopy: { actions.onCopy() },
             onPin: { [weak self] in self?.dismiss(id: id); actions.onPin() },
             onOCR: { actions.onOCR($0) },
+            onDelete: { [weak self] in self?.dismiss(id: id); actions.onDelete() },
             onClose: { [weak self] in self?.dismiss(id: id) },
             onHover: { [weak self] hovering in self?.hoverChanged(id: id, hovering: hovering) }
         )
-        window.contentView = NSHostingView(rootView: view)
+        window.contentView = FirstMouseHostingView(rootView: view)
         
         // Стартовая позиция чуть левее, затем анимируется на место
         if let screen = NSScreen.main {
@@ -84,6 +90,13 @@ final class HUDStackManager {
         entry.window.contentView = nil
         entry.window.close()
         layout()
+    }
+    
+    func dismiss(itemID: UUID) {
+        let matchingIDs = entries.filter { $0.itemID == itemID }.map(\.id)
+        for id in matchingIDs {
+            dismiss(id: id)
+        }
     }
     
     func dismissAll() {
@@ -126,5 +139,12 @@ final class HUDStackManager {
                 entry.window.animator().alphaValue = 1
             }
         }
+    }
+}
+
+/// NSHostingView, принимающий первый клик мыши без предварительной активации окна
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
     }
 }

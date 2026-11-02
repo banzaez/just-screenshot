@@ -1,12 +1,14 @@
 import Foundation
 import ServiceManagement
+import Observation
 
 /// Сервис управления автозапуском приложения при входе в систему (macOS 13+)
+@Observable
 @MainActor
-public final class LaunchAtLoginManager: ObservableObject {
+public final class LaunchAtLoginManager {
     public static let shared = LaunchAtLoginManager()
     
-    @Published public private(set) var isEnabled: Bool = false
+    public private(set) var isEnabled: Bool = false
     
     private init() {
         refreshStatus()

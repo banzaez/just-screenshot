@@ -5,6 +5,7 @@ extension AppWindowManager {
     // MARK: - История
     
     public func showHistory() {
+        history.pruneMissingFiles()
         if let existing = historyWindow {
             existing.bringToFront()
             return
@@ -12,20 +13,20 @@ extension AppWindowManager {
         let view = HistoryWindowView(
             onEdit: { [weak self] entry in self?.editHistoryEntry(entry) },
             onPin: { [weak self] entry in
-                guard let self, let img = self.history.image(for: entry) else { return }
+                guard let self, entry.kind == .image, let img = self.history.image(for: entry) else { return }
                 self.pin(image: img, id: entry.id)
             },
             onCopy: { [weak self] entry in
-                if let img = self?.history.image(for: entry) { ImageExporter.copyToClipboard(img) }
+                self?.history.copyToClipboard(entry)
             }
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 820, height: 580),
+            contentRect: NSRect(x: 0, y: 0, width: 860, height: 600),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
         window.title = L("history.title")
-        window.minSize = NSSize(width: 560, height: 400)
+        window.minSize = NSSize(width: 580, height: 420)
         window.contentView = NSHostingView(rootView: view)
         window.center()
         
@@ -35,8 +36,21 @@ extension AppWindowManager {
     }
     
     public func editHistoryEntry(_ entry: HistoryEntry) {
-        guard let image = history.image(for: entry) else { return }
-        openAnnotationEditor(item: CapturedItem(id: entry.id, image: image, timestamp: entry.date, rect: .zero))
+        switch entry.kind {
+        case .image:
+            guard let image = history.image(for: entry) else {
+                history.pruneMissingFiles()
+                return
+            }
+            openAnnotationEditor(item: CapturedItem(id: entry.id, image: image, timestamp: entry.date, rect: .zero))
+        case .video:
+            let url = history.fileURL(for: entry)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                history.pruneMissingFiles()
+                return
+            }
+            openVideoEditor(videoURL: url)
+        }
     }
     
     // MARK: - Настройки
