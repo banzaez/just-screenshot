@@ -4,7 +4,7 @@ import Cocoa
 @MainActor
 public enum AnnotationRenderer {
     
-    /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью (Single-Pass рендеринг)
+    /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью и рамка окна macOS
     public static func render(
         baseImage: NSImage,
         items: [AnnotationItem],
@@ -13,56 +13,114 @@ public enum AnnotationRenderer {
         cornerRadius: CGFloat = 12,
         shadowRadius: CGFloat = 24,
         shadow: Bool,
+        showWindowFrame: Bool = false,
         imageID: UUID? = nil
     ) -> NSImage {
-        guard let backdrop else {
-            return render(baseImage: baseImage, items: items, imageID: imageID)
-        }
-        
         let size = baseImage.size
         guard size.width > 0, size.height > 0 else { return baseImage }
-        let pad = padding
-        let outSize = NSSize(width: size.width + pad * 2, height: size.height + pad * 2)
+        
+        let titlebarH: CGFloat = showWindowFrame ? 30 : 0
+        let contentSize = NSSize(width: size.width, height: size.height + titlebarH)
         let scale = backingScale(for: baseImage)
         let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage, id: imageID) : nil
         
-        return renderInBitmapContext(pointSize: outSize, scale: scale) { context in
-            // 1. Отрисовка градиента подложки
-            let cols = backdrop.colors.map { NSColor($0) }
-            let bgRect = NSRect(origin: .zero, size: outSize)
-            let bgPath = NSBezierPath(rect: bgRect)
-            NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
+        if let backdrop {
+            let pad = padding
+            let outSize = NSSize(width: contentSize.width + pad * 2, height: contentSize.height + pad * 2)
             
-            // 2. Отрисовка тени под скриншотом
-            let innerRect = NSRect(x: pad, y: pad, width: size.width, height: size.height)
-            let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
-            
-            if shadow && shadowRadius > 0 {
+            return renderInBitmapContext(pointSize: outSize, scale: scale) { context in
+                // 1. Отрисовка градиента подложки
+                let cols = backdrop.colors.map { NSColor($0) }
+                let bgRect = NSRect(origin: .zero, size: outSize)
+                let bgPath = NSBezierPath(rect: bgRect)
+                NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
+                
+                // 2. Отрисовка тени под скриншотом
+                let innerRect = NSRect(x: pad, y: pad, width: contentSize.width, height: contentSize.height)
+                let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                
+                if shadow && shadowRadius > 0 {
+                    NSGraphicsContext.saveGraphicsState()
+                    let sh = NSShadow()
+                    sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
+                    sh.shadowBlurRadius = shadowRadius
+                    sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
+                    sh.set()
+                    NSColor.black.setFill()
+                    clip.fill()
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+                
+                // 3. Однопроходная отрисовка снимка, рамки окна и аннотаций
                 NSGraphicsContext.saveGraphicsState()
-                let sh = NSShadow()
-                sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
-                sh.shadowBlurRadius = shadowRadius
-                sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
-                sh.set()
-                NSColor.black.setFill()
-                clip.fill()
+                clip.addClip()
+                
+                let imageRect = NSRect(x: pad, y: pad, width: size.width, height: size.height)
+                baseImage.draw(in: imageRect)
+                
+                if showWindowFrame {
+                    let titlebarRect = NSRect(x: pad, y: pad + size.height, width: size.width, height: titlebarH)
+                    drawWindowFrameTitlebar(in: titlebarRect)
+                }
+                
+                context.saveGState()
+                context.translateBy(x: pad, y: pad)
+                for item in items {
+                    renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
+                }
+                context.restoreGState()
+                
                 NSGraphicsContext.restoreGraphicsState()
-            }
-            
-            // 3. Однопроходная отрисовка снимка и аннотаций в одной маске без промежуточных NSImage
-            NSGraphicsContext.saveGraphicsState()
-            clip.addClip()
-            baseImage.draw(in: innerRect)
-            
-            context.saveGState()
-            context.translateBy(x: pad, y: pad)
-            for item in items {
-                renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
-            }
-            context.restoreGState()
-            
-            NSGraphicsContext.restoreGraphicsState()
-        } ?? baseImage
+            } ?? baseImage
+        } else if showWindowFrame {
+            return renderInBitmapContext(pointSize: contentSize, scale: scale) { context in
+                let fullRect = NSRect(origin: .zero, size: contentSize)
+                let clip = NSBezierPath(roundedRect: fullRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                
+                NSGraphicsContext.saveGraphicsState()
+                clip.addClip()
+                
+                let imageRect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
+                baseImage.draw(in: imageRect)
+                
+                let titlebarRect = NSRect(x: 0, y: size.height, width: size.width, height: titlebarH)
+                drawWindowFrameTitlebar(in: titlebarRect)
+                
+                for item in items {
+                    renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
+                }
+                
+                NSGraphicsContext.restoreGraphicsState()
+            } ?? baseImage
+        } else {
+            return render(baseImage: baseImage, items: items, imageID: imageID)
+        }
+    }
+    
+    private static func drawWindowFrameTitlebar(in rect: NSRect) {
+        NSColor(calibratedWhite: 0.18, alpha: 1.0).setFill()
+        NSBezierPath(rect: rect).fill()
+        
+        let diameter: CGFloat = 12
+        let y = rect.minY + (rect.height - diameter) / 2
+        let startX = rect.minX + 13
+        let spacing: CGFloat = 20
+        
+        let colors: [NSColor] = [
+            NSColor(srgbRed: 255/255, green: 95/255, blue: 86/255, alpha: 1.0),
+            NSColor(srgbRed: 255/255, green: 189/255, blue: 46/255, alpha: 1.0),
+            NSColor(srgbRed: 39/255, green: 201/255, blue: 63/255, alpha: 1.0)
+        ]
+        
+        for (i, col) in colors.enumerated() {
+            let circleRect = NSRect(x: startX + CGFloat(i) * spacing, y: y, width: diameter, height: diameter)
+            let path = NSBezierPath(ovalIn: circleRect)
+            col.setFill()
+            path.fill()
+            NSColor.black.withAlphaComponent(0.18).setStroke()
+            path.lineWidth = 0.5
+            path.stroke()
+        }
     }
     
     /// Отрисовка исходного изображения со списком аннотаций в точном Retina-разрешении без lockFocus()
@@ -159,7 +217,7 @@ public enum AnnotationRenderer {
         context.setLineJoin(.round)
         
         switch item.tool {
-        case .select:
+        case .select, .crop:
             break
             
         case .arrow:

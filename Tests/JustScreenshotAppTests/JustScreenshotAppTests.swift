@@ -314,4 +314,105 @@ struct AnnotationEditorHistoryTests {
         
         HistoryStore.shared.delete(id: testID)
     }
+    
+    @Test @MainActor func testWindowFrameMockupRendering() {
+        let size = NSSize(width: 200, height: 100)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.gray.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        image.unlockFocus()
+        
+        let rendered = AnnotationRenderer.render(
+            baseImage: image,
+            items: [],
+            backdrop: nil,
+            padding: 0,
+            cornerRadius: 10,
+            shadowRadius: 0,
+            shadow: false,
+            showWindowFrame: true
+        )
+        
+        #expect(abs(rendered.size.width - 200) < 0.1)
+        #expect(abs(rendered.size.height - 130) < 0.1) // 100 + 30 titlebar
+    }
+    
+    @Test @MainActor func testCropToolAndUndoRestoration() {
+        let size = NSSize(width: 100, height: 100)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        image.unlockFocus()
+        
+        let item = CapturedItem(image: image, rect: CGRect(origin: .zero, size: size))
+        let model = AnnotationEditorModel(capturedItem: item)
+        model.finishInitialLoading()
+        
+        let annotation = AnnotationItem(tool: .arrow, startPoint: CGPoint(x: 30, y: 30), endPoint: CGPoint(x: 70, y: 70))
+        model.appendItem(annotation)
+        
+        // Задаем область кропа: с 20% по x и y, ширина 50%, высота 50% (пиксели: x: 20, y: 20, w: 50, h: 50)
+        model.cropRect = CGRect(x: 0.2, y: 0.2, width: 0.5, height: 0.5)
+        model.applyCrop()
+        
+        #expect(abs(model.currentBaseImage.size.width - 50) < 0.1)
+        #expect(abs(model.currentBaseImage.size.height - 50) < 0.1)
+        #expect(model.items.count == 1)
+        #expect(abs(model.items[0].startPoint.x - 10) < 0.1) // 30 - 20
+        #expect(abs(model.items[0].startPoint.y - 10) < 0.1)
+        
+        // Проверяем работу Undo для кропа
+        model.undo()
+        #expect(abs(model.currentBaseImage.size.width - 100) < 0.1)
+        #expect(abs(model.items[0].startPoint.x - 30) < 0.1)
+    }
+    
+    @Test func testQRCodeDetection() async {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return }
+        let payload = "https://justscreenshot.app"
+        filter.setValue(payload.data(using: .utf8), forKey: "inputMessage")
+        guard let output = filter.outputImage else { return }
+        
+        let rep = NSCIImageRep(ciImage: output)
+        let qrImage = NSImage(size: NSSize(width: 120, height: 120))
+        qrImage.addRepresentation(rep)
+        
+        let detected = await TextRecognizer.detectQRCodes(in: qrImage)
+        #expect(detected.contains(payload))
+    }
+    
+    @Test @MainActor func testPinnedWindowClickThroughAndUnlock() {
+        let size = NSSize(width: 100, height: 100)
+        let image = NSImage(size: size)
+        let testID = UUID()
+        
+        let wm = AppWindowManager.shared
+        wm.pin(image: image, id: testID)
+        
+        guard let pinEntry = wm.windowRegistry.pins.first else {
+            Issue.record("Pinned window not created")
+            return
+        }
+        let pinID = pinEntry.key
+        let window = pinEntry.value.window
+        
+        wm.setPinClickThrough(id: pinID, isLocked: true)
+        #expect(wm.hasLockedPins)
+        #expect(window.ignoresMouseEvents == true)
+        
+        wm.unlockAllPins()
+        #expect(!wm.hasLockedPins)
+        #expect(window.ignoresMouseEvents == false)
+        
+        wm.closePin(id: pinID)
+    }
+    
+    @Test func testOCRShortcutDefaults() {
+        let ocrShortcut = AppSettings.DefaultShortcuts.ocr
+        #expect(ocrShortcut.keyCode == 22) // Key 6
+        #expect(ocrShortcut.keyChar == "6")
+        #expect(ocrShortcut.modifiers == AppSettings.DefaultShortcuts.repeatMod)
+    }
 }

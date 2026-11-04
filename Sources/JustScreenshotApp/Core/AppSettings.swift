@@ -24,6 +24,8 @@ public final class AppSettings {
         static let shortcutRepeatAlt = "settings_shortcut_repeat_alt"
         static let shortcutHistory = "settings_shortcut_history"
         static let shortcutHistoryAlt = "settings_shortcut_history_alt"
+        static let shortcutOCR = "settings_shortcut_ocr"
+        static let shortcutOCRAlt = "settings_shortcut_ocr_alt"
         static let showFloatingBar = "settings_show_floating_bar"
         static let showKeystrokes = "settings_show_keystrokes"
         static let showClicks = "settings_show_clicks"
@@ -127,6 +129,13 @@ public final class AppSettings {
         didSet { saveOptionalShortcut(shortcutHistoryAlt, key: Keys.shortcutHistoryAlt) }
     }
     
+    public var shortcutOCR: ShortcutKey {
+        didSet { saveShortcut(shortcutOCR, key: Keys.shortcutOCR) }
+    }
+    public var shortcutOCRAlt: ShortcutKey? {
+        didSet { saveOptionalShortcut(shortcutOCRAlt, key: Keys.shortcutOCRAlt) }
+    }
+    
     public struct DefaultShortcuts {
         public static let defaultMod = UInt32(cmdKey | shiftKey)
         public static let repeatMod = UInt32(cmdKey | optionKey)
@@ -136,6 +145,7 @@ public final class AppSettings {
         public static let recording = ShortcutKey(keyCode: UInt32(kVK_ANSI_3), keyChar: "3", modifiers: defaultMod)
         public static let repeatCapture = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: repeatMod)
         public static let history = ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: defaultMod)
+        public static let ocr = ShortcutKey(keyCode: UInt32(kVK_ANSI_6), keyChar: "6", modifiers: repeatMod)
     }
     
     private init() {
@@ -170,6 +180,9 @@ public final class AppSettings {
         
         self.shortcutHistory = AppSettings.loadShortcut(key: Keys.shortcutHistory) ?? DefaultShortcuts.history
         self.shortcutHistoryAlt = AppSettings.loadShortcut(key: Keys.shortcutHistoryAlt)
+        
+        self.shortcutOCR = AppSettings.loadShortcut(key: Keys.shortcutOCR) ?? DefaultShortcuts.ocr
+        self.shortcutOCRAlt = AppSettings.loadShortcut(key: Keys.shortcutOCRAlt)
     }
     
     private func saveShortcut(_ shortcut: ShortcutKey, key: String) {
@@ -227,5 +240,7 @@ public final class AppSettings {
         shortcutRepeatAlt = nil
         shortcutHistory = DefaultShortcuts.history
         shortcutHistoryAlt = nil
+        shortcutOCR = DefaultShortcuts.ocr
+        shortcutOCRAlt = nil
     }
 }

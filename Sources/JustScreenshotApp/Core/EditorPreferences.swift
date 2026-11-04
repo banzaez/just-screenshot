@@ -16,6 +16,7 @@ enum EditorPreferences {
         static let backdropCornerRadius = "editor_pref_backdropCornerRadius"
         static let backdropShadowRadius = "editor_pref_backdropShadowRadius"
         static let addShadow = "editor_pref_addShadow"
+        static let showWindowFrame = "editor_pref_showWindowFrame"
         
         static let videoColor = "editor_pref_video_color"
         static let videoLineWidth = "editor_pref_video_lineWidth"
@@ -94,6 +95,11 @@ enum EditorPreferences {
     static var addShadow: Bool {
         get { UserDefaults.standard.object(forKey: Keys.addShadow) as? Bool ?? true }
         set { UserDefaults.standard.set(newValue, forKey: Keys.addShadow) }
+    }
+    
+    static var showWindowFrame: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.showWindowFrame) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.showWindowFrame) }
     }
     
     // MARK: - Video editor

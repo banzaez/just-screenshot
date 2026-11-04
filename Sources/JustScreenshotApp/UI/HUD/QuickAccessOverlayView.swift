@@ -17,6 +17,7 @@ public struct QuickAccessOverlayView: View {
     @State private var feedbackTask: Task<Void, Never>?
     @State private var isThumbnailHovered = false
     @State private var justCopied = false
+    @State private var detectedQR: String?
     
     public init(
         item: CapturedItem,
@@ -83,6 +84,23 @@ public struct QuickAccessOverlayView: View {
                         .transition(.opacity)
                 }
                 
+                if detectedQR != nil {
+                    VStack {
+                        HStack {
+                            Image(systemName: "qrcode")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(4)
+                                .background(Color.black.opacity(0.65))
+                                .clipShape(Circle())
+                                .padding(5)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                    .transition(.opacity)
+                }
+                
                 if let feedback {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.black.opacity(0.82))
@@ -124,10 +142,29 @@ public struct QuickAccessOverlayView: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
-                        Text("\(Int(item.image.size.width)) × \(Int(item.image.size.height)) px")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        if let qr = detectedQR {
+                            Button {
+                                handleQRAction(qr)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "qrcode")
+                                    Text(isURL(qr) ? L("hud.qr_open_link") : L("hud.qr_copy"))
+                                }
+                                .font(.system(size: 10, weight: .semibold))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.18))
+                                .foregroundStyle(Color.accentColor)
+                                .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .help(qr)
+                        } else {
+                            Text("\(Int(item.image.size.width)) × \(Int(item.image.size.height)) px")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     
                     Spacer(minLength: 4)
@@ -223,6 +260,27 @@ public struct QuickAccessOverlayView: View {
         .onTapGesture(perform: onAnnotate)
         .shadow(color: .black.opacity(0.38), radius: 16, x: 0, y: 8)
         .onHover(perform: onHover)
+        .task {
+            let found = await TextRecognizer.detectQRCodes(in: item.image)
+            withAnimation(.easeOut(duration: 0.2)) {
+                detectedQR = found.first
+            }
+        }
+    }
+    
+    private func isURL(_ str: String) -> Bool {
+        guard let url = URL(string: str), let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+    
+    private func handleQRAction(_ qr: String) {
+        ImageExporter.copyText(qr)
+        if isURL(qr), let url = URL(string: qr) {
+            NSWorkspace.shared.open(url)
+            flash(L("hud.qr_opened"))
+        } else {
+            flash(L("hud.qr_copied"))
+        }
     }
 }
 

@@ -28,18 +28,81 @@ extension AppWindowManager {
         window.contentView = NSHostingView(rootView: PinnedImageView(
             image: image,
             onClose: { [weak self] in self?.closePin(id: pinID) },
-            onEdit: { [weak self] in self?.openAnnotationEditor(item: CapturedItem(image: image, rect: .zero)) }
+            onEdit: { [weak self] in self?.openAnnotationEditor(item: CapturedItem(image: image, rect: .zero)) },
+            onToggleClickThrough: { [weak self] isLocked in self?.setPinClickThrough(id: pinID, isLocked: isLocked) }
         ))
         
         let managed = ManagedWindow(window: window) { [weak self] closed in
-            self?.pins = self?.pins.filter { $0.value !== closed } ?? [:]
+            self?.closePin(id: pinID)
         }
         pins[pinID] = managed
         window.orderFrontRegardless()
     }
     
+    public func setPinClickThrough(id: UUID, isLocked: Bool) {
+        guard let managed = pins[id] else { return }
+        managed.window.ignoresMouseEvents = isLocked
+        if isLocked {
+            lockedPinIDs.insert(id)
+            ensurePinOptionMonitors()
+        } else {
+            lockedPinIDs.remove(id)
+            if lockedPinIDs.isEmpty {
+                removePinOptionMonitors()
+            }
+        }
+        hasLockedPins = !lockedPinIDs.isEmpty
+    }
+    
+    public func unlockAllPins() {
+        for id in lockedPinIDs {
+            pins[id]?.window.ignoresMouseEvents = false
+        }
+        lockedPinIDs.removeAll()
+        removePinOptionMonitors()
+        hasLockedPins = false
+    }
+    
     func closePin(id: UUID) {
+        lockedPinIDs.remove(id)
+        if lockedPinIDs.isEmpty {
+            removePinOptionMonitors()
+        }
+        hasLockedPins = !lockedPinIDs.isEmpty
         guard let managed = pins.removeValue(forKey: id) else { return }
         managed.closeSilently()
+    }
+    
+    private func ensurePinOptionMonitors() {
+        guard pinOptionGlobalMonitor == nil else { return }
+        
+        let handleFlagsChanged: (NSEvent) -> Void = { [weak self] event in
+            guard let self else { return }
+            let isOptionPressed = event.modifierFlags.contains(.option)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                for id in self.lockedPinIDs {
+                    // При зажатом Option временно разрешаем кликать по окну
+                    self.pins[id]?.window.ignoresMouseEvents = !isOptionPressed
+                }
+            }
+        }
+        
+        pinOptionGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handleFlagsChanged)
+        pinOptionLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            handleFlagsChanged(event)
+            return event
+        }
+    }
+    
+    private func removePinOptionMonitors() {
+        if let gMon = pinOptionGlobalMonitor {
+            NSEvent.removeMonitor(gMon)
+            pinOptionGlobalMonitor = nil
+        }
+        if let lMon = pinOptionLocalMonitor {
+            NSEvent.removeMonitor(lMon)
+            pinOptionLocalMonitor = nil
+        }
     }
 }

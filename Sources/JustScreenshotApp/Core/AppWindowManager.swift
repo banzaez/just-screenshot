@@ -50,6 +50,11 @@ public final class AppWindowManager {
     public var isRecordingPaused: Bool = false
     public var recordingDuration: TimeInterval = 0
     public var recordingRect: CGRect = .zero
+    public var hasLockedPins: Bool = false
+    
+    @ObservationIgnored var lockedPinIDs: Set<UUID> = []
+    @ObservationIgnored var pinOptionLocalMonitor: Any?
+    @ObservationIgnored var pinOptionGlobalMonitor: Any?
     
     @ObservationIgnored let overlayState = OverlayPoolState()
     @ObservationIgnored let recordingState = RecordingSessionState()

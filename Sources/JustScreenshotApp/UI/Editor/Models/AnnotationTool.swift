@@ -3,6 +3,7 @@ import SwiftUI
 /// Инструменты аннотаций Just Screenshot
 public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     case select = "Выбор / Перемещение"
+    case crop = "Обрезка"
     case arrow = "Стрелка"
     case curvedArrow = "Изогнутая стрелка"
     case rectangle = "Прямоугольник"
@@ -21,6 +22,7 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     public var storageKey: String {
         switch self {
         case .select: return "select"
+        case .crop: return "crop"
         case .arrow: return "arrow"
         case .curvedArrow: return "curvedArrow"
         case .rectangle: return "rectangle"
@@ -40,7 +42,7 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     }
     
     /// Группы для тулбара
-    public static let selectGroup: [AnnotationTool] = [.select]
+    public static let selectGroup: [AnnotationTool] = [.select, .crop]
     public static let shapesGroup: [AnnotationTool] = [.arrow, .curvedArrow, .rectangle, .roundedRect, .ellipse]
     public static let annotateGroup: [AnnotationTool] = [.text, .counter, .highlighter]
     public static let redactGroup: [AnnotationTool] = [.blur, .spotlight, .magnifier]
@@ -48,6 +50,7 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     public var iconName: String {
         switch self {
         case .select: return "cursorarrow"
+        case .crop: return "crop"
         case .arrow: return "arrow.up.right"
         case .curvedArrow: return "arrow.turn.up.right"
         case .rectangle: return "square"
@@ -66,6 +69,7 @@ public enum AnnotationTool: String, CaseIterable, Identifiable, Sendable {
     public var localizedTitle: String {
         switch self {
         case .select: return L("editor.tool.select")
+        case .crop: return L("editor.tool.crop")
         case .arrow: return L("editor.tool.arrow")
         case .curvedArrow: return L("editor.tool.curved_arrow")
         case .rectangle: return L("editor.tool.rectangle")

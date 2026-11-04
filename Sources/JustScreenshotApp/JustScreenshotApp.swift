@@ -80,6 +80,13 @@ struct JustScreenshotApp: App {
                     }
                     .keyboardShortcut("5", modifiers: [.command, .option])
                     
+                    Button {
+                        windowManager.startTextCapture()
+                    } label: {
+                        Label(L("menu.capture_text"), systemImage: "text.viewfinder")
+                    }
+                    .keyboardShortcut("6", modifiers: [.command, .option])
+                    
                     Menu {
                         Button(L("menu.delay_3s")) {
                             windowManager.startAreaCapture(delaySeconds: 3)
@@ -92,6 +99,16 @@ struct JustScreenshotApp: App {
                         }
                     } label: {
                         Label(L("menu.timed_screenshot"), systemImage: "timer")
+                    }
+                    
+                    Divider()
+                }
+                
+                if windowManager.hasLockedPins {
+                    Button {
+                        windowManager.unlockAllPins()
+                    } label: {
+                        Label(L("pin.unlock_pins"), systemImage: "lock.open")
                     }
                     
                     Divider()

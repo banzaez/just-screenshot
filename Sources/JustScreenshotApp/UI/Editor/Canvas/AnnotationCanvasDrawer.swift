@@ -84,7 +84,7 @@ enum AnnotationCanvasDrawer {
         let style = StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round)
         
         switch item.tool {
-        case .select:
+        case .select, .crop:
             break
         case .arrow:
             var p = Path()

@@ -9,6 +9,7 @@ public struct EditorBottomBarView: View {
     @Binding public var backdropCornerRadius: CGFloat
     @Binding public var backdropShadowRadius: CGFloat
     @Binding public var addShadow: Bool
+    @Binding public var showWindowFrame: Bool
     @Binding public var justCopied: Bool
     
     public let onClose: () -> Void
@@ -27,6 +28,7 @@ public struct EditorBottomBarView: View {
         backdropCornerRadius: Binding<CGFloat>,
         backdropShadowRadius: Binding<CGFloat>,
         addShadow: Binding<Bool>,
+        showWindowFrame: Binding<Bool> = .constant(false),
         justCopied: Binding<Bool> = .constant(false),
         onClose: @escaping () -> Void,
         onDelete: @escaping () -> Void = {},
@@ -40,6 +42,7 @@ public struct EditorBottomBarView: View {
         self._backdropCornerRadius = backdropCornerRadius
         self._backdropShadowRadius = backdropShadowRadius
         self._addShadow = addShadow
+        self._showWindowFrame = showWindowFrame
         self._justCopied = justCopied
         self.onClose = onClose
         self.onDelete = onDelete
@@ -66,6 +69,14 @@ public struct EditorBottomBarView: View {
                 tooltip: L("editor.backdrop")
             ) {
                 showBackdrop.toggle()
+            }
+            
+            EditorActionIconButton(
+                icon: "macwindow",
+                style: showWindowFrame ? .primary : .secondary,
+                tooltip: L("editor.window_frame")
+            ) {
+                showWindowFrame.toggle()
             }
             
             if showBackdrop {

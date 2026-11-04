@@ -47,6 +47,70 @@ extension AppWindowManager {
         }
     }
     
+    // MARK: - Быстрый захват текста (Text Capture / OCR)
+    
+    public func startTextCapture() {
+        Task { [weak self] in
+            guard let self else { return }
+            guard await ScreenCaptureService.shared.ensurePermission() else { return }
+            self.presentTextCaptureOverlays()
+        }
+    }
+    
+    private func presentTextCaptureOverlays() {
+        let token = beginOverlaySession()
+        let screens = activeScreens()
+        guard !screens.isEmpty else { return }
+        
+        let overlays = screens.map { screen -> AreaOverlayWindow in
+            let overlay = acquireOverlay(for: screen)
+            return overlay.configured(
+                screen: screen,
+                mode: .areaOnly,
+                onCompleteRect: { [weak self] rect in
+                    guard let self else { return }
+                    let overlayIDs = self.overlayWindows.compactMap {
+                        $0.windowNumber > 0 ? CGWindowID($0.windowNumber) : nil
+                    }
+                    self.closeAllOverlays()
+                    Task { [weak self] in
+                        await self?.captureRectAndRecognizeText(rect: rect, excludingWindowIDs: overlayIDs)
+                    }
+                },
+                onCompleteWindow: { _ in },
+                onCancel: { [weak self] in self?.closeAllOverlays() },
+                onNeedBackgroundSample: { [weak self, weak overlay] in
+                    guard let self, let overlay else { return }
+                    self.ensureSampler(for: overlay, token: token)
+                }
+            )
+        }
+        presentOverlays(overlays)
+        
+        if let primary = overlays.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? overlays.first {
+            ensureSampler(for: primary, token: token)
+        }
+    }
+    
+    private func captureRectAndRecognizeText(rect: CGRect, excludingWindowIDs: [CGWindowID]) async {
+        do {
+            let image = try await ScreenCaptureService.shared.captureRect(rect, excludingWindowIDs: excludingWindowIDs)
+            let text = await TextRecognizer.recognize(in: image)
+            if !text.isEmpty {
+                ImageExporter.copyText(text)
+                if AppSettings.shared.playSound {
+                    NSSound(named: "Screen Capture")?.play()
+                }
+                hudStack.showToast(text: L("hud.ocr_copied", text.count), icon: "text.viewfinder")
+            } else {
+                NSSound.beep()
+                hudStack.showToast(text: L("hud.ocr_not_found"), icon: "text.viewfinder")
+            }
+        } catch {
+            print("Text capture error: \(error.localizedDescription)")
+        }
+    }
+    
     private func presentAreaOverlays(delaySeconds: Int = 0) {
         let token = beginOverlaySession()
         let screens = activeScreens()

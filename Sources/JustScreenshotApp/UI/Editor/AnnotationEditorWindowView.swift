@@ -31,7 +31,7 @@ public struct AnnotationEditorWindowView: View {
     
     private var capturedItem: CapturedItem { model.capturedItem }
     private var zoom: CGFloat { fitMode ? fitScale : manualZoom }
-    private var imgSize: CGSize { capturedItem.image.size }
+    private var imgSize: CGSize { model.currentBaseImage.size }
     private var extraPad: CGFloat { model.showBackdrop ? model.backdropPadding : 0 }
     
     private func computeFit(for size: CGSize) -> CGFloat {
@@ -39,7 +39,7 @@ public struct AnnotationEditorWindowView: View {
         let w = max(size.width - margin, 80)
         let h = max(size.height - margin, 80)
         let contentW = imgSize.width + extraPad * 2
-        let contentH = imgSize.height + extraPad * 2
+        let contentH = imgSize.height + (model.showWindowFrame ? 30 : 0) + extraPad * 2
         guard contentW > 0, contentH > 0 else { return 1 }
         // Разрешаем upscale, чтобы мелкий скрин заполнял окно
         return max(0.05, min(w / contentW, h / contentH, 4.0))
@@ -106,6 +106,12 @@ public struct AnnotationEditorWindowView: View {
             
             EditorSelectedItemBar(
                 item: model.selectedItem,
+                isCropping: model.selectedTool == .crop,
+                onApplyCrop: { model.applyCrop() },
+                onResetCrop: {
+                    model.resetCrop()
+                    model.selectedTool = .select
+                },
                 focusTextField: model.shouldFocusTextEditor,
                 onTextChange: { val in model.liveUpdateSelected { $0.text = val } },
                 onFontSizeChange: { val in model.updateSelected { $0.fontSize = val } },
@@ -128,27 +134,36 @@ public struct AnnotationEditorWindowView: View {
                 let displayH = imgSize.height * z
                 let pad = extraPad * z
                 
+                let titlebarH = model.showWindowFrame ? 30 * z : 0
+                let totalH = displayH + titlebarH
+                
                 ScrollView([.horizontal, .vertical]) {
                     ZStack {
                         if model.showBackdrop {
                             Rectangle().fill(model.backdropPreset.gradient)
                         }
-                        ZStack {
-                            Image(nsImage: capturedItem.image)
-                                .resizable()
+                        VStack(spacing: 0) {
+                            if model.showWindowFrame {
+                                MacOSWindowHeaderView(scale: z)
+                                    .frame(width: displayW, height: titlebarH)
+                            }
+                            ZStack {
+                                Image(nsImage: model.currentBaseImage)
+                                    .resizable()
+                                    .frame(width: displayW, height: displayH)
+                                AnnotationCanvasView(
+                                    model: model,
+                                    baseImage: model.currentBaseImage,
+                                    zoomScale: z,
+                                    blurredImage: blurredImage
+                                )
                                 .frame(width: displayW, height: displayH)
-                            AnnotationCanvasView(
-                                model: model,
-                                baseImage: capturedItem.image,
-                                zoomScale: z,
-                                blurredImage: blurredImage
-                            )
-                            .frame(width: displayW, height: displayH)
+                            }
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: model.showBackdrop ? model.backdropCornerRadius * z : 0))
+                        .clipShape(RoundedRectangle(cornerRadius: (model.showBackdrop || model.showWindowFrame) ? model.backdropCornerRadius * z : 0))
                         .shadow(color: .black.opacity(model.showBackdrop && model.addShadow ? 0.4 : 0), radius: model.backdropShadowRadius * z, x: 0, y: model.backdropShadowRadius * 0.4 * z)
                     }
-                    .frame(width: displayW + pad * 2, height: displayH + pad * 2)
+                    .frame(width: displayW + pad * 2, height: totalH + pad * 2)
                     .frame(
                         minWidth: geo.size.width,
                         minHeight: geo.size.height
@@ -160,6 +175,8 @@ public struct AnnotationEditorWindowView: View {
                 }
                 .onChange(of: model.showBackdrop) { _, _ in fitScale = computeFit(for: geo.size) }
                 .onChange(of: model.backdropPadding) { _, _ in fitScale = computeFit(for: geo.size) }
+                .onChange(of: model.showWindowFrame) { _, _ in fitScale = computeFit(for: geo.size) }
+                .onChange(of: model.currentBaseImage) { _, _ in fitScale = computeFit(for: geo.size) }
             }
             
             Divider()
@@ -171,6 +188,7 @@ public struct AnnotationEditorWindowView: View {
                 backdropCornerRadius: $model.backdropCornerRadius,
                 backdropShadowRadius: $model.backdropShadowRadius,
                 addShadow: $model.addShadow,
+                showWindowFrame: $model.showWindowFrame,
                 justCopied: $justCopied,
                 onClose: onClose,
                 onDelete: onDelete,
@@ -229,5 +247,31 @@ public struct AnnotationEditorWindowView: View {
             try? await Task.sleep(nanoseconds: 1_500_000_000)
             withAnimation(.easeInOut(duration: 0.18)) { justCopied = false }
         }
+    }
+}
+
+/// Заголовок окна в стиле macOS с тремя кнопками-светофорами 🔴🟡🟢
+private struct MacOSWindowHeaderView: View {
+    let scale: CGFloat
+    
+    var body: some View {
+        HStack(spacing: 8 * scale) {
+            Circle()
+                .fill(Color(red: 255/255, green: 95/255, blue: 86/255))
+                .frame(width: 12 * scale, height: 12 * scale)
+                .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 0.5))
+            Circle()
+                .fill(Color(red: 255/255, green: 189/255, blue: 46/255))
+                .frame(width: 12 * scale, height: 12 * scale)
+                .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 0.5))
+            Circle()
+                .fill(Color(red: 39/255, green: 201/255, blue: 63/255))
+                .frame(width: 12 * scale, height: 12 * scale)
+                .overlay(Circle().stroke(Color.black.opacity(0.18), lineWidth: 0.5))
+            Spacer()
+        }
+        .padding(.horizontal, 13 * scale)
+        .frame(maxHeight: .infinity)
+        .background(Color(white: 0.18))
     }
 }

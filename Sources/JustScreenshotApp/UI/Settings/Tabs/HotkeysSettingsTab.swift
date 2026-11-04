@@ -91,6 +91,20 @@ struct HotkeysSettingsTab: View {
                 )
 
                 HotkeyDualCardView(
+                    id: "ocr",
+                    icon: "text.viewfinder",
+                    iconColor: .indigo,
+                    title: L("settings.hotkeys.ocr_title"),
+                    subtitle: L("settings.hotkeys.ocr_sub"),
+                    primaryShortcut: $settings.shortcutOCR,
+                    altShortcut: $settings.shortcutOCRAlt,
+                    recordingTarget: $recordingTarget,
+                    onShortcutChanged: {
+                        AppWindowManager.shared.reloadGlobalHotkeys()
+                    }
+                )
+
+                HotkeyDualCardView(
                     id: "history",
                     icon: "clock.arrow.circlepath",
                     iconColor: .orange,

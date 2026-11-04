@@ -68,5 +68,15 @@ final class AppHotKeyCoordinator {
                 wm?.repeatLastCapture()
             }
         }
+        
+        // 6. Быстрый захват текста (Text Capture / OCR)
+        hk.register(id: 6, keyCode: settings.shortcutOCR.keyCode, modifiers: settings.shortcutOCR.modifiers) { [weak wm] in
+            wm?.startTextCapture()
+        }
+        if let alt = settings.shortcutOCRAlt {
+            hk.register(id: 16, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
+                wm?.startTextCapture()
+            }
+        }
     }
 }

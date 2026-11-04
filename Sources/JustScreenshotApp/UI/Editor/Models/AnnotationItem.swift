@@ -87,7 +87,7 @@ public struct AnnotationItem: Identifiable, Sendable {
     /// Рамка выделения для не-линейных элементов (в системе элемента, без поворота)
     public var boundingBox: CGRect {
         switch tool {
-        case .select:
+        case .select, .crop:
             return .zero
         case .counter:
             return CGRect(x: startPoint.x - 19, y: startPoint.y - 19, width: 38, height: 38)

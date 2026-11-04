@@ -4,6 +4,9 @@ import AppKit
 /// Контекстная панель выбранного элемента (с фиксированной высотой, чтобы не прыгал холст)
 public struct EditorSelectedItemBar: View {
     public let item: AnnotationItem?
+    public let isCropping: Bool
+    public let onApplyCrop: () -> Void
+    public let onResetCrop: () -> Void
     public let focusTextField: Bool
     public let onTextChange: (String) -> Void
     public let onFontSizeChange: (CGFloat) -> Void
@@ -21,6 +24,9 @@ public struct EditorSelectedItemBar: View {
     
     public init(
         item: AnnotationItem?,
+        isCropping: Bool = false,
+        onApplyCrop: @escaping () -> Void = {},
+        onResetCrop: @escaping () -> Void = {},
         focusTextField: Bool = false,
         onTextChange: @escaping (String) -> Void,
         onFontSizeChange: @escaping (CGFloat) -> Void,
@@ -35,6 +41,9 @@ public struct EditorSelectedItemBar: View {
         onTextFocusConsumed: @escaping () -> Void = {}
     ) {
         self.item = item
+        self.isCropping = isCropping
+        self.onApplyCrop = onApplyCrop
+        self.onResetCrop = onResetCrop
         self.focusTextField = focusTextField
         self.onTextChange = onTextChange
         self.onFontSizeChange = onFontSizeChange
@@ -50,8 +59,50 @@ public struct EditorSelectedItemBar: View {
     }
     
     public var body: some View {
-        SelectedAnnotationBarControls.BarChrome(isActive: item != nil) {
-            if let item = item {
+        SelectedAnnotationBarControls.BarChrome(isActive: item != nil || isCropping) {
+            if isCropping {
+                HStack(spacing: 12) {
+                    SelectedAnnotationBarControls.TitleLabel(
+                        title: L("editor.tool.crop"),
+                        systemImage: "crop"
+                    )
+                    
+                    Divider().frame(height: 20)
+                    
+                    Button {
+                        onApplyCrop()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "checkmark")
+                            Text(L("editor.crop_apply"))
+                        }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.return, modifiers: [])
+                    
+                    Button {
+                        onResetCrop()
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "xmark")
+                            Text(L("editor.crop_reset"))
+                        }
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.18), in: RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 4)
+            } else if let item = item {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         SelectedAnnotationBarControls.TitleLabel(

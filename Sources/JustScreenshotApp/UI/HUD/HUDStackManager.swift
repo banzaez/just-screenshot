@@ -34,6 +34,8 @@ final class HUDStackManager {
     private static let afterHoverLifetime: UInt64 = 3_000_000_000
     
     private var entries: [Entry] = [] // новые — первые
+    private var activeToastWindow: NSWindow?
+    private var toastDismissTask: Task<Void, Never>?
     
     func show(item: CapturedItem, actions: Actions) {
         let window = NSWindow(
@@ -101,6 +103,68 @@ final class HUDStackManager {
     
     func dismissAll() {
         for e in entries { dismiss(id: e.id) }
+        activeToastWindow?.orderOut(nil)
+        activeToastWindow?.close()
+        activeToastWindow = nil
+    }
+    
+    /// Отображение легкого всплывающего тоста (например, при быстром OCR захвате текста)
+    func showToast(text: String, icon: String = "checkmark.circle.fill") {
+        toastDismissTask?.cancel()
+        activeToastWindow?.orderOut(nil)
+        activeToastWindow?.close()
+        activeToastWindow = nil
+        
+        guard let screen = NSScreen.main else { return }
+        let vf = screen.visibleFrame
+        
+        let toastView = HUDToastView(icon: icon, text: text)
+        let hostingView = NSHostingView(rootView: toastView)
+        let fittingSize = hostingView.fittingSize
+        let toastWidth = max(180, fittingSize.width)
+        let toastHeight = max(40, fittingSize.height)
+        
+        let window = NSWindow(
+            contentRect: NSRect(
+                x: vf.midX - toastWidth / 2,
+                y: vf.minY + 50,
+                width: toastWidth,
+                height: toastHeight
+            ),
+            styleMask: [.borderless], backing: .buffered, defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.level = .floating
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        window.contentView = hostingView
+        window.alphaValue = 0
+        window.orderFrontRegardless()
+        
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            window.animator().alphaValue = 1
+        }
+        
+        activeToastWindow = window
+        toastDismissTask = Task { @MainActor [weak self, weak window] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, let window else { return }
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.25
+                window.animator().alphaValue = 0
+            }, completionHandler: { [weak self, weak window] in
+                Task { @MainActor [weak self, weak window] in
+                    window?.orderOut(nil)
+                    window?.close()
+                    if self?.activeToastWindow === window {
+                        self?.activeToastWindow = nil
+                    }
+                }
+            })
+        }
     }
     
     private func hoverChanged(id: UUID, hovering: Bool) {
@@ -146,5 +210,34 @@ final class HUDStackManager {
 private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
+    }
+}
+
+/// Плавающий компактный тост обратной связи
+private struct HUDToastView: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Color.accentColor)
+            Text(text)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    Capsule()
+                        .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                )
+        )
+        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }

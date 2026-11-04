@@ -7,14 +7,16 @@ import Observation
 @MainActor
 public final class AnnotationEditorModel {
     public let capturedItem: CapturedItem
+    public var currentBaseImage: NSImage
     
     public var items: [AnnotationItem] = []
     public var selectedItemID: UUID? = nil
+    public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     
     public var selectedTool: AnnotationTool = EditorPreferences.tool {
         didSet {
-            // Не затираем «рисовалку» при переходе в режим выбора
-            if selectedTool != .select {
+            // Не затираем «рисовалку» при переходе в режим выбора или обрезки
+            if selectedTool != .select && selectedTool != .crop {
                 EditorPreferences.tool = selectedTool
             }
         }
@@ -68,9 +70,22 @@ public final class AnnotationEditorModel {
             markModified()
         }
     }
+    public var showWindowFrame: Bool = EditorPreferences.showWindowFrame {
+        didSet {
+            EditorPreferences.showWindowFrame = showWindowFrame
+            markModified()
+        }
+    }
     
     public private(set) var canUndo: Bool = false
     public private(set) var canRedo: Bool = false
+    
+    private struct EditorStateSnapshot {
+        let image: NSImage
+        let items: [AnnotationItem]
+    }
+    @ObservationIgnored private var snapshotUndoStack: [EditorStateSnapshot] = []
+    @ObservationIgnored private var snapshotRedoStack: [EditorStateSnapshot] = []
     
     @ObservationIgnored private var undoStack: [[AnnotationItem]] = []
     @ObservationIgnored private var redoStack: [[AnnotationItem]] = []
@@ -94,6 +109,7 @@ public final class AnnotationEditorModel {
     
     public init(capturedItem: CapturedItem) {
         self.capturedItem = capturedItem
+        self.currentBaseImage = capturedItem.image
         self.textInputString = L("editor.default_note_text")
     }
     
@@ -200,6 +216,18 @@ public final class AnnotationEditorModel {
     }
     
     public func undo() {
+        if let lastSnap = snapshotUndoStack.popLast() {
+            snapshotRedoStack.append(EditorStateSnapshot(image: currentBaseImage, items: items))
+            isRestoring = true
+            currentBaseImage = lastSnap.image
+            items = lastSnap.items
+            cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            selectedItemID = nil
+            isRestoring = false
+            markModified()
+            updateUndoRedoAvailability()
+            return
+        }
         guard let prev = undoStack.popLast() else { return }
         isRestoring = true
         redoStack.append(items)
@@ -216,6 +244,18 @@ public final class AnnotationEditorModel {
     }
     
     public func redo() {
+        if let nextSnap = snapshotRedoStack.popLast() {
+            snapshotUndoStack.append(EditorStateSnapshot(image: currentBaseImage, items: items))
+            isRestoring = true
+            currentBaseImage = nextSnap.image
+            items = nextSnap.items
+            cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            selectedItemID = nil
+            isRestoring = false
+            markModified()
+            updateUndoRedoAvailability()
+            return
+        }
         guard let next = redoStack.popLast() else { return }
         isRestoring = true
         undoStack.append(items)
@@ -232,8 +272,70 @@ public final class AnnotationEditorModel {
     }
     
     private func updateUndoRedoAvailability() {
-        canUndo = !undoStack.isEmpty
-        canRedo = !redoStack.isEmpty
+        canUndo = !undoStack.isEmpty || !snapshotUndoStack.isEmpty
+        canRedo = !redoStack.isEmpty || !snapshotRedoStack.isEmpty
+    }
+    
+    // MARK: - Обрезка (Crop)
+    
+    public func resetCrop() {
+        cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
+    
+    public func applyCrop() {
+        guard cropRect.width > 0.01, cropRect.height > 0.01 else { return }
+        guard cropRect.origin.x > 0.001 || cropRect.origin.y > 0.001 || cropRect.width < 0.999 || cropRect.height < 0.999 else {
+            selectedTool = .select
+            return
+        }
+        
+        let oldImg = currentBaseImage
+        let imgW = oldImg.size.width
+        let imgH = oldImg.size.height
+        
+        let pixelRect = CGRect(
+            x: cropRect.origin.x * imgW,
+            y: cropRect.origin.y * imgH,
+            width: cropRect.width * imgW,
+            height: cropRect.height * imgH
+        )
+        
+        guard let cg = oldImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+        let scaleX = CGFloat(cg.width) / imgW
+        let scaleY = CGFloat(cg.height) / imgH
+        
+        let cgCropRect = CGRect(
+            x: pixelRect.origin.x * scaleX,
+            y: pixelRect.origin.y * scaleY,
+            width: pixelRect.width * scaleX,
+            height: pixelRect.height * scaleY
+        )
+        
+        guard let croppedCG = cg.cropping(to: cgCropRect) else { return }
+        let newImage = NSImage(cgImage: croppedCG, size: pixelRect.size)
+        
+        snapshotUndoStack.append(EditorStateSnapshot(image: oldImg, items: items))
+        if snapshotUndoStack.count > 20 { snapshotUndoStack.removeFirst() }
+        snapshotRedoStack.removeAll()
+        
+        let offsetX = pixelRect.origin.x
+        let offsetY = pixelRect.origin.y
+        var updatedItems = items
+        for i in updatedItems.indices {
+            updatedItems[i].startPoint.x -= offsetX
+            updatedItems[i].startPoint.y -= offsetY
+            updatedItems[i].endPoint.x -= offsetX
+            updatedItems[i].endPoint.y -= offsetY
+        }
+        
+        isRestoring = true
+        currentBaseImage = newImage
+        items = updatedItems
+        cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+        selectedTool = .select
+        isRestoring = false
+        markModified()
+        updateUndoRedoAvailability()
     }
     
     // MARK: - Convenience mutations
@@ -275,13 +377,14 @@ public final class AnnotationEditorModel {
     
     public func renderFinalImage() -> NSImage {
         AnnotationRenderer.render(
-            baseImage: capturedItem.image,
+            baseImage: currentBaseImage,
             items: items,
             backdrop: showBackdrop ? backdropPreset : nil,
             padding: backdropPadding,
             cornerRadius: backdropCornerRadius,
             shadowRadius: backdropShadowRadius,
             shadow: addShadow,
+            showWindowFrame: showWindowFrame,
             imageID: capturedItem.id
         )
     }
