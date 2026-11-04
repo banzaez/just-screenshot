@@ -176,7 +176,12 @@ public struct AnnotationEditorWindowView: View {
                 .onChange(of: model.showBackdrop) { _, _ in fitScale = computeFit(for: geo.size) }
                 .onChange(of: model.backdropPadding) { _, _ in fitScale = computeFit(for: geo.size) }
                 .onChange(of: model.showWindowFrame) { _, _ in fitScale = computeFit(for: geo.size) }
-                .onChange(of: model.currentBaseImage) { _, _ in fitScale = computeFit(for: geo.size) }
+                .onChange(of: model.currentBaseImage) { _, newImg in
+                    fitScale = computeFit(for: geo.size)
+                    Task {
+                        blurredImage = await BlurFilter.makeBlurredAsync(newImg)
+                    }
+                }
             }
             
             Divider()

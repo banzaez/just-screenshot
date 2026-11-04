@@ -315,7 +315,7 @@ public final class AnnotationEditorModel {
         let newImage = NSImage(cgImage: croppedCG, size: pixelRect.size)
         
         snapshotUndoStack.append(EditorStateSnapshot(image: oldImg, items: items))
-        if snapshotUndoStack.count > 20 { snapshotUndoStack.removeFirst() }
+        if snapshotUndoStack.count > 10 { snapshotUndoStack.removeFirst() }
         snapshotRedoStack.removeAll()
         
         let offsetX = pixelRect.origin.x

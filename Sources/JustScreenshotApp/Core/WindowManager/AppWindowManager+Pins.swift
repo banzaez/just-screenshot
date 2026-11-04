@@ -79,11 +79,16 @@ extension AppWindowManager {
         let handleFlagsChanged: (NSEvent) -> Void = { [weak self] event in
             guard let self else { return }
             let isOptionPressed = event.modifierFlags.contains(.option)
-            Task { @MainActor [weak self] in
-                guard let self else { return }
+            if Thread.isMainThread {
                 for id in self.lockedPinIDs {
-                    // При зажатом Option временно разрешаем кликать по окну
                     self.pins[id]?.window.ignoresMouseEvents = !isOptionPressed
+                }
+            } else {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    for id in self.lockedPinIDs {
+                        self.pins[id]?.window.ignoresMouseEvents = !isOptionPressed
+                    }
                 }
             }
         }

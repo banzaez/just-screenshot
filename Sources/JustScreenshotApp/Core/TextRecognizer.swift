@@ -5,14 +5,16 @@ import Vision
 /// Распознавание текста на изображении (OCR) и QR-кодов через Vision и CoreImage с использованием Swift Concurrency
 public enum TextRecognizer {
     
-    /// Распознавание QR-кодов на изображении с возвратом закодированных строк (URL, текст)
+    /// Распознавание QR-кодов на изображении с возвратом закодированных строк (URL, текст) через Vision (аппаратное ускорение)
     public static func detectQRCodes(in image: NSImage) async -> [String] {
         guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return [] }
         return await Task.detached(priority: .userInitiated) {
-            let ciImage = CIImage(cgImage: cg)
-            let detector = CIDetector(ofType: CIDetectorTypeQRCode, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh])
-            let features = detector?.features(in: ciImage) as? [CIQRCodeFeature] ?? []
-            return features.compactMap { $0.messageString }.filter { !$0.isEmpty }
+            let request = VNDetectBarcodesRequest()
+            request.symbologies = [.qr]
+            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+            try? handler.perform([request])
+            let results = request.results ?? []
+            return results.compactMap { $0.payloadStringValue }.filter { !$0.isEmpty }
         }.value
     }
     
