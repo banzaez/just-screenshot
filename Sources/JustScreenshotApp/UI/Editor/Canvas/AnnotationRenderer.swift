@@ -4,7 +4,7 @@ import Cocoa
 @MainActor
 public enum AnnotationRenderer {
     
-    /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью
+    /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью (Single-Pass рендеринг)
     public static func render(
         baseImage: NSImage,
         items: [AnnotationItem],
@@ -15,20 +15,26 @@ public enum AnnotationRenderer {
         shadow: Bool,
         imageID: UUID? = nil
     ) -> NSImage {
-        let inner = render(baseImage: baseImage, items: items, imageID: imageID)
-        guard let backdrop else { return inner }
+        guard let backdrop else {
+            return render(baseImage: baseImage, items: items, imageID: imageID)
+        }
         
+        let size = baseImage.size
+        guard size.width > 0, size.height > 0 else { return baseImage }
         let pad = padding
-        let outSize = NSSize(width: inner.size.width + pad * 2, height: inner.size.height + pad * 2)
-        let scale = backingScale(for: inner)
+        let outSize = NSSize(width: size.width + pad * 2, height: size.height + pad * 2)
+        let scale = backingScale(for: baseImage)
+        let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage, id: imageID) : nil
         
-        return renderInBitmapContext(pointSize: outSize, scale: scale) { _ in
+        return renderInBitmapContext(pointSize: outSize, scale: scale) { context in
+            // 1. Отрисовка градиента подложки
             let cols = backdrop.colors.map { NSColor($0) }
             let bgRect = NSRect(origin: .zero, size: outSize)
-            let bgPath = NSBezierPath(roundedRect: bgRect, xRadius: 0, yRadius: 0)
+            let bgPath = NSBezierPath(rect: bgRect)
             NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
             
-            let innerRect = NSRect(x: pad, y: pad, width: inner.size.width, height: inner.size.height)
+            // 2. Отрисовка тени под скриншотом
+            let innerRect = NSRect(x: pad, y: pad, width: size.width, height: size.height)
             let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
             
             if shadow && shadowRadius > 0 {
@@ -43,11 +49,20 @@ public enum AnnotationRenderer {
                 NSGraphicsContext.restoreGraphicsState()
             }
             
+            // 3. Однопроходная отрисовка снимка и аннотаций в одной маске без промежуточных NSImage
             NSGraphicsContext.saveGraphicsState()
             clip.addClip()
-            inner.draw(in: innerRect)
+            baseImage.draw(in: innerRect)
+            
+            context.saveGState()
+            context.translateBy(x: pad, y: pad)
+            for item in items {
+                renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
+            }
+            context.restoreGState()
+            
             NSGraphicsContext.restoreGraphicsState()
-        } ?? inner
+        } ?? baseImage
     }
     
     /// Отрисовка исходного изображения со списком аннотаций в точном Retina-разрешении без lockFocus()

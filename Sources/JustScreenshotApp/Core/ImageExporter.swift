@@ -62,14 +62,15 @@ public enum ImageExporter {
     /// Сохранение временного PNG файла для передачи в Drag & Drop с очисткой устаревших файлов
     public static func saveTemporaryPNG(_ image: NSImage, filename: String = "Screenshot") -> URL? {
         guard let data = pngData(from: image) else { return nil }
-        let tempDir = FileManager.default.temporaryDirectory
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("JustScreenshotDrag", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
         
-        // Очистка старых временных файлов снимков (> 1 часа) в фоне
+        // Очистка старых временных файлов снимков (> 1 часа) в изолированной директории
         Task.detached(priority: .utility) {
             let fileManager = FileManager.default
             if let urls = try? fileManager.contentsOfDirectory(at: tempDir, includingPropertiesForKeys: [.creationDateKey]) {
                 let hourAgo = Date().addingTimeInterval(-3600)
-                for url in urls where url.lastPathComponent.hasPrefix("Screenshot-") || url.lastPathComponent.hasPrefix("Annotated-") {
+                for url in urls {
                     if let values = try? url.resourceValues(forKeys: [.creationDateKey]),
                        let date = values.creationDate, date < hourAgo {
                         try? fileManager.removeItem(at: url)

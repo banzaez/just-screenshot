@@ -268,4 +268,50 @@ struct AnnotationEditorHistoryTests {
             HistoryStore.shared.delete(id: newEntry.id)
         }
     }
+    
+    @Test @MainActor func testSinglePassBackdropRendering() {
+        let size = NSSize(width: 200, height: 150)
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.red.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        image.unlockFocus()
+        
+        let item = AnnotationItem(tool: .arrow, startPoint: CGPoint(x: 10, y: 10), endPoint: CGPoint(x: 50, y: 50))
+        let rendered = AnnotationRenderer.render(
+            baseImage: image,
+            items: [item],
+            backdrop: .aurora,
+            padding: 30,
+            cornerRadius: 12,
+            shadowRadius: 16,
+            shadow: true
+        )
+        
+        #expect(abs(rendered.size.width - 260) < 0.1)
+        #expect(abs(rendered.size.height - 210) < 0.1)
+    }
+    
+    @Test @MainActor func testHistoryStoreDownscaledThumbnailCache() {
+        let originalSize = NSSize(width: 1200, height: 800)
+        let largeImage = NSImage(size: originalSize)
+        largeImage.lockFocus()
+        NSColor.blue.setFill()
+        NSRect(origin: .zero, size: originalSize).fill()
+        largeImage.unlockFocus()
+        
+        let testID = UUID()
+        let entry = HistoryStore.shared.add(largeImage, id: testID)
+        #expect(entry != nil)
+        
+        // Превью сразу доступно синхронно через cachedThumbnail
+        let cached = HistoryStore.shared.cachedThumbnail(for: entry!)
+        #expect(cached != nil)
+        if let cached {
+            #expect(cached.size.width <= 560)
+            #expect(cached.size.height <= 560)
+        }
+        
+        HistoryStore.shared.delete(id: testID)
+    }
 }

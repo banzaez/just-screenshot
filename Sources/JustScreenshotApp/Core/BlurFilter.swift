@@ -7,7 +7,8 @@ public enum BlurFilter {
     // NSCache потокобезопасен; nonisolated(unsafe) — для Swift 6 Sendable-проверки
     nonisolated(unsafe) private static let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
-        c.countLimit = 16
+        c.countLimit = 6
+        c.totalCostLimit = 128 * 1024 * 1024 // 128 MB лимит памяти
         return c
     }()
     
@@ -26,7 +27,8 @@ public enum BlurFilter {
         guard let output = filter.outputImage?.cropped(to: input.extent),
               let result = context.createCGImage(output, from: input.extent) else { return nil }
         let blurred = NSImage(cgImage: result, size: image.size)
-        cache.setObject(blurred, forKey: key)
+        let cost = max(1, result.width * result.height * 4)
+        cache.setObject(blurred, forKey: key, cost: cost)
         return blurred
     }
     

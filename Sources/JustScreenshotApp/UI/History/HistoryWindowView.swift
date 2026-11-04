@@ -183,6 +183,19 @@ private struct HistoryCard: View {
     @State private var hovering = false
     @State private var copiedFeedback = false
     
+    init(
+        entry: HistoryEntry,
+        onEdit: @escaping () -> Void,
+        onPin: @escaping () -> Void,
+        onCopy: @escaping () -> Void
+    ) {
+        self.entry = entry
+        self.onEdit = onEdit
+        self.onPin = onPin
+        self.onCopy = onCopy
+        _thumbnail = State(initialValue: HistoryStore.shared.cachedThumbnail(for: entry))
+    }
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
@@ -315,7 +328,9 @@ private struct HistoryCard: View {
                 return NSItemProvider()
             }
             .task(id: entry.id) {
-                thumbnail = await store.thumbnailAsync(for: entry)
+                if thumbnail == nil {
+                    thumbnail = await store.thumbnailAsync(for: entry)
+                }
             }
             
             HStack(spacing: 6) {

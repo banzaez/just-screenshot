@@ -66,6 +66,7 @@ public final class HistoryStore {
     @ObservationIgnored private let indexURL: URL
     @ObservationIgnored private let maxEntries = 300
     @ObservationIgnored private let thumbnails = NSCache<NSUUID, NSImage>()
+    @ObservationIgnored private var saveIndexTask: Task<Void, Never>?
     
     private init() {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -73,6 +74,7 @@ public final class HistoryStore {
         indexURL = directory.appendingPathComponent("index.json")
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         thumbnails.countLimit = 200
+        thumbnails.totalCostLimit = 64 * 1024 * 1024 // 64 MB лимит для миниатюр
         loadIndex()
     }
     
@@ -102,7 +104,10 @@ public final class HistoryStore {
     private func saveIndex() {
         let currentEntries = self.entries
         let url = self.indexURL
-        Task.detached(priority: .utility) {
+        saveIndexTask?.cancel()
+        saveIndexTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            guard !Task.isCancelled else { return }
             if let data = try? JSONEncoder().encode(currentEntries) {
                 try? data.write(to: url, options: .atomic)
             }
@@ -122,8 +127,10 @@ public final class HistoryStore {
         )
         let url = fileURL(for: entry)
         
-        // Сразу кэшируем превью в памяти, чтобы UI истории не ждал завершения записи на диск
-        thumbnails.setObject(image, forKey: id as NSUUID)
+        // Кэшируем легковесную миниатюру (<0.5 МБ вместо 40-60 МБ оригинала в RAM)
+        let thumb = Self.makeThumbnail(from: cgImage)
+        let cost = max(1, Int(thumb.size.width * thumb.size.height * 4))
+        thumbnails.setObject(thumb, forKey: id as NSUUID, cost: cost)
         
         // Фоновое кодирование PNG и запись файла без блокировки MainActor UI
         Task.detached(priority: .utility) {
@@ -190,6 +197,11 @@ public final class HistoryStore {
         return img
     }
     
+    /// Мгновенное получение уже закэшированной в памяти миниатюры без I/O и задержек
+    public func cachedThumbnail(for entry: HistoryEntry) -> NSImage? {
+        thumbnails.object(forKey: entry.id as NSUUID)
+    }
+    
     /// Синхронная миниатюра через ImageIO / AVAssetImageGenerator
     public func thumbnail(for entry: HistoryEntry) -> NSImage? {
         if let cached = thumbnails.object(forKey: entry.id as NSUUID) { return cached }
@@ -199,7 +211,8 @@ public final class HistoryStore {
             : Self.decodeThumbnailCGImage(at: url)
         guard let cg else { return nil }
         let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        thumbnails.setObject(img, forKey: entry.id as NSUUID)
+        let cost = max(1, Int(cg.width * cg.height * 4))
+        thumbnails.setObject(img, forKey: entry.id as NSUUID, cost: cost)
         return img
     }
     
@@ -216,8 +229,38 @@ public final class HistoryStore {
             return nil
         }
         let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        thumbnails.setObject(img, forKey: entry.id as NSUUID)
+        let cost = max(1, Int(cg.width * cg.height * 4))
+        thumbnails.setObject(img, forKey: entry.id as NSUUID, cost: cost)
         return img
+    }
+    
+    nonisolated private static func makeThumbnail(from cgImage: CGImage, maxDimension: CGFloat = 560) -> NSImage {
+        let w = CGFloat(cgImage.width)
+        let h = CGFloat(cgImage.height)
+        guard w > maxDimension || h > maxDimension else {
+            return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+        }
+        let scale = maxDimension / max(w, h)
+        let thumbW = max(1, Int((w * scale).rounded()))
+        let thumbH = max(1, Int((h * scale).rounded()))
+        let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ctx = CGContext(
+            data: nil,
+            width: thumbW,
+            height: thumbH,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+        }
+        ctx.interpolationQuality = .medium
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: thumbW, height: thumbH))
+        guard let thumbCG = ctx.makeImage() else {
+            return NSImage(cgImage: cgImage, size: NSSize(width: w, height: h))
+        }
+        return NSImage(cgImage: thumbCG, size: NSSize(width: thumbW, height: thumbH))
     }
     
     nonisolated private static func decodeThumbnailCGImage(at url: URL) -> CGImage? {
