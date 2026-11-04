@@ -13,6 +13,7 @@ public struct AnnotationEditorWindowView: View {
     @State private var manualZoom: CGFloat = 1.0
     @State private var fitScale: CGFloat = 1.0
     @State private var blurredImage: NSImage?
+    @State private var justCopied: Bool = false
     
     public init(
         model: AnnotationEditorModel,
@@ -170,9 +171,10 @@ public struct AnnotationEditorWindowView: View {
                 backdropCornerRadius: $model.backdropCornerRadius,
                 backdropShadowRadius: $model.backdropShadowRadius,
                 addShadow: $model.addShadow,
+                justCopied: $justCopied,
                 onClose: onClose,
                 onDelete: onDelete,
-                onCopy: { ImageExporter.copyToClipboard(model.renderFinalImage()) },
+                onCopy: copyAction,
                 onSaveToHistory: {
                     let img = model.renderFinalImage()
                     if let custom = onSaveToHistory {
@@ -198,7 +200,8 @@ public struct AnnotationEditorWindowView: View {
         .editorKeyHandler(
             onDelete: { model.deleteSelected() },
             onEscape: { model.selectItem(id: nil) },
-            onSelectTool: { model.selectTool($0) }
+            onSelectTool: { model.selectTool($0) },
+            onCopy: copyAction
         )
         .editorKeyboardShortcuts(
             onUndo: { model.undo() },
@@ -208,5 +211,23 @@ public struct AnnotationEditorWindowView: View {
             onZoomIn: { setZoom(zoom * 1.25) },
             onZoomOut: { setZoom(zoom / 1.25) }
         )
+    }
+    
+    private func copyAction() {
+        let finalImage = model.renderFinalImage()
+        ImageExporter.copyToClipboard(finalImage)
+        if model.hasUnsavedChanges {
+            if let custom = onSaveToHistory {
+                custom(finalImage)
+            } else {
+                HistoryStore.shared.add(finalImage)
+            }
+            model.markSaved()
+        }
+        withAnimation(.easeInOut(duration: 0.18)) { justCopied = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            withAnimation(.easeInOut(duration: 0.18)) { justCopied = false }
+        }
     }
 }

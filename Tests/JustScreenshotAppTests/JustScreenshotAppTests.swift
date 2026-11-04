@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import AppKit
 import CoreGraphics
 @testable import JustScreenshotApp
 
@@ -212,5 +213,59 @@ struct PixelSamplerAndRendererTests {
         // Проверка независимости от раскладки (например русская "Й" на физической клавише Q = keyCode 12)
         let qKey = ShortcutKey(keyCode: 12, keyChar: "й", modifiers: 768) // cmdKey | shiftKey
         #expect(qKey.keySymbols == ["⇧", "⌘", "Q"])
+    }
+}
+
+@Suite("Annotation Editor & History Integration Tests")
+struct AnnotationEditorHistoryTests {
+    @Test @MainActor func testEditorUnsavedChangesTracking() {
+        let image = NSImage(size: NSSize(width: 100, height: 100))
+        let item = CapturedItem(image: image, rect: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let model = AnnotationEditorModel(capturedItem: item)
+        model.finishInitialLoading()
+        #expect(!model.hasUnsavedChanges)
+        
+        // Добавление аннотации переводит редактор в состояние несохранённых изменений
+        model.commitItemsMutation { items in
+            items.append(AnnotationItem(tool: .arrow, startPoint: .zero, endPoint: CGPoint(x: 50, y: 50)))
+        }
+        #expect(model.hasUnsavedChanges)
+        
+        // После markSaved изменения считаются сохранёнными
+        model.markSaved()
+        #expect(!model.hasUnsavedChanges)
+    }
+    
+    @Test @MainActor func testConfirmCloseSavesUnsavedEditsToHistory() {
+        let image = NSImage(size: NSSize(width: 100, height: 100))
+        let item = CapturedItem(image: image, rect: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let model = AnnotationEditorModel(capturedItem: item)
+        model.finishInitialLoading()
+        
+        let windowManager = AppWindowManager.shared
+        let initialHistoryCount = HistoryStore.shared.entries.count
+        
+        // Если изменений нет — confirmCloseIfNeeded не добавляет дубликат
+        let window = NSWindow()
+        let closedWithoutChanges = windowManager.confirmCloseIfNeeded(model: model, window: window)
+        #expect(closedWithoutChanges)
+        #expect(HistoryStore.shared.entries.count == initialHistoryCount)
+        
+        // Вносим правку
+        model.commitItemsMutation { items in
+            items.append(AnnotationItem(tool: .rectangle, startPoint: .zero, endPoint: CGPoint(x: 40, y: 40)))
+        }
+        #expect(model.hasUnsavedChanges)
+        
+        // Закрытие окна после редактирования автоматически сохраняет результат в историю
+        let closedWithChanges = windowManager.confirmCloseIfNeeded(model: model, window: window)
+        #expect(closedWithChanges)
+        #expect(!model.hasUnsavedChanges)
+        #expect(HistoryStore.shared.entries.count == initialHistoryCount + 1)
+        
+        // Очищаем созданную тестовую запись
+        if let newEntry = HistoryStore.shared.entries.first {
+            HistoryStore.shared.delete(id: newEntry.id)
+        }
     }
 }

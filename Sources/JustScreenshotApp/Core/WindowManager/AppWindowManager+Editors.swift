@@ -53,27 +53,10 @@ extension AppWindowManager {
     
     func confirmCloseIfNeeded(model: AnnotationEditorModel, window: NSWindow) -> Bool {
         guard model.hasUnsavedChanges else { return true }
-        
-        let alert = NSAlert()
-        alert.messageText = L("alert.unsaved_title")
-        alert.informativeText = L("alert.unsaved_informative")
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("alert.save"))       // NSApplication.ModalResponse.alertFirstButtonReturn
-        alert.addButton(withTitle: L("alert.dont_save"))   // NSApplication.ModalResponse.alertSecondButtonReturn
-        alert.addButton(withTitle: L("alert.cancel"))      // NSApplication.ModalResponse.alertThirdButtonReturn
-        
-        let response = alert.runModal()
-        switch response {
-        case .alertFirstButtonReturn:
-            let finalImage = model.renderFinalImage()
-            self.history.add(finalImage)
-            model.markSaved()
-            return true
-        case .alertSecondButtonReturn:
-            return true
-        default:
-            return false
-        }
+        let finalImage = model.renderFinalImage()
+        self.history.add(finalImage)
+        model.markSaved()
+        return true
     }
     
     func closeEditor(id: UUID) {

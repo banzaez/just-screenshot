@@ -9,6 +9,7 @@ public struct EditorBottomBarView: View {
     @Binding public var backdropCornerRadius: CGFloat
     @Binding public var backdropShadowRadius: CGFloat
     @Binding public var addShadow: Bool
+    @Binding public var justCopied: Bool
     
     public let onClose: () -> Void
     public let onDelete: () -> Void
@@ -17,7 +18,6 @@ public struct EditorBottomBarView: View {
     public let onSave: () -> Void
     
     @State private var justSavedToHistory: Bool = false
-    @State private var justCopied: Bool = false
     @State private var showAdjustPopover: Bool = false
     
     public init(
@@ -27,6 +27,7 @@ public struct EditorBottomBarView: View {
         backdropCornerRadius: Binding<CGFloat>,
         backdropShadowRadius: Binding<CGFloat>,
         addShadow: Binding<Bool>,
+        justCopied: Binding<Bool> = .constant(false),
         onClose: @escaping () -> Void,
         onDelete: @escaping () -> Void = {},
         onCopy: @escaping () -> Void,
@@ -39,6 +40,7 @@ public struct EditorBottomBarView: View {
         self._backdropCornerRadius = backdropCornerRadius
         self._backdropShadowRadius = backdropShadowRadius
         self._addShadow = addShadow
+        self._justCopied = justCopied
         self.onClose = onClose
         self.onDelete = onDelete
         self.onCopy = onCopy
@@ -201,15 +203,9 @@ public struct EditorBottomBarView: View {
             EditorActionIconButton(
                 icon: justCopied ? "checkmark" : "doc.on.doc",
                 style: justCopied ? .success : .secondary,
-                tooltip: justCopied ? L("hud.copied") : L("editor.copy")
-            ) {
-                onCopy()
-                withAnimation(.easeInOut(duration: 0.18)) { justCopied = true }
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 1_500_000_000)
-                    withAnimation(.easeInOut(duration: 0.18)) { justCopied = false }
-                }
-            }
+                tooltip: justCopied ? L("hud.copied") : L("editor.copy"),
+                action: onCopy
+            )
             .keyboardShortcut("c", modifiers: [.command, .shift])
             
             // 4. Сохранить в историю приложения

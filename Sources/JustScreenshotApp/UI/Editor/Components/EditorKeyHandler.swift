@@ -6,17 +6,20 @@ public struct EditorKeyHandlerModifier: ViewModifier {
     let onDelete: () -> Void
     let onEscape: (() -> Void)?
     let onSelectTool: ((AnnotationTool) -> Void)?
+    let onCopy: (() -> Void)?
     
     @State private var monitor: Any?
     
     public init(
         onDelete: @escaping () -> Void,
         onEscape: (() -> Void)? = nil,
-        onSelectTool: ((AnnotationTool) -> Void)? = nil
+        onSelectTool: ((AnnotationTool) -> Void)? = nil,
+        onCopy: (() -> Void)? = nil
     ) {
         self.onDelete = onDelete
         self.onEscape = onEscape
         self.onSelectTool = onSelectTool
+        self.onCopy = onCopy
     }
     
     public func body(content: Content) -> some View {
@@ -49,6 +52,11 @@ public struct EditorKeyHandlerModifier: ViewModifier {
             
             if event.keyCode == 53, let onEscape {
                 DispatchQueue.main.async { onEscape() }
+                return nil
+            }
+            
+            if mods == .command, let onCopy, event.charactersIgnoringModifiers?.lowercased() == "c" {
+                DispatchQueue.main.async { onCopy() }
                 return nil
             }
             
@@ -89,8 +97,14 @@ public extension View {
     func editorKeyHandler(
         onDelete: @escaping () -> Void,
         onEscape: (() -> Void)? = nil,
-        onSelectTool: ((AnnotationTool) -> Void)? = nil
+        onSelectTool: ((AnnotationTool) -> Void)? = nil,
+        onCopy: (() -> Void)? = nil
     ) -> some View {
-        modifier(EditorKeyHandlerModifier(onDelete: onDelete, onEscape: onEscape, onSelectTool: onSelectTool))
+        modifier(EditorKeyHandlerModifier(
+            onDelete: onDelete,
+            onEscape: onEscape,
+            onSelectTool: onSelectTool,
+            onCopy: onCopy
+        ))
     }
 }
