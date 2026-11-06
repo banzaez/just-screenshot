@@ -1,7 +1,7 @@
 # Just Screenshot
 
 <p align="center">
-  <img src="Resources/icon_1024.png" width="128" height="128" alt="Just Screenshot Icon" />
+  <img src="Sources/JustScreenshotApp/Resources/icon_1024.png" width="128" height="128" alt="Just Screenshot Icon" />
 </p>
 
 Легковесное, быстрое и современное приложение для создания скриншотов, записи экрана и аннотирования для macOS (macOS 14 Sonoma и новее).
@@ -65,5 +65,5 @@ make menu
 ./manage.sh status   # или make status  — проверка сертификатов и ключей
 ```
 
-Также сохранена обратная совместимость со скриптами `./build_app.sh` и `./release.sh`.
+Низкоуровневые скрипты сборки и релиза лежат в `scripts/` (`build.sh`, `release.sh`); обычно достаточно вызывать их через `manage.sh` / `Makefile`.
 

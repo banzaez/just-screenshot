@@ -38,8 +38,9 @@ mkdir -p "$FRAMEWORKS_DIR"
 
 # Копируем бинарник и иконку
 cp .build/release/JustScreenshotApp "$MACOS_DIR/$APP_NAME"
-if [ -f "Resources/AppIcon.icns" ]; then
-    cp Resources/AppIcon.icns "$RESOURCES_DIR/AppIcon.icns"
+APP_ICON="Sources/JustScreenshotApp/Resources/AppIcon.icns"
+if [ -f "$APP_ICON" ]; then
+    cp "$APP_ICON" "$RESOURCES_DIR/AppIcon.icns"
 fi
 
 # Копируем Sparkle.framework

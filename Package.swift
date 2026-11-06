@@ -18,6 +18,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "webp", package: "webp.swift")
+            ],
+            resources: [
+                .copy("Resources/AppIcon.icns"),
+                .copy("Resources/icon_1024.png")
             ]
         ),
         .testTarget(
