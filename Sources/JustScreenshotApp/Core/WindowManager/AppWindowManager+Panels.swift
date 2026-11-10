@@ -21,12 +21,18 @@ extension AppWindowManager {
             }
         )
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 860, height: 600),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
         window.title = L("history.title")
-        window.minSize = NSSize(width: 580, height: 420)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.minSize = NSSize(width: 600, height: 440)
         window.contentView = NSHostingView(rootView: view)
         window.center()
         
@@ -62,12 +68,18 @@ extension AppWindowManager {
         }
         let view = SettingsWindowView()
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 620, height: 680),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(x: 0, y: 0, width: 660, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
         window.title = L("settings.title")
-        window.minSize = NSSize(width: 580, height: 600)
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.minSize = NSSize(width: 600, height: 600)
         window.contentView = NSHostingView(rootView: view)
         window.center()
         

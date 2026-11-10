@@ -45,7 +45,7 @@ final class HUDStackManager {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = false
+        window.hasShadow = true
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.alphaValue = 0
@@ -136,7 +136,7 @@ final class HUDStackManager {
         window.isReleasedWhenClosed = false
         window.backgroundColor = .clear
         window.isOpaque = false
-        window.hasShadow = false
+        window.hasShadow = true
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.contentView = hostingView
@@ -238,6 +238,5 @@ private struct HUDToastView: View {
                         .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
                 )
         )
-        .shadow(color: .black.opacity(0.3), radius: 10, x: 0, y: 5)
     }
 }

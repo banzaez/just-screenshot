@@ -73,7 +73,11 @@ public final class ScreenCaptureService {
         // Короткая пауза, чтобы скрытый оверлей успел уйти из композитинга WindowServer.
         try? await Task.sleep(nanoseconds: 16_000_000)
         
-        let scaleHint = NSScreen.main?.backingScaleFactor ?? 2.0
+        let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: rect)
+        let matchingScreen = NSScreen.screens.first(where: { $0.frame.intersects(appKitRect) })
+            ?? NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) })
+            ?? NSScreen.main
+        let scaleHint = matchingScreen?.backingScaleFactor ?? 2.0
         let ids = excludingWindowIDs
         return try await Task.detached(priority: .userInitiated) {
             try await Self.captureRectImage(rect: rect, excludingWindowIDs: ids, scaleHint: scaleHint)
@@ -154,9 +158,16 @@ public final class ScreenCaptureService {
         let excludedWindows = overlayWindows(in: content, excludingWindowIDs: excludingWindowIDs)
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
-        let displayScale: CGFloat = display.frame.width > 0
-            ? CGFloat(display.width) / CGFloat(display.frame.width)
-            : scaleHint
+        // Определение реального масштаба рендеринга (Retina backingScale / CGDisplayMode)
+        let displayScale: CGFloat = {
+            if let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
+                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+                if ratio >= 1.0 {
+                    return ratio
+                }
+            }
+            return scaleHint > 0 ? scaleHint : 2.0
+        }()
         
         let localRect = CGRect(
             x: rect.origin.x - CGFloat(display.frame.origin.x),
@@ -165,10 +176,13 @@ public final class ScreenCaptureService {
             height: rect.height
         )
         
+        let targetWidth = max(1, Int(round(rect.width * displayScale)))
+        let targetHeight = max(1, Int(round(rect.height * displayScale)))
+        
         let config = SCStreamConfiguration()
         config.sourceRect = localRect
-        config.width = Int(rect.width * displayScale)
-        config.height = Int(rect.height * displayScale)
+        config.width = targetWidth
+        config.height = targetHeight
         config.showsCursor = false
         config.scalesToFit = false
         config.colorSpaceName = CGColorSpace.sRGB
@@ -185,11 +199,19 @@ public final class ScreenCaptureService {
             throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
         }
         
+        let displayScale: CGFloat = {
+            if let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
+                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+                if ratio >= 1.0 { return ratio }
+            }
+            return scale > 0 ? scale : 2.0
+        }()
+        
         let excludedWindows = overlayWindows(in: content, excludingWindowIDs: [])
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         let config = SCStreamConfiguration()
-        config.width = Int(frame.width * scale)
-        config.height = Int(frame.height * scale)
+        config.width = max(1, Int(round(frame.width * displayScale)))
+        config.height = max(1, Int(round(frame.height * displayScale)))
         config.showsCursor = false
         config.scalesToFit = false
         config.colorSpaceName = CGColorSpace.sRGB
@@ -203,10 +225,19 @@ public final class ScreenCaptureService {
             throw NSError(domain: "ScreenCaptureService", code: -2, userInfo: [NSLocalizedDescriptionKey: "Окно не найдено"])
         }
         
+        let windowDisplay = content.displays.first(where: { displayFrame($0).intersects(scWindow.frame) }) ?? content.displays.first
+        let windowScale: CGFloat = {
+            if let disp = windowDisplay, let mode = CGDisplayCopyDisplayMode(disp.displayID), mode.width > 0 {
+                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+                if ratio >= 1.0 { return ratio }
+            }
+            return scale > 0 ? scale : 2.0
+        }()
+        
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
         let config = SCStreamConfiguration()
-        config.width = Int(scWindow.frame.width * scale)
-        config.height = Int(scWindow.frame.height * scale)
+        config.width = max(1, Int(round(scWindow.frame.width * windowScale)))
+        config.height = max(1, Int(round(scWindow.frame.height * windowScale)))
         config.showsCursor = false
         config.colorSpaceName = CGColorSpace.sRGB
         

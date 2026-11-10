@@ -80,10 +80,11 @@ cmd_status() {
     fi
     
     # 3. Сертификаты подписи
-    if security find-identity -p codesigning -v | grep -q "JustScreenshotDev"; then
-        echo -e "  • Codesign:  ${GREEN}Найден сертификат JustScreenshotDev${NC}"
+    DETECTED_SIGN=$(security find-identity -p codesigning -v 2>/dev/null | grep -E "(Apple Development|Developer ID Application|JustScreenshotDev)" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+    if [ -n "$DETECTED_SIGN" ]; then
+        echo -e "  • Codesign:  ${GREEN}Сертификат: $DETECTED_SIGN${NC}"
     else
-        echo -e "  • Codesign:  ${YELLOW}Ad-hoc подпись (сертификат JustScreenshotDev не создан)${NC}"
+        echo -e "  • Codesign:  ${YELLOW}Ad-hoc подпись (сертификат разработчика не найден)${NC}"
     fi
     
     # 4. Sparkle ключ Ed25519

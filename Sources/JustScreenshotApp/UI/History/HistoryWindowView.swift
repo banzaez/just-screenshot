@@ -27,7 +27,7 @@ public enum HistoryFilter: String, CaseIterable, Identifiable {
     }
 }
 
-/// Окно истории снимков и видеозаписей: фильтрация, сетка миниатюр, открытие в редакторе, Drag & Drop, копирование, сохранение и удаление
+/// Окно истории снимков и видеозаписей в стиле Liquid Glass
 public struct HistoryWindowView: View {
     private var store = HistoryStore.shared
     
@@ -37,6 +37,7 @@ public struct HistoryWindowView: View {
     
     @State private var selectedFilter: HistoryFilter = .all
     @State private var confirmClear = false
+    @Namespace private var filterNamespace
     
     public init(
         onEdit: @escaping (HistoryEntry) -> Void,
@@ -71,97 +72,83 @@ public struct HistoryWindowView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // Верхняя панель с фильтрами по типу медиа (Все / Скриншоты / Видео)
-            HStack(spacing: 12) {
-                Label(L("history.title"), systemImage: "clock.arrow.circlepath")
-                    .font(.headline)
-                
-                Spacer()
-                
-                HStack(spacing: 4) {
-                    ForEach(HistoryFilter.allCases) { filter in
-                        let isSelected = selectedFilter == filter
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                selectedFilter = filter
-                            }
-                        } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: filter.icon)
-                                    .font(.system(size: 11, weight: .semibold))
-                                Text(filter.title)
-                                    .font(.system(size: 12, weight: .medium))
-                                Text("\(count(for: filter))")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .padding(.horizontal, 5)
-                                    .padding(.vertical, 1)
-                                    .background(
-                                        Capsule().fill(
-                                            isSelected
-                                                ? Color.white.opacity(0.24)
-                                                : Color.primary.opacity(0.08)
-                                        )
-                                    )
-                            }
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .foregroundStyle(isSelected ? Color.white : Color.primary)
-                            .background(
-                                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                    .fill(isSelected ? Color.accentColor : Color.clear)
-                            )
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(3)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                )
-                
-                Spacer()
-                
-                Button(role: .destructive) { confirmClear = true } label: {
-                    Label(L("history.clear_all"), systemImage: "trash")
-                }
-                .disabled(store.entries.isEmpty)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .controlBackgroundColor))
+        ZStack {
+            // Размытый полупрозрачный фон окна (Frosted Glass / Vibrancy)
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
+                .ignoresSafeArea()
             
-            Divider()
+            // Верхний световой блик стекла
+            LinearGradient(
+                colors: [
+                    Color.white.opacity(0.12),
+                    Color.white.opacity(0.02),
+                    Color.clear
+                ],
+                startPoint: .top,
+                endPoint: .center
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
             
-            if filteredEntries.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: selectedFilter == .videos ? "video.slash" : "photo.on.rectangle.angled")
-                        .font(.system(size: 44))
-                        .foregroundStyle(.secondary)
-                    Text(L("history.empty_title")).font(.title3)
-                    Text(L("history.empty_subtitle"))
-                        .font(.callout).foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollView {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 290), spacing: 14)], spacing: 14) {
-                        ForEach(filteredEntries) { entry in
-                            HistoryCard(
-                                entry: entry,
-                                onEdit: { onEdit(entry) },
-                                onPin: { onPin(entry) },
-                                onCopy: { onCopy(entry) }
-                            )
+            VStack(spacing: 0) {
+                // Интегрированный стеклянный тулбар
+                headerBar
+                
+                // Тонкая линия разделения со стеклянным бликом
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.white.opacity(0.02), location: 0.0),
+                                .init(color: Color.white.opacity(0.18), location: 0.5),
+                                .init(color: Color.white.opacity(0.02), location: 1.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 1)
+                
+                if filteredEntries.isEmpty {
+                    VStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .fill(Color.accentColor.opacity(0.12))
+                                .frame(width: 64, height: 64)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                        .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
+                                )
+                            Image(systemName: selectedFilter == .videos ? "video.slash" : "photo.on.rectangle.angled")
+                                .font(.system(size: 28, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
                         }
+                        
+                        Text(L("history.empty_title"))
+                            .font(.title3.weight(.semibold))
+                        Text(L("history.empty_subtitle"))
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
-                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ScrollView {
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 250, maximum: 320), spacing: 14)], spacing: 14) {
+                            ForEach(filteredEntries) { entry in
+                                HistoryCard(
+                                    entry: entry,
+                                    onEdit: { onEdit(entry) },
+                                    onPin: { onPin(entry) },
+                                    onCopy: { onCopy(entry) }
+                                )
+                            }
+                        }
+                        .padding(18)
+                    }
                 }
             }
         }
-        .frame(minWidth: 580, minHeight: 420)
+        .frame(minWidth: 620, minHeight: 460)
         .onAppear {
             store.pruneMissingFiles()
         }
@@ -170,7 +157,120 @@ public struct HistoryWindowView: View {
             Button(L("alert.cancel"), role: .cancel) {}
         }
     }
+    
+    // MARK: - Header Bar
+    
+    private var headerBar: some View {
+        ZStack {
+            // Плавающий селектор фильтра строго по центру
+            HStack(spacing: 4) {
+                ForEach(HistoryFilter.allCases) { filter in
+                    let isSelected = selectedFilter == filter
+                    Button {
+                        withAnimation(.spring(response: 0.32, dampingFraction: 0.76)) {
+                            selectedFilter = filter
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: filter.icon)
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(filter.title)
+                                .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                            
+                            Text("\(count(for: filter))")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(isSelected ? Color.accentColor.opacity(0.3) : Color.white.opacity(0.08))
+                                )
+                        }
+                        .foregroundColor(isSelected ? .primary : .secondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background {
+                            if isSelected {
+                                Capsule(style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [
+                                                Color.accentColor.opacity(0.24),
+                                                Color.accentColor.opacity(0.12)
+                                            ],
+                                            startPoint: .top,
+                                            endPoint: .bottom
+                                        )
+                                    )
+                                    .overlay(
+                                        Capsule(style: .continuous)
+                                            .strokeBorder(
+                                                LinearGradient(
+                                                    colors: [
+                                                        Color.accentColor.opacity(0.55),
+                                                        Color.accentColor.opacity(0.20)
+                                                    ],
+                                                    startPoint: .top,
+                                                    endPoint: .bottom
+                                                ),
+                                                lineWidth: 1
+                                            )
+                                    )
+                                    .matchedGeometryEffect(id: "activeHistoryFilter", in: filterNamespace)
+                                    .shadow(color: Color.accentColor.opacity(0.2), radius: 6, x: 0, y: 2)
+                            }
+                        }
+                        .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(4)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Color.white.opacity(0.35), location: 0.0),
+                                .init(color: Color.white.opacity(0.12), location: 0.5),
+                                .init(color: Color.white.opacity(0.04), location: 1.0)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+
+            // Боковые элементы (светофор слева, кнопка очистки справа)
+            HStack {
+                Spacer()
+                    .frame(width: 76)
+                
+                Spacer()
+                
+                GlassButton(
+                    title: L("history.clear_all"),
+                    icon: "trash",
+                    role: .destructive
+                ) {
+                    confirmClear = true
+                }
+                .disabled(store.entries.isEmpty)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(height: 56)
+    }
 }
+
+// MARK: - History Card
 
 private struct HistoryCard: View {
     let entry: HistoryEntry
@@ -197,10 +297,10 @@ private struct HistoryCard: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(Color.black.opacity(0.2))
                 
                 if let thumb = thumbnail {
                     Image(nsImage: thumb)
@@ -241,12 +341,12 @@ private struct HistoryCard: View {
                     .padding(8)
                 }
                 
-                // Панель быстрых действий при наведении
+                // Панель быстрых действий при наведении (Liquid Glass Toolbar)
                 if hovering {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(Color.black.opacity(0.48))
+                        .fill(Color.black.opacity(0.42))
                     
-                    HStack(spacing: 6) {
+                    HStack(spacing: 4) {
                         HistoryCardActionButton(
                             icon: entry.kind == .video ? "film" : "pencil.tip.crop.circle",
                             title: L("history.edit"),
@@ -300,23 +400,21 @@ private struct HistoryCard: View {
                             store.delete(entry)
                         }
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(Color.black.opacity(0.55))
+                            .fill(.ultraThinMaterial)
                     )
+                    .overlay(
+                        Capsule()
+                            .strokeBorder(Color.white.opacity(0.22), lineWidth: 1)
+                    )
+                    .shadow(color: Color.black.opacity(0.3), radius: 6, x: 0, y: 2)
                 }
             }
             .frame(height: 145)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(
-                        hovering ? Color.accentColor.opacity(0.65) : Color.primary.opacity(0.08),
-                        lineWidth: hovering ? 1.5 : 1
-                    )
-            )
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
             .onTapGesture(perform: onEdit)
@@ -339,12 +437,35 @@ private struct HistoryCard: View {
                     .foregroundStyle(entry.kind == .video ? Color.accentColor : Color.secondary)
                 Text(entry.date, format: .dateTime.day().month().hour().minute())
                     .font(.caption)
+                    .foregroundColor(.secondary)
                 Spacer()
                 Text("\(entry.width) × \(entry.height)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
         }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        stops: [
+                            .init(color: hovering ? Color.accentColor.opacity(0.7) : Color.white.opacity(0.28), location: 0.0),
+                            .init(color: hovering ? Color.accentColor.opacity(0.3) : Color.white.opacity(0.08), location: 0.4),
+                            .init(color: Color.white.opacity(0.02), location: 1.0)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: hovering ? 1.5 : 1
+                )
+        )
+        .shadow(color: Color.black.opacity(hovering ? 0.12 : 0.04), radius: hovering ? 8 : 4, x: 0, y: hovering ? 4 : 2)
+        .animation(.easeOut(duration: 0.18), value: hovering)
         .contextMenu {
             Button(L("history.edit"), action: onEdit)
             Button(L("editor.copy"), action: onCopy)
@@ -378,8 +499,8 @@ private struct HistoryCardActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 28, height: 28)
+                .font(.system(size: 11, weight: .semibold))
+                .frame(width: 26, height: 26)
                 .foregroundStyle(foregroundColor)
                 .background(
                     Circle()
@@ -402,6 +523,6 @@ private struct HistoryCardActionButton: View {
     private var backgroundColor: Color {
         if isSuccess { return Color.green.opacity(0.22) }
         if isDestructive { return isHovered ? Color.red.opacity(0.85) : Color.red.opacity(0.22) }
-        return isHovered ? Color.white.opacity(0.25) : Color.white.opacity(0.1)
+        return isHovered ? Color.white.opacity(0.3) : Color.white.opacity(0.12)
     }
 }

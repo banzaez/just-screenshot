@@ -18,9 +18,19 @@ public enum ImageExporter {
         return false
     }
     
+    /// Извлечение максимального по разрешению CGImage из NSImage
+    public static func cgImage(from image: NSImage) -> CGImage? {
+        for rep in image.representations {
+            if let bitmapRep = rep as? NSBitmapImageRep, let cg = bitmapRep.cgImage {
+                return cg
+            }
+        }
+        return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    }
+
     /// PNG-данные изображения (напрямую через ImageIO / CGImageDestination без промежуточного TIFF-буфера)
     public static func pngData(from image: NSImage) -> Data? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        guard let cgImage = cgImage(from: image) else {
             return nil
         }
         return pngData(from: cgImage)
@@ -45,11 +55,28 @@ public enum ImageExporter {
         try? png.write(to: url)
     }
     
-    /// Копирование NSImage в буфер обмена
+    /// Копирование NSImage в буфер обмена с сохранением максимального Retina-разрешения (PNG + TIFF)
     public static func copyToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        pasteboard.writeObjects([image])
+        
+        let item = NSPasteboardItem()
+        var hasData = false
+        if let png = pngData(from: image) {
+            item.setData(png, forType: .png)
+            item.setData(png, forType: NSPasteboard.PasteboardType("public.png"))
+            hasData = true
+        }
+        if let tiff = image.tiffRepresentation {
+            item.setData(tiff, forType: .tiff)
+            hasData = true
+        }
+        
+        if hasData {
+            pasteboard.writeObjects([item])
+        } else {
+            pasteboard.writeObjects([image])
+        }
     }
     
     /// Копирование текста в буфер обмена

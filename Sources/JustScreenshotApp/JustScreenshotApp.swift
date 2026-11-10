@@ -149,12 +149,6 @@ struct JustScreenshotApp: App {
                 }
                 .disabled(!updaterManager.canCheckForUpdates)
                 
-                Button(L("menu.check_permissions")) {
-                    Task {
-                        _ = await ScreenCaptureService.shared.checkAndRequestPermissions()
-                    }
-                }
-                
                 Divider()
                 
                 Button(L("menu.quit")) {

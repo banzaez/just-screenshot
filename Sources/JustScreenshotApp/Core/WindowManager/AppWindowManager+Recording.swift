@@ -462,7 +462,7 @@ extension AppWindowManager {
             ?? NSScreen.screens.first
         
         if let targetScreen {
-            let halfW: CGFloat = 350
+            let halfW: CGFloat = isRecording ? 170 : 280
             let minX = targetScreen.frame.minX + halfW + 10
             let maxX = targetScreen.frame.maxX - halfW - 10
             barCenter.x = max(minX, min(maxX, barCenter.x))

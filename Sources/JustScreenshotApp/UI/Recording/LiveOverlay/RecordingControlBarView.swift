@@ -62,10 +62,21 @@ public struct RecordingControlBarView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     Capsule()
-                        .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: Color.white.opacity(0.38), location: 0.0),
+                                    .init(color: Color.white.opacity(0.12), location: 0.4),
+                                    .init(color: Color.white.opacity(0.04), location: 1.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
                 )
-                .shadow(color: .black.opacity(0.4), radius: 14, x: 0, y: 7)
         )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .preferredColorScheme(.dark)
     }
     

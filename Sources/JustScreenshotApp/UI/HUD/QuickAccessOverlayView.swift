@@ -253,12 +253,22 @@ public struct QuickAccessOverlayView: View {
                 .fill(.ultraThinMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.25), lineWidth: 1)
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: Color.white.opacity(0.38), location: 0.0),
+                                    .init(color: Color.white.opacity(0.12), location: 0.4),
+                                    .init(color: Color.white.opacity(0.04), location: 1.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .onTapGesture(perform: onAnnotate)
-        .shadow(color: .black.opacity(0.38), radius: 16, x: 0, y: 8)
         .onHover(perform: onHover)
         .task {
             let found = await TextRecognizer.detectQRCodes(in: item.image)

@@ -29,6 +29,7 @@ public final class CountdownOverlayWindow: NSWindow {
         
         self.isOpaque = false
         self.backgroundColor = .clear
+        self.hasShadow = true
         self.title = JustScreenshotWindowTitles.countdownOverlay
         self.level = .floating
         self.ignoresMouseEvents = true
@@ -63,7 +64,6 @@ private struct CountdownView: View {
                     Circle()
                         .stroke(Color.white.opacity(0.35), lineWidth: 2)
                 )
-                .shadow(color: .black.opacity(0.35), radius: 8, x: 0, y: 4)
             
             // Круговой прогресс
             Circle()

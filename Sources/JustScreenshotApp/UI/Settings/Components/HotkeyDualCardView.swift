@@ -13,27 +13,52 @@ struct HotkeyDualCardView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Иконка
+            // Иконка в светящейся стеклянной подложке
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(iconColor.opacity(0.16))
-                    .frame(width: 36, height: 36)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                iconColor.opacity(0.24),
+                                iconColor.opacity(0.08)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: 38, height: 38)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        iconColor.opacity(0.5),
+                                        iconColor.opacity(0.15)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(iconColor)
             }
 
-            // Название
+            // Текстовое описание действия
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(.primary)
                 Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                    .lineLimit(2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             // Сетка двух слотов фиксированной одинаковой ширины для ровных колонок
             HStack(spacing: 14) {
@@ -94,12 +119,17 @@ struct HotkeyDualCardView: View {
                             }
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 5)
                             .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(
-                                        Color.secondary.opacity(0.35),
-                                        style: StrokeStyle(lineWidth: 1, dash: [3]))
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(Color.white.opacity(0.04))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(
+                                        Color.white.opacity(0.22),
+                                        style: StrokeStyle(lineWidth: 1, dash: [3])
+                                    )
                             )
                         }
                         .buttonStyle(.plain)
@@ -107,13 +137,28 @@ struct HotkeyDualCardView: View {
                 }
                 .frame(minWidth: 136, alignment: .trailing)
             }
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(10)
-        .background(Color.white.opacity(0.04))
-        .cornerRadius(10)
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(Color.white.opacity(0.07), lineWidth: 1)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(.ultraThinMaterial)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(
+                        stops: [
+                            .init(color: Color.white.opacity(0.28), location: 0.0),
+                            .init(color: Color.white.opacity(0.08), location: 0.4),
+                            .init(color: Color.white.opacity(0.02), location: 1.0)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1
+                )
+        )
+        .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
     }
 }

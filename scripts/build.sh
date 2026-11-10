@@ -91,13 +91,21 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
 EOF
 
 echo "✍️ Подписание фреймворков и пакета..."
-if security find-identity -p codesigning -v | grep -q "JustScreenshotDev"; then
-    if [ -d "$FRAMEWORKS_DIR/Sparkle.framework" ]; then
-        codesign --force --sign "JustScreenshotDev" "$FRAMEWORKS_DIR/Sparkle.framework"
-    fi
-    codesign --force --deep --sign "JustScreenshotDev" "$BUNDLE_DIR"
+if [ -n "$CODESIGN_IDENTITY" ]; then
+    SIGN_IDENTITY="$CODESIGN_IDENTITY"
 else
-    echo "⚠️ Сертификат JustScreenshotDev не найден, используется ad-hoc подпись..."
+    # Ищем собственный локальный сертификат разработки JustScreenshotDev
+    SIGN_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep -E "JustScreenshotDev" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+fi
+
+if [ -n "$SIGN_IDENTITY" ]; then
+    echo "🔐 Подписание стабильным сертификатом: $SIGN_IDENTITY"
+    if [ -d "$FRAMEWORKS_DIR/Sparkle.framework" ]; then
+        codesign --force --sign "$SIGN_IDENTITY" "$FRAMEWORKS_DIR/Sparkle.framework"
+    fi
+    codesign --force --deep --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+else
+    echo "ℹ️ Локальный сертификат JustScreenshotDev не найден, используется ad-hoc подпись..."
     if [ -d "$FRAMEWORKS_DIR/Sparkle.framework" ]; then
         codesign --force --sign - "$FRAMEWORKS_DIR/Sparkle.framework"
     fi

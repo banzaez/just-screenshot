@@ -33,7 +33,7 @@ extension AppWindowManager {
         let window = makeEditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1140, height: 780),
             title: L("editor.title", Int(item.image.size.width), Int(item.image.size.height)),
-            minSize: NSSize(width: 880, height: 560),
+            minSize: NSSize(width: 900, height: 560),
             rootView: view,
             resetCascade: editors.isEmpty
         )
@@ -94,7 +94,7 @@ extension AppWindowManager {
         let window = makeEditorWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1080, height: 740),
             title: L("video_editor.title", videoURL.lastPathComponent),
-            minSize: NSSize(width: 860, height: 540),
+            minSize: NSSize(width: 880, height: 540),
             rootView: view,
             resetCascade: videoEditors.isEmpty
         )
@@ -123,11 +123,17 @@ extension AppWindowManager {
     ) -> NSWindow {
         let window = NSWindow(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = title
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
         window.minSize = minSize
         window.contentView = NSHostingView(rootView: rootView)
         

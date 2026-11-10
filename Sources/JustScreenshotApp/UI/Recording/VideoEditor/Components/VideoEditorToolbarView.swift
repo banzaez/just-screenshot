@@ -26,19 +26,17 @@ public struct VideoEditorToolbarView: View {
     }
     
     public var body: some View {
-        ViewThatFits(in: .horizontal) {
-            toolbarContent
-            
-            ScrollView(.horizontal, showsIndicators: false) {
-                toolbarContent
-            }
-        }
-        .background(Color(NSColor.windowBackgroundColor))
-        .overlay(Divider(), alignment: .bottom)
+        toolbarContent
+            .background(.ultraThinMaterial)
+            .overlay(Divider(), alignment: .bottom)
     }
     
     private var toolbarContent: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
+            // Отступ слева под кнопки окна macOS ("светофор")
+            Spacer()
+                .frame(width: 68)
+            
             // Обрезка кадра (Crop)
             Button {
                 model.isCropping.toggle()

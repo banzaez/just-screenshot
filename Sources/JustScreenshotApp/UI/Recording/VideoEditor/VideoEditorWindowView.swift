@@ -18,8 +18,12 @@ public struct VideoEditorWindowView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // 1. Верхний тулбар
+        ZStack {
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 0) {
+                // 1. Верхний тулбар
             VideoEditorToolbarView(
                 model: model,
                 onExportMP4: { performExport(format: .mp4) },
@@ -124,8 +128,9 @@ public struct VideoEditorWindowView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(Color(NSColor.windowBackgroundColor))
+                .background(.ultraThinMaterial)
             }
+        }
         }
         .preferredColorScheme(.dark)
         .editorKeyHandler(

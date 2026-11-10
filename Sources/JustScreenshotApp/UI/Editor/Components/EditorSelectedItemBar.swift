@@ -103,14 +103,13 @@ public struct EditorSelectedItemBar: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 4)
             } else if let item = item {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        SelectedAnnotationBarControls.TitleLabel(
-                            title: item.tool.localizedTitle,
-                            systemImage: item.tool.iconName
-                        )
-                        
-                        Divider().frame(height: 20)
+                HStack(spacing: 10) {
+                    SelectedAnnotationBarControls.TitleLabel(
+                        title: item.tool.localizedTitle,
+                        systemImage: item.tool.iconName
+                    )
+                    
+                    Divider().frame(height: 20)
                         
                         if item.tool == .text {
                             TextField(L("editor.selected.text_field"), text: Binding(get: { item.text }, set: { onTextChange($0) }))
@@ -174,7 +173,6 @@ public struct EditorSelectedItemBar: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 4)
-                }
             } else {
                 SelectedAnnotationBarControls.EmptyHint(showShortcuts: true)
             }

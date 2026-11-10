@@ -52,7 +52,11 @@ public struct EditorToolbarView: View {
     }
     
     public var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
+            // Отступ под кнопки окна macOS ("светофор")
+            Spacer()
+                .frame(width: 68)
+            
             toolGroup(AnnotationTool.selectGroup)
             toolGroup(AnnotationTool.shapesGroup)
             toolGroup(AnnotationTool.annotateGroup)
@@ -62,7 +66,7 @@ public struct EditorToolbarView: View {
             
             zoomCapsule
             
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
             
             historyCapsule
         }
@@ -77,7 +81,7 @@ public struct EditorToolbarView: View {
                     tool.iconName,
                     title: tool.localizedTitle,
                     isActive: selectedTool == tool,
-                    width: 34
+                    width: 30
                 ) {
                     selectedTool = tool
                 }
@@ -91,7 +95,7 @@ public struct EditorToolbarView: View {
     }
     
     private var styleCapsule: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             ColorDropdown(selection: $selectedColor)
             WidthDropdown(selection: $lineWidth)
         }
@@ -105,20 +109,20 @@ public struct EditorToolbarView: View {
     
     private var zoomCapsule: some View {
         HStack(spacing: 2) {
-            EditorIconButton("minus.magnifyingglass", title: L("editor.zoom_out"), width: 32, action: onZoomOut)
+            EditorIconButton("minus.magnifyingglass", title: L("editor.zoom_out"), width: 28, action: onZoomOut)
             Text("\(zoomPercent)%")
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .frame(width: 44)
-            EditorIconButton("plus.magnifyingglass", title: L("editor.zoom_in"), width: 32, action: onZoomIn)
+                .frame(width: 38)
+            EditorIconButton("plus.magnifyingglass", title: L("editor.zoom_in"), width: 28, action: onZoomIn)
             EditorIconButton(
                 "arrow.up.left.and.arrow.down.right",
                 title: L("editor.fit_window"),
                 isActive: isFitMode,
-                width: 32,
+                width: 28,
                 action: onFit
             )
-            EditorIconButton("1.magnifyingglass", title: L("editor.actual_size"), width: 32, action: onActualSize)
+            EditorIconButton("1.magnifyingglass", title: L("editor.actual_size"), width: 28, action: onActualSize)
         }
         .padding(3)
         .background(
@@ -129,11 +133,11 @@ public struct EditorToolbarView: View {
     
     private var historyCapsule: some View {
         HStack(spacing: 2) {
-            EditorIconButton("eye.slash", title: L("editor.auto_redact"), width: 34, action: onAutoRedact)
-            EditorIconButton("arrow.uturn.backward", title: L("editor.undo"), width: 34, action: onUndo)
+            EditorIconButton("eye.slash", title: L("editor.auto_redact"), width: 30, action: onAutoRedact)
+            EditorIconButton("arrow.uturn.backward", title: L("editor.undo"), width: 30, action: onUndo)
                 .opacity(canUndo ? 1 : 0.35)
                 .disabled(!canUndo)
-            EditorIconButton("arrow.uturn.forward", title: L("editor.redo"), width: 34, action: onRedo)
+            EditorIconButton("arrow.uturn.forward", title: L("editor.redo"), width: 30, action: onRedo)
                 .opacity(canRedo ? 1 : 0.35)
                 .disabled(!canRedo)
         }

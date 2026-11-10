@@ -5,35 +5,31 @@ struct HotkeysSettingsTab: View {
     @State private var recordingTarget: HotkeyTarget?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(L("settings.hotkeys.title"))
-                        .font(.headline)
-                    Text(L("settings.hotkeys.subtitle"))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                Spacer()
-                Button {
-                    settings.resetHotkeysToDefaults()
-                    AppWindowManager.shared.reloadGlobalHotkeys()
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text(L("settings.hotkeys.reset_all"))
+        VStack(alignment: .leading, spacing: 14) {
+            // Информационный стеклянный баннер с кнопкой сброса
+            GlassCard(padding: 14) {
+                HStack(alignment: .center) {
+                    GlassSectionHeader(
+                        title: L("settings.hotkeys.title"),
+                        subtitle: L("settings.hotkeys.subtitle"),
+                        systemImage: "keyboard",
+                        iconColor: .cyan
+                    )
+
+                    Spacer()
+
+                    GlassButton(
+                        title: L("settings.hotkeys.reset_all"),
+                        icon: "arrow.counterclockwise"
+                    ) {
+                        settings.resetHotkeysToDefaults()
+                        AppWindowManager.shared.reloadGlobalHotkeys()
                     }
-                    .font(.caption)
                 }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.08))
-                .cornerRadius(6)
             }
 
-            VStack(spacing: 10) {
+            // Список карточек шорткатов
+            VStack(spacing: 8) {
                 HotkeyDualCardView(
                     id: "area",
                     icon: "crop",
@@ -119,14 +115,16 @@ struct HotkeysSettingsTab: View {
                 )
             }
 
-            HStack(spacing: 6) {
+            // Заметка о системных сочетаниях клавиш
+            HStack(spacing: 8) {
                 Image(systemName: "shield.lefthalf.filled")
                     .foregroundColor(.secondary)
-                    .font(.caption)
+                    .font(.system(size: 12))
                 Text(L("settings.hotkeys.protected_note"))
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
+            .padding(.horizontal, 6)
             .padding(.top, 4)
         }
     }

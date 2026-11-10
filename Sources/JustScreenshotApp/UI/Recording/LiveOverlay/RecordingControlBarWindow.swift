@@ -18,7 +18,7 @@ public final class RecordingControlBarWindow: NSWindow {
     ) {
         let isRec = windowManager.isRecording
         self.isRecordingMode = isRec
-        let size = isRec ? CGSize(width: 350, height: 56) : CGSize(width: 680, height: 56)
+        let size = isRec ? CGSize(width: 340, height: 52) : CGSize(width: 560, height: 52)
         let rect = NSRect(
             x: initialPosition.x - size.width / 2,
             y: initialPosition.y - size.height / 2,
@@ -59,13 +59,13 @@ public final class RecordingControlBarWindow: NSWindow {
     public func updateForRecordingMode() {
         guard !isRecordingMode else { return }
         isRecordingMode = true
-        animateToSize(CGSize(width: 350, height: 56))
+        animateToSize(CGSize(width: 340, height: 52))
     }
     
     public func updateForSetupMode() {
         guard isRecordingMode else { return }
         isRecordingMode = false
-        animateToSize(CGSize(width: 680, height: 56))
+        animateToSize(CGSize(width: 560, height: 52))
     }
     
     public func updatePosition(center: NSPoint) {

@@ -107,7 +107,26 @@ public struct PinnedImageView: View {
                         EditorIconButton("xmark", title: L("pin.unpin"), width: 30, action: onClose)
                     }
                     .padding(6)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 9))
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: Color.white.opacity(0.38), location: 0.0),
+                                        .init(color: Color.white.opacity(0.12), location: 0.4),
+                                        .init(color: Color.white.opacity(0.04), location: 1.0)
+                                    ],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+                    .shadow(color: Color.black.opacity(0.2), radius: 6, x: 0, y: 2)
                     .padding(8)
                     .transition(.opacity)
                     

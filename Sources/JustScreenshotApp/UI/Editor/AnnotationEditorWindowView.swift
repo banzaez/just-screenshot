@@ -92,17 +92,15 @@ public struct AnnotationEditorWindowView: View {
     }
     
     public var body: some View {
-        VStack(spacing: 0) {
-            ViewThatFits(in: .horizontal) {
+        ZStack {
+            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
                 topToolbar
+                    .background(.ultraThinMaterial)
                 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    topToolbar
-                }
-            }
-            .background(Color(nsColor: .controlBackgroundColor))
-            
-            Divider()
+                Divider()
             
             EditorSelectedItemBar(
                 item: model.selectedItem,
@@ -213,9 +211,10 @@ public struct AnnotationEditorWindowView: View {
             )
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(.ultraThinMaterial)
         }
-        .frame(minWidth: 880, minHeight: 560)
+        }
+        .frame(minWidth: 900, minHeight: 560)
         .task {
             blurredImage = await BlurFilter.makeBlurredAsync(capturedItem.image, id: capturedItem.id)
             model.finishInitialLoading()
