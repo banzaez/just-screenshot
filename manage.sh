@@ -80,7 +80,7 @@ cmd_status() {
     fi
     
     # 3. Сертификаты подписи
-    DETECTED_SIGN=$(security find-identity -p codesigning -v 2>/dev/null | grep -E "(Apple Development|Developer ID Application|JustScreenshotDev)" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+    DETECTED_SIGN=$(security find-identity -p codesigning -v 2>/dev/null | grep -E "JustScreenshotDev" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
     if [ -n "$DETECTED_SIGN" ]; then
         echo -e "  • Codesign:  ${GREEN}Сертификат: $DETECTED_SIGN${NC}"
     else

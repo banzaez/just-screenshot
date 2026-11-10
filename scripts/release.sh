@@ -66,6 +66,13 @@ echo -e "  Текущая версия: ${YELLOW}$CURRENT_VERSION${NC} (Build $C
 echo -e "  Новая версия:   ${GREEN}$NEW_VERSION${NC} (Build ${GREEN}$NEW_BUILD${NC})"
 echo -e "  Тег в git:      ${GREEN}$TAG${NC}\n"
 
+AUTO_CONFIRM=false
+for arg in "$@"; do
+    case "$arg" in
+        -y|--yes) AUTO_CONFIRM=true ;;
+    esac
+done
+
 # Проверка, нет ли уже такого тега
 if git rev-parse "$TAG" >/dev/null 2>&1; then
     echo -e "${RED}Ошибка:${NC} Тег $TAG уже существует в git!"
@@ -76,10 +83,14 @@ fi
 if [ -n "$(git status --porcelain)" ]; then
     echo -e "${YELLOW}Внимание:${NC} В рабочей директории есть незакоммиченные файлы:"
     git status --short
-    read -p "Включить их в коммит релиза? (y/N): " confirm
-    if [[ ! "$confirm" =~ ^[yY]$ ]]; then
-        echo "Релиз отменен."
-        exit 1
+    if [ "$AUTO_CONFIRM" = true ]; then
+        echo "Автоматическое включение в коммит релиза..."
+    else
+        read -p "Включить их в коммит релиза? (y/N): " confirm
+        if [[ ! "$confirm" =~ ^[yY]$ ]]; then
+            echo "Релиз отменен."
+            exit 1
+        fi
     fi
 fi
 
@@ -107,7 +118,11 @@ ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_NAME"
 echo -e "${BLUE}4. Генерация и Ed25519-подпись appcast.xml...${NC}"
 GENERATE_APPCAST=".build/artifacts/sparkle/Sparkle/bin/generate_appcast"
 if [ -f "$GENERATE_APPCAST" ]; then
-    "$GENERATE_APPCAST" --download-url-prefix "https://github.com/banzaez/just-screenshot/releases/download/$TAG/" .
+    KEY_ARG=""
+    if [ -f "$PROJECT_ROOT/certificates/sparkle_priv.key" ]; then
+        KEY_ARG="--ed-key-file $PROJECT_ROOT/certificates/sparkle_priv.key"
+    fi
+    "$GENERATE_APPCAST" $KEY_ARG --download-url-prefix "https://github.com/banzaez/just-screenshot/releases/download/$TAG/" .
     echo -e "  ${GREEN}appcast.xml успешно подписан ключом Ed25519!${NC}"
 else
     echo -e "  ${YELLOW}generate_appcast не найден, appcast.xml не обновлен.${NC}"
@@ -127,7 +142,7 @@ git tag -a "$TAG" -m "Release $TAG"
 # 7. Отправка в remote
 echo -e "${BLUE}7. Отправка ветки и тегов в git remote...${NC}"
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-git push origin "$CURRENT_BRANCH" --tags
+git push origin "$CURRENT_BRANCH" --tags || echo -e "  ${YELLOW}⚠️ Не удалось отправить в git автоматически (требуется разблокировка SSH-ключа). Отправьте вручную: git push origin $CURRENT_BRANCH --tags${NC}"
 
 # 8. GitHub Release
 echo -e "${BLUE}8. Публикация GitHub Release...${NC}"

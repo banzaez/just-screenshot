@@ -83,7 +83,7 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <key>SUFeedURL</key>
     <string>https://raw.githubusercontent.com/banzaez/just-screenshot/main/appcast.xml</string>
     <key>SUPublicEDKey</key>
-    <string>mEYp2Cii00e97mSUiez/AWgmCK76WTVzfYJ83B5FR5k=</string>
+    <string>RFPVJFpi1khZw92PWqsHMNzPWzpG3xyggJd7ygFN2gk=</string>
     <key>SUEnableAutomaticChecks</key>
     <true/>
 </dict>
