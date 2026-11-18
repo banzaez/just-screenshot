@@ -21,8 +21,7 @@ final class OverlayPoolState {
     var overlayPool: [CGDirectDisplayID: AreaOverlayWindow] = [:]
     var overlayToken = UUID()
     var samplerInFlight: Set<CGDirectDisplayID> = []
-    var overlayEscLocalMonitor: Any?
-    var overlayEscGlobalMonitor: Any?
+    let escMonitor = EscapeMonitor()
 }
 
 /// Состояние сессии и оверлейных окон видеозаписи
@@ -33,6 +32,8 @@ final class RecordingSessionState {
     var barWindow: RecordingControlBarWindow?
     var countdownWindow: CountdownOverlayWindow?
     var dimWindows: [RecordingDimOverlayWindow] = []
+    let setupEscMonitor = EscapeMonitor()
+    let countdownEscMonitor = EscapeMonitor()
     var timer: Timer?
     var startedAt: Date?
     var pausedAt: Date?
@@ -79,14 +80,6 @@ public final class AppWindowManager {
     var samplerInFlight: Set<CGDirectDisplayID> {
         get { overlayState.samplerInFlight }
         set { overlayState.samplerInFlight = newValue }
-    }
-    var overlayEscLocalMonitor: Any? {
-        get { overlayState.overlayEscLocalMonitor }
-        set { overlayState.overlayEscLocalMonitor = newValue }
-    }
-    var overlayEscGlobalMonitor: Any? {
-        get { overlayState.overlayEscGlobalMonitor }
-        set { overlayState.overlayEscGlobalMonitor = newValue }
     }
     var recordingFrameWindow: RecordingFrameWindow? {
         get { recordingState.frameWindow }

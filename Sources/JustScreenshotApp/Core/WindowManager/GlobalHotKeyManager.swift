@@ -185,6 +185,15 @@ public final class GlobalHotKeyManager {
         }
     }
 
+    public func unregister(id: UInt32) {
+        if let existingRef = hotKeyRefs.removeValue(forKey: id) {
+            UnregisterEventHotKey(existingRef)
+        }
+        registeredConfigs.removeValue(forKey: id)
+        handlers.removeValue(forKey: id)
+        syncTapCombos()
+    }
+
     public func unregisterAll() {
         unregisterCarbonHotKeys()
         registeredConfigs.removeAll()

@@ -182,22 +182,14 @@ extension AppWindowManager {
         
         var isCancelled = false
         var isCleanedUp = false
-        var escGlobalMonitor: Any?
-        var escLocalMonitor: Any?
+        let escMonitor = EscapeMonitor()
         var countdownWindow: CountdownOverlayWindow?
         
         let cleanup: @MainActor () -> Void = {
             guard !isCleanedUp else { return }
             isCleanedUp = true
             
-            if let gMon = escGlobalMonitor {
-                NSEvent.removeMonitor(gMon)
-                escGlobalMonitor = nil
-            }
-            if let lMon = escLocalMonitor {
-                NSEvent.removeMonitor(lMon)
-                escLocalMonitor = nil
-            }
+            escMonitor.stop()
             for win in dimWindows {
                 win.orderOut(nil)
                 win.close()
@@ -209,24 +201,10 @@ extension AppWindowManager {
             }
         }
         
-        // 3. Отмена по Escape (глобально и локально)
-        escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { event in
-            if event.keyCode == 53 { // Escape
-                Task { @MainActor in
-                    isCancelled = true
-                    cleanup()
-                }
-            }
-        }
-        escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
-            if event.keyCode == 53 { // Escape
-                Task { @MainActor in
-                    isCancelled = true
-                    cleanup()
-                }
-                return nil
-            }
-            return event
+        // 3. Отмена по Escape (глобально, локально и через системный хоткей)
+        escMonitor.start(includeGlobal: true, useHotKeyFallback: true) {
+            isCancelled = true
+            cleanup()
         }
         
         countdownWindow = CountdownOverlayWindow(seconds: seconds, centerPoint: center) { [weak self] in
@@ -242,7 +220,8 @@ extension AppWindowManager {
         if let cw = countdownWindow, cw.windowNumber > 0 {
             captureExcludingIDs.append(CGWindowID(cw.windowNumber))
         }
-        countdownWindow?.orderFrontRegardless()
+        NSApp.activate()
+        countdownWindow?.makeKeyAndOrderFront(nil)
     }
     
     /// Повтор захвата предыдущей области экрана (Repeat Last Capture)

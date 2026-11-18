@@ -3,6 +3,15 @@
     <channel>
         <title>Just Screenshot</title>
         <item>
+            <title>1.4.4</title>
+            <pubDate>Wed, 18 Nov 2026 20:47:06 +0200</pubDate>
+            <sparkle:version>17</sparkle:version>
+            <sparkle:shortVersionString>1.4.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.4/JustScreenshot-v1.4.4.zip" length="3018442" type="application/octet-stream" sparkle:edSignature="sq/fpZyOBHFJ5BRyrDameJdsWPV6zu8NMbvDkIJ6+LHsvJr6jwXVY+5DKsdZrkjRrXQLyDKEPsRTiEROjiH2Dw=="/>
+        </item>
+        <item>
             <title>1.4.3</title>
             <pubDate>Wed, 18 Nov 2026 16:13:02 +0200</pubDate>
             <sparkle:version>16</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.2/JustScreenshot-v1.4.2.zip" length="3016796" type="application/octet-stream" sparkle:edSignature="A3HD0ZiC09PcFqkQ9lEyvfhzseSNmFTamOY9nEuLpuvWLZFaD5YRmmMK0qaP2y0Rd2V6JerJoChG+APc6GpXDg=="/>
-        </item>
-        <item>
-            <title>1.4.1</title>
-            <pubDate>Wed, 18 Nov 2026 12:21:50 +0200</pubDate>
-            <sparkle:version>14</sparkle:version>
-            <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>12.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.1/JustScreenshot-v1.4.1.zip" length="3041809" type="application/octet-stream" sparkle:edSignature="F/SqPWrF6H2WHOQR5DaWz1tKsAg+3sgu7VkoAewc+09ANN0XLKDLEdHivdOYpoY2SzbN3itb3GlX6a8cId1iBQ=="/>
         </item>
     </channel>
 </rss>

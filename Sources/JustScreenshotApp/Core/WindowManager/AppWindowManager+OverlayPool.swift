@@ -27,8 +27,10 @@ extension AppWindowManager {
     
     func presentOverlays(_ windows: [AreaOverlayWindow]) {
         overlayWindows = windows
-        installOverlayEscMonitors()
-        NSApp.activate(ignoringOtherApps: true)
+        overlayState.escMonitor.start(includeGlobal: true, useHotKeyFallback: true) { [weak self] in
+            self?.closeAllOverlays()
+        }
+        NSApp.activate()
         
         let mouseLoc = NSEvent.mouseLocation
         for window in windows {
@@ -37,7 +39,7 @@ extension AppWindowManager {
             window.orderFrontRegardless()
         }
         if let targetWin = windows.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) }) ?? windows.first {
-            targetWin.makeKey()
+            targetWin.makeKeyAndOrderFront(nil)
             targetWin.makeFirstResponder(targetWin.contentView)
         }
     }
@@ -45,7 +47,7 @@ extension AppWindowManager {
     func closeAllOverlays() {
         overlayToken = UUID()
         samplerInFlight.removeAll()
-        removeOverlayEscMonitors()
+        overlayState.escMonitor.stop()
         
         let windows = overlayWindows
         overlayWindows.removeAll()
@@ -54,35 +56,9 @@ extension AppWindowManager {
         }
         
         if isRecordingPreparing {
-            recordingFrameWindow?.orderFrontRegardless()
+            recordingDimWindows.forEach { $0.orderFrontRegardless() }
+            recordingFrameWindow?.makeKeyAndOrderFront(nil)
             recordingBarWindow?.orderFrontRegardless()
-        }
-    }
-    
-    func installOverlayEscMonitors() {
-        guard overlayEscLocalMonitor == nil else { return }
-        overlayEscLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                self?.closeAllOverlays()
-                return nil
-            }
-            return event
-        }
-        overlayEscGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                DispatchQueue.main.async { self?.closeAllOverlays() }
-            }
-        }
-    }
-    
-    func removeOverlayEscMonitors() {
-        if let monitor = overlayEscLocalMonitor {
-            NSEvent.removeMonitor(monitor)
-            overlayEscLocalMonitor = nil
-        }
-        if let monitor = overlayEscGlobalMonitor {
-            NSEvent.removeMonitor(monitor)
-            overlayEscGlobalMonitor = nil
         }
     }
     

@@ -99,7 +99,8 @@ extension AppWindowManager {
                 self?.cancelRecordingSetup()
             }
         )
-        frameWin.orderFrontRegardless()
+        NSApp.activate()
+        frameWin.makeKeyAndOrderFront(nil)
         recordingFrameWindow = frameWin
         
         let barWin = RecordingControlBarWindow(
@@ -134,6 +135,15 @@ extension AppWindowManager {
         )
         barWin.orderFrontRegardless()
         recordingBarWindow = barWin
+        recordingState.setupEscMonitor.start(
+            shouldHandle: { [weak self] in
+                guard let self else { return false }
+                return self.isRecordingPreparing && self.overlayWindows.isEmpty
+            },
+            onEscape: { [weak self] in
+                self?.cancelRecordingSetup()
+            }
+        )
     }
     
     public func applyPresetRect(_ rect: CGRect) {
@@ -196,6 +206,8 @@ extension AppWindowManager {
     
     public func cancelRecordingSetup() {
         isRecordingPreparing = false
+        recordingState.setupEscMonitor.stop()
+        recordingState.countdownEscMonitor.stop()
         recordingState.countdownWindow?.cancel()
         recordingState.countdownWindow = nil
         
@@ -264,12 +276,17 @@ extension AppWindowManager {
             let center = CGPoint(x: rectToRecord.midX, y: rectToRecord.midY)
             let countdown = CountdownOverlayWindow(seconds: countdownSec, centerPoint: center) { [weak self] in
                 Task { [weak self] in
+                    self?.recordingState.countdownEscMonitor.stop()
                     self?.recordingState.countdownWindow?.cancel()
                     self?.recordingState.countdownWindow = nil
                     await self?.beginActiveRecording(appKitRect: rectToRecord)
                 }
             }
             recordingState.countdownWindow = countdown
+            recordingState.countdownEscMonitor.start(includeGlobal: true, useHotKeyFallback: true) { [weak self] in
+                self?.cancelRecordingSetup()
+            }
+            NSApp.activate()
             countdown.makeKeyAndOrderFront(nil)
         } else {
             Task { [weak self] in
@@ -279,6 +296,8 @@ extension AppWindowManager {
     }
     
     private func beginActiveRecording(appKitRect: CGRect) async {
+        recordingState.setupEscMonitor.stop()
+        recordingState.countdownEscMonitor.stop()
         let customPath = AppSettings.shared.defaultSaveDirectoryPath
         var isDir: ObjCBool = false
         let baseDir: URL
@@ -392,6 +411,8 @@ extension AppWindowManager {
     
     func cleanupRecordingSession() {
         _ = CursorTrackRecorder.shared.stop()
+        recordingState.setupEscMonitor.stop()
+        recordingState.countdownEscMonitor.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
         isRecording = false
