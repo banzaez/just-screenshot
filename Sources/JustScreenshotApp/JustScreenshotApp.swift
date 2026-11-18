@@ -7,6 +7,7 @@ struct JustScreenshotApp: App {
     private var launchAtLogin = LaunchAtLoginManager.shared
     private var localization = LocalizationManager.shared
     private var updaterManager = UpdaterManager.shared
+    private var permissions = PermissionsMonitor.shared
     
     var body: some Scene {
         MenuBarExtra("Just Screenshot", systemImage: windowManager.isRecording ? "record.circle.fill" : (windowManager.isRecordingPreparing ? "viewfinder.circle.fill" : "camera.viewfinder")) {
@@ -141,6 +142,16 @@ struct JustScreenshotApp: App {
                     Label(L("menu.settings"), systemImage: "gearshape")
                 }
                 .keyboardShortcut(",", modifiers: [.command])
+
+                Button {
+                    permissions.refresh()
+                    windowManager.showSettings()
+                } label: {
+                    Label(
+                        L("menu.check_permissions"),
+                        systemImage: permissions.screenRecordingGranted ? "checkmark.shield" : "exclamationmark.triangle"
+                    )
+                }
                 
                 Button {
                     updaterManager.checkForUpdates()

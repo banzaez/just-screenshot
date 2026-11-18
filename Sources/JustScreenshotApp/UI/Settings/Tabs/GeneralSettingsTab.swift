@@ -8,6 +8,9 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Секция: Статус системных разрешений macOS
+            PermissionsStatusCard()
+
             // Секция: Выбор языка интерфейса
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {

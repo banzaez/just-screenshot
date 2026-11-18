@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecordingSettingsTab: View {
     @Bindable var settings = AppSettings.shared
+    var permissions = PermissionsMonitor.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -61,13 +62,13 @@ struct RecordingSettingsTab: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                         .onChange(of: settings.showKeystrokesDuringRecording) { _, newValue in
-                            if newValue && !AccessibilityPermissionHelper.isGranted {
-                                AccessibilityPermissionHelper.requestAccess()
+                            if newValue && !permissions.accessibilityGranted {
+                                permissions.requestAccessibility()
                             }
                         }
                     }
 
-                    if settings.showKeystrokesDuringRecording && !AccessibilityPermissionHelper.isGranted {
+                    if settings.showKeystrokesDuringRecording && !permissions.accessibilityGranted {
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
@@ -84,7 +85,7 @@ struct RecordingSettingsTab: View {
                                 title: L("settings.recording.accessibility_button"),
                                 icon: "lock.shield"
                             ) {
-                                AccessibilityPermissionHelper.requestAccess()
+                                permissions.requestAccessibility()
                             }
                             .fixedSize(horizontal: true, vertical: false)
                         }

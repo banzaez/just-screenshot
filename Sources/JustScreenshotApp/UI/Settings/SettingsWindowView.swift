@@ -5,6 +5,7 @@ public struct SettingsWindowView: View {
     @State private var selectedTab: SettingsTab = .general
     @State private var hoveredTab: SettingsTab? = nil
     @Namespace private var tabNamespace
+    var permissions = PermissionsMonitor.shared
 
     enum SettingsTab: String, CaseIterable, Identifiable {
         case general
@@ -134,6 +135,11 @@ public struct SettingsWindowView: View {
                                 .font(.system(size: 12, weight: .semibold))
                             Text(tab.localizedTitle)
                                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                            if tab == .general && !permissions.screenRecordingGranted {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 6, height: 6)
+                            }
                         }
                         .foregroundColor(isSelected ? .primary : (isHovered ? .primary.opacity(0.9) : .secondary))
                         .padding(.horizontal, 14)
