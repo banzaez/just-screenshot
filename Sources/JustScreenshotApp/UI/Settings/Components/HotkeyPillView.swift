@@ -19,45 +19,10 @@ struct SingleShortcutPillView: View {
     var body: some View {
         HStack(spacing: 4) {
             if isRecordingThis {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(Color.blue)
-                        .frame(width: 6, height: 6)
-                        .shadow(color: Color.blue.opacity(0.8), radius: 4)
-
-                    Text(L("settings.hotkeys.press_keys"))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.blue)
-
-                    Button("✕") {
-                        recordingTarget = nil
-                    }
-                    .font(.system(size: 10, weight: .bold))
-                    .buttonStyle(.plain)
-                    .foregroundColor(.secondary)
-                }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(Color.blue.opacity(0.12))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(Color.blue, lineWidth: 1.5)
-                )
-                .shadow(color: Color.blue.opacity(0.3), radius: 6, x: 0, y: 1)
-                .background(
-                    ShortcutRecorderView(
-                        shortcut: Binding(
-                            get: { shortcut },
-                            set: { newKey in onRecord(newKey) }
-                        )
-                    ) {
-                        recordingTarget = nil
-                    }
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
+                ShortcutRecordingPillBody(
+                    shortcut: shortcut,
+                    recordingTarget: $recordingTarget,
+                    onRecord: onRecord
                 )
             } else {
                 HStack(spacing: 4) {
@@ -128,6 +93,20 @@ struct EmptyShortcutRecorderPillView: View {
     let onRecord: (ShortcutKey) -> Void
 
     var body: some View {
+        ShortcutRecordingPillBody(
+            shortcut: ShortcutKey(keyCode: 0, keyChar: ""),
+            recordingTarget: $recordingTarget,
+            onRecord: onRecord
+        )
+    }
+}
+
+private struct ShortcutRecordingPillBody: View {
+    let shortcut: ShortcutKey
+    @Binding var recordingTarget: HotkeyTarget?
+    let onRecord: (ShortcutKey) -> Void
+    
+    var body: some View {
         HStack(spacing: 6) {
             Circle()
                 .fill(Color.blue)
@@ -159,7 +138,7 @@ struct EmptyShortcutRecorderPillView: View {
         .background(
             ShortcutRecorderView(
                 shortcut: Binding(
-                    get: { ShortcutKey(keyCode: 0, keyChar: "") },
+                    get: { shortcut },
                     set: { newKey in onRecord(newKey) }
                 )
             ) {

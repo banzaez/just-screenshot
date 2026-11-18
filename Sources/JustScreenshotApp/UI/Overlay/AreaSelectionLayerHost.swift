@@ -94,22 +94,33 @@ final class AreaSelectionLayerHost {
         layer.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
     }
     
+    private var appliedScale: CGFloat = 0
+    private var lastTipText: String?
+    private var lastTipBounds: CGRect = .zero
+    
+    private lazy var disabledLayerActions: [String: CAAction] = [
+        "bounds": NSNull(),
+        "position": NSNull(),
+        "path": NSNull(),
+        "opacity": NSNull(),
+        "hidden": NSNull()
+    ]
+    
     private func applyContentsScale(_ scale: CGFloat) {
+        guard scale != appliedScale else { return }
+        appliedScale = scale
         for layer in [dimLayer, maskLayer, borderLayer, crosshairLayer, badgeBackgroundLayer, tipBackgroundLayer] {
             layer.contentsScale = scale
-            layer.actions = [
-                "bounds": NSNull(),
-                "position": NSNull(),
-                "path": NSNull(),
-                "opacity": NSNull(),
-                "hidden": NSNull()
-            ]
+            layer.actions = disabledLayerActions
         }
         badgeTextLayer.contentsScale = scale
         tipTextLayer.contentsScale = scale
     }
     
     private func refreshTip(text: String, bounds: CGRect) {
+        guard text != lastTipText || bounds != lastTipBounds else { return }
+        lastTipText = text
+        lastTipBounds = bounds
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium)
         ]

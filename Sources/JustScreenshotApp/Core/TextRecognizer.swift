@@ -7,7 +7,7 @@ public enum TextRecognizer {
     
     /// Распознавание QR-кодов на изображении с возвратом закодированных строк (URL, текст) через Vision (аппаратное ускорение)
     public static func detectQRCodes(in image: NSImage) async -> [String] {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return [] }
+        guard let cg = ImageExporter.cgImage(from: image) else { return [] }
         return await Task.detached(priority: .userInitiated) {
             let request = VNDetectBarcodesRequest()
             request.symbologies = [.qr]
@@ -29,40 +29,34 @@ public enum TextRecognizer {
         return patterns.compactMap { try? NSRegularExpression(pattern: $0, options: [.caseInsensitive]) }
     }()
 
+    private static func performTextRecognition(on cgImage: CGImage, usesLanguageCorrection: Bool) -> [VNRecognizedTextObservation] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = usesLanguageCorrection
+        request.recognitionLanguages = ["ru-RU", "en-US"]
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([request])
+        return request.results ?? []
+    }
+
     public static func recognize(in image: NSImage) async -> String {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return "" }
+        guard let cg = ImageExporter.cgImage(from: image) else { return "" }
         return await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["ru-RU", "en-US"]
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-            try? handler.perform([request])
-            let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+            let observations = performTextRecognition(on: cg, usesLanguageCorrection: true)
+            let lines = observations.compactMap { $0.topCandidates(1).first?.string }
             return lines.joined(separator: "\n")
         }.value
     }
     
-    /// Модель найденного фрагмента текста с его bounding box в координатах изображения (y сверху вниз для SwiftUI)
-    public struct RecognizedMatch: Sendable {
-        public let text: String
-        public let rect: CGRect
-    }
-    
     /// Поиск чувствительных данных (email, телефоны, токены, номера карт) с возвратом их рамок
     public static func findSensitiveRegions(in image: NSImage) async -> [CGRect] {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return [] }
+        guard let cg = ImageExporter.cgImage(from: image) else { return [] }
         let imageWidth = CGFloat(cg.width)
         let imageHeight = CGFloat(cg.height)
         
         return await Task.detached(priority: .userInitiated) {
-            let request = VNRecognizeTextRequest()
-            request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["ru-RU", "en-US"]
-            let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-            try? handler.perform([request])
-            
-            guard let observations = request.results else {
+            let observations = performTextRecognition(on: cg, usesLanguageCorrection: false)
+            guard !observations.isEmpty else {
                 return []
             }
             

@@ -122,10 +122,6 @@ final class AreaSelectionNSView: NSView {
         syncLayers()
     }
     
-    func updateBackgroundImage(_ image: CGImage) {
-        updateSampler(ScreenPixelSampler(image: image))
-    }
-    
     func resetOverlayState() {
         isHidden = false
         isDragging = false

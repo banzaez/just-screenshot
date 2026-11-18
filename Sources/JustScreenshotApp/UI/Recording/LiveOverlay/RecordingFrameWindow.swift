@@ -453,7 +453,7 @@ final class RecordingFrameNSView: NSView {
         initialWindowFrame = win.frame
         
         if activeHitTarget == .move {
-            NSCursor.closedHand.push()
+            NSCursor.closedHand.set()
         }
     }
     
@@ -533,7 +533,7 @@ final class RecordingFrameNSView: NSView {
         }
         
         if activeHitTarget == .move {
-            NSCursor.pop()
+            NSCursor.openHand.set()
         }
         activeHitTarget = .none
         

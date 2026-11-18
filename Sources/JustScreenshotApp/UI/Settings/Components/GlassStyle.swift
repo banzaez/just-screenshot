@@ -26,9 +26,9 @@ public struct VisualEffectView: NSViewRepresentable {
     }
 
     public func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-        nsView.state = state
+        if nsView.material != material { nsView.material = material }
+        if nsView.blendingMode != blendingMode { nsView.blendingMode = blendingMode }
+        if nsView.state != state { nsView.state = state }
     }
 }
 

@@ -60,6 +60,7 @@ enum AnimatedFrameExtractor {
         onFrame: (CGImage, Int) throws -> Void
     ) async throws -> Int {
         var decodedFrames = 0
+        var cachedContext: (ctx: CGContext, width: Int, height: Int)?
         let tracks = try await asset.loadTracks(withMediaType: .video)
         
         if let videoTrack = tracks.first {
@@ -79,27 +80,33 @@ enum AnimatedFrameExtractor {
                 if reader.startReading() {
                     var nextSampleTime = plan.startTime
                     while let sampleBuffer = trackOutput.copyNextSampleBuffer() {
+                        try Task.checkCancellation()
                         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
                         if pts >= nextSampleTime || decodedFrames == 0 {
-                            if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                                var rawCGImage: CGImage?
-                                VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &rawCGImage)
-                                if let rawCGImage {
-                                    let processed = processFrameSinglePass(
-                                        rawCGImage,
-                                        at: max(0, pts - plan.startTime),
-                                        burnIn: plan.burnIn,
-                                        options: options,
-                                        maxDimension: maxDimension
-                                    )
-                                    decodedFrames += 1
-                                    try onFrame(processed, decodedFrames)
+                            try autoreleasepool {
+                                if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                                    var rawCGImage: CGImage?
+                                    VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &rawCGImage)
+                                    if let rawCGImage {
+                                        let processed = processFrameSinglePass(
+                                            rawCGImage,
+                                            at: max(0, pts - plan.startTime),
+                                            burnIn: plan.burnIn,
+                                            options: options,
+                                            maxDimension: maxDimension,
+                                            cachedContext: &cachedContext
+                                        )
+                                        decodedFrames += 1
+                                        try onFrame(processed, decodedFrames)
+                                    }
                                 }
                             }
                             nextSampleTime += plan.sampleInterval
                         }
                     }
                 }
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 decodedFrames = 0
             }
@@ -109,6 +116,9 @@ enum AnimatedFrameExtractor {
         if decodedFrames == 0 {
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
+            if !options.smartZoom && options.cropRect == nil {
+                generator.maximumSize = CGSize(width: maxDimension, height: maxDimension)
+            }
             let tolerance = CMTime(seconds: 0.05, preferredTimescale: 600)
             generator.requestedTimeToleranceBefore = tolerance
             generator.requestedTimeToleranceAfter = tolerance
@@ -121,18 +131,22 @@ enum AnimatedFrameExtractor {
             }
             
             for try await result in generator.images(for: cmTimes) {
-                let rawCGImage = try result.image
-                let actualSeconds = (try? result.actualTime.seconds) ?? result.requestedTime.seconds
-                let relTime = max(0, actualSeconds - plan.startTime)
-                let processed = processFrameSinglePass(
-                    rawCGImage,
-                    at: relTime,
-                    burnIn: plan.burnIn,
-                    options: options,
-                    maxDimension: maxDimension
-                )
-                decodedFrames += 1
-                try onFrame(processed, decodedFrames)
+                try Task.checkCancellation()
+                try autoreleasepool {
+                    let rawCGImage = try result.image
+                    let actualSeconds = (try? result.actualTime.seconds) ?? result.requestedTime.seconds
+                    let relTime = max(0, actualSeconds - plan.startTime)
+                    let processed = processFrameSinglePass(
+                        rawCGImage,
+                        at: relTime,
+                        burnIn: plan.burnIn,
+                        options: options,
+                        maxDimension: maxDimension,
+                        cachedContext: &cachedContext
+                    )
+                    decodedFrames += 1
+                    try onFrame(processed, decodedFrames)
+                }
             }
         }
         
@@ -145,7 +159,8 @@ enum AnimatedFrameExtractor {
         at relativeTime: Double,
         burnIn: [BurnInAnnotation],
         options: VideoExportOptions,
-        maxDimension: CGFloat
+        maxDimension: CGFloat,
+        cachedContext: inout (ctx: CGContext, width: Int, height: Int)?
     ) -> CGImage {
         let srcW = CGFloat(image.width)
         let srcH = CGFloat(image.height)
@@ -175,20 +190,30 @@ enum AnimatedFrameExtractor {
             return image
         }
         
-        let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let ctx = CGContext(
-            data: nil,
-            width: targetWidth,
-            height: targetHeight,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return image
+        let ctx: CGContext
+        if let cached = cachedContext, cached.width == targetWidth, cached.height == targetHeight {
+            ctx = cached.ctx
+            ctx.clear(CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        } else {
+            let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+            guard let newCtx = CGContext(
+                data: nil,
+                width: targetWidth,
+                height: targetHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else {
+                return image
+            }
+            newCtx.interpolationQuality = .high
+            cachedContext = (newCtx, targetWidth, targetHeight)
+            ctx = newCtx
         }
         
-        ctx.interpolationQuality = .high
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
         
         // Масштабируем из пространства кропнутого исходника в целевой буфер
         let scaleX = CGFloat(targetWidth) / croppedW

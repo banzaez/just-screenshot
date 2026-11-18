@@ -29,10 +29,12 @@ public final class VideoExportService: @unchecked Sendable {
             throw NSError(domain: "VideoExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Video track not found"])
         }
         
-        let compVideoTrack = composition.addMutableTrack(
+        guard let compVideoTrack = composition.addMutableTrack(
             withMediaType: .video,
             preferredTrackID: kCMPersistentTrackID_Invalid
-        )!
+        ) else {
+            throw NSError(domain: "VideoExport", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to create composition video track"])
+        }
         
         let trimTimeRange = CMTimeRange(
             start: CMTime(seconds: startTime, preferredTimescale: 600),
@@ -136,9 +138,16 @@ public final class VideoExportService: @unchecked Sendable {
         
         let tracker = ExportProgressTracker(exportSession: exportSession, progressHandler: progressHandler)
         tracker.start()
+        defer { tracker.stop() }
         
-        await exportSession.export()
-        tracker.stop()
+        nonisolated(unsafe) let session = exportSession
+        await withTaskCancellationHandler {
+            await session.export()
+        } onCancel: {
+            session.cancelExport()
+        }
+        
+        try Task.checkCancellation()
         
         if exportSession.status == .completed {
             progressHandler(1.0)
@@ -215,7 +224,7 @@ public final class VideoExportService: @unchecked Sendable {
         
         // Генерация путевых точек (waypoints) по треку курсора с учетом выбранного режима и масштаба
         var waypoints: [(time: Double, transform: CGAffineTransform)] = []
-        let step: Double = 1.0
+        let step: Double = 0.1
         var t: Double = 0.0
         while t <= duration {
             let state = track.cameraState(

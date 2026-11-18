@@ -173,6 +173,8 @@ public struct VideoTimelineView: View {
 private struct TrimHandleView: View {
     let isStart: Bool
     
+    @State private var isHovering = false
+    
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
@@ -185,9 +187,17 @@ private struct TrimHandleView: View {
         }
         .shadow(color: .black.opacity(0.4), radius: 3)
         .onHover { inside in
+            guard inside != isHovering else { return }
+            isHovering = inside
             if inside {
                 NSCursor.resizeLeftRight.push()
             } else {
+                NSCursor.pop()
+            }
+        }
+        .onDisappear {
+            if isHovering {
+                isHovering = false
                 NSCursor.pop()
             }
         }

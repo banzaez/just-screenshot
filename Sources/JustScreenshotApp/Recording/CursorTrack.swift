@@ -179,10 +179,13 @@ public final class CursorTrackRecorder {
     
     private var recordingRect: CGRect = .zero
     private var startTime: Date?
+    private var pauseStartTime: Date?
+    private var totalPausedDuration: TimeInterval = 0
     private var keyframes: [CursorKeyframe] = []
     private var sampleTimer: Timer?
     private var clickMonitor: Any?
     private var isRecording = false
+    private var isPaused = false
     
     private init() {}
     
@@ -191,25 +194,45 @@ public final class CursorTrackRecorder {
         _ = stop()
         self.recordingRect = recordingRect
         self.startTime = Date()
+        self.pauseStartTime = nil
+        self.totalPausedDuration = 0
         self.keyframes = []
         self.isRecording = true
+        self.isPaused = false
         
         // Глобальный мониторинг кликов ЛКМ и ПКМ
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.recordPoint(isClick: true)
             }
         }
         
-        // Сэмплирование позиции курсора
+        // Сэмплирование позиции курсора (scheduledTimer уже выполняется на main runloop)
         sampleTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.recordPoint(isClick: false)
             }
         }
         
         // Запись нулевой точки
         recordPoint(isClick: false)
+    }
+    
+    /// Приостановка записи трека курсора синхронно с паузой видеозаписи
+    public func pause() {
+        guard isRecording, !isPaused else { return }
+        isPaused = true
+        pauseStartTime = Date()
+    }
+    
+    /// Возобновление записи трека курсора
+    public func resume() {
+        guard isRecording, isPaused else { return }
+        if let pauseStart = pauseStartTime {
+            totalPausedDuration += Date().timeIntervalSince(pauseStart)
+            pauseStartTime = nil
+        }
+        isPaused = false
     }
     
     /// Остановка сэмплирования и возврат итогового трека
@@ -222,6 +245,9 @@ public final class CursorTrackRecorder {
             self.clickMonitor = nil
         }
         isRecording = false
+        isPaused = false
+        pauseStartTime = nil
+        totalPausedDuration = 0
         let track = CursorTrack(keyframes: keyframes)
         keyframes = []
         startTime = nil
@@ -229,10 +255,10 @@ public final class CursorTrackRecorder {
     }
     
     private func recordPoint(isClick: Bool) {
-        guard isRecording, let startTime else { return }
+        guard isRecording, !isPaused, let startTime else { return }
         guard recordingRect.width > 0, recordingRect.height > 0 else { return }
         
-        let elapsed = Date().timeIntervalSince(startTime)
+        let elapsed = max(0, Date().timeIntervalSince(startTime) - totalPausedDuration)
         let mouseLoc = NSEvent.mouseLocation
         
         // В AppKit y=0 находится снизу экрана, в видеокоординатах y=0 сверху

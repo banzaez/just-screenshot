@@ -98,10 +98,6 @@ public final class AreaOverlayWindow: NSWindow {
         (contentView as? AreaSelectionNSView)?.updateVisibleWindows(windows)
     }
     
-    public func updateBackgroundImage(_ image: CGImage) {
-        (contentView as? AreaSelectionNSView)?.updateBackgroundImage(image)
-    }
-    
     public override var canBecomeKey: Bool { true }
     public override var canBecomeMain: Bool { true }
     

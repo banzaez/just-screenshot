@@ -20,10 +20,6 @@ public final class LaunchAtLoginManager {
         }
     }
     
-    public func toggle() {
-        setLaunchAtLogin(!isEnabled)
-    }
-    
     public func setLaunchAtLogin(_ enable: Bool) {
         if #available(macOS 13.0, *) {
             do {

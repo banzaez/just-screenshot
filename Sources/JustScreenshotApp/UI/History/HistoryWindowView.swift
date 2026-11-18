@@ -60,15 +60,16 @@ public struct HistoryWindowView: View {
         }
     }
     
-    private func count(for filter: HistoryFilter) -> Int {
-        switch filter {
-        case .all:
-            return store.entries.count
-        case .photos:
-            return store.entries.reduce(0) { $0 + ($1.kind == .image ? 1 : 0) }
-        case .videos:
-            return store.entries.reduce(0) { $0 + ($1.kind == .video ? 1 : 0) }
+    private var entryCounts: (all: Int, photos: Int, videos: Int) {
+        var photos = 0
+        var videos = 0
+        for entry in store.entries {
+            switch entry.kind {
+            case .image: photos += 1
+            case .video: videos += 1
+            }
         }
+        return (store.entries.count, photos, videos)
     }
     
     public var body: some View {
@@ -177,7 +178,13 @@ public struct HistoryWindowView: View {
                             Text(filter.title)
                                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
                             
-                            Text("\(count(for: filter))")
+                            let counts = entryCounts
+                            let filterCount: Int = switch filter {
+                            case .all: counts.all
+                            case .photos: counts.photos
+                            case .videos: counts.videos
+                            }
+                            Text("\(filterCount)")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)

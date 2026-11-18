@@ -185,8 +185,11 @@ public final class AppSettings {
         self.shortcutOCRAlt = AppSettings.loadShortcut(key: Keys.shortcutOCRAlt)
     }
     
+    private static let shortcutEncoder = JSONEncoder()
+    private static let shortcutDecoder = JSONDecoder()
+    
     private func saveShortcut(_ shortcut: ShortcutKey, key: String) {
-        if let data = try? JSONEncoder().encode(shortcut) {
+        if let data = try? Self.shortcutEncoder.encode(shortcut) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
@@ -201,7 +204,7 @@ public final class AppSettings {
     
     private static func loadShortcut(key: String) -> ShortcutKey? {
         guard let data = UserDefaults.standard.data(forKey: key),
-              let shortcut = try? JSONDecoder().decode(ShortcutKey.self, from: data) else {
+              let shortcut = try? shortcutDecoder.decode(ShortcutKey.self, from: data) else {
             return nil
         }
         return shortcut

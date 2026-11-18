@@ -87,8 +87,7 @@ extension AppWindowManager {
             onDelete: { [weak self] in
                 self?.closeVideoEditor(id: editorID)
                 self?.history.deleteVideo(at: videoURL)
-            },
-            onClose: { [weak self] in self?.closeVideoEditor(id: editorID) }
+            }
         )
         
         let window = makeEditorWindow(
@@ -100,9 +99,9 @@ extension AppWindowManager {
         )
         window.representedURL = videoURL
         
-        let managed = ManagedWindow(window: window) { [weak self] closed in
+        let managed = ManagedWindow(window: window) { [weak self] _ in
             model.cleanup()
-            self?.videoEditors = self?.videoEditors.filter { $0.value !== closed } ?? [:]
+            self?.videoEditors.removeValue(forKey: editorID)
         }
         
         videoEditors[editorID] = managed
@@ -111,7 +110,7 @@ extension AppWindowManager {
     
     func closeVideoEditor(id: UUID) {
         guard let managed = videoEditors.removeValue(forKey: id) else { return }
-        managed.closeSilently()
+        managed.closeSilently(runOnClose: true)
     }
     
     private func makeEditorWindow<Content: View>(
@@ -121,21 +120,12 @@ extension AppWindowManager {
         rootView: Content,
         resetCascade: Bool
     ) -> NSWindow {
-        let window = NSWindow(
+        let window = makeGlassWindow(
             contentRect: contentRect,
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered,
-            defer: false
+            title: title,
+            minSize: minSize,
+            rootView: rootView
         )
-        window.title = title
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.minSize = minSize
-        window.contentView = NSHostingView(rootView: rootView)
         
         if resetCascade {
             window.center()

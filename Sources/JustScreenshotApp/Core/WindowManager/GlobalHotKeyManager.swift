@@ -69,10 +69,6 @@ public final class GlobalHotKeyManager {
     private var eventHandler: EventHandlerRef?
     private let tapState = TapState()
 
-    public var isUsingEventTap: Bool {
-        tapState.isTapActive
-    }
-
     private init() {
         installCarbonEventHandler()
         _ = ensureEventTapIfTrusted()
@@ -187,15 +183,6 @@ public final class GlobalHotKeyManager {
         if !tapState.isTapActive {
             registerCarbonHotKey(id: id, keyCode: keyCode, modifiers: normalizedModifiers)
         }
-    }
-
-    public func unregister(id: UInt32) {
-        if let ref = hotKeyRefs.removeValue(forKey: id) {
-            UnregisterEventHotKey(ref)
-        }
-        registeredConfigs.removeValue(forKey: id)
-        handlers.removeValue(forKey: id)
-        syncTapCombos()
     }
 
     public func unregisterAll() {

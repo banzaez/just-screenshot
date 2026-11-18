@@ -41,6 +41,11 @@ public final class CountdownOverlayWindow: NSWindow {
         )
         self.contentView = hostingView
     }
+    
+    func cancel() {
+        orderOut(nil)
+        contentView = nil
+    }
 }
 
 private struct CountdownView: View {
@@ -85,11 +90,11 @@ private struct CountdownView: View {
         .task {
             animateTick()
             for _ in 1..<initialSeconds {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil, !Task.isCancelled else { return }
                 remaining -= 1
                 animateTick()
             }
-            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil, !Task.isCancelled else { return }
             onComplete()
         }
     }

@@ -18,9 +18,6 @@ enum EditorPreferences {
         static let addShadow = "editor_pref_addShadow"
         static let showWindowFrame = "editor_pref_showWindowFrame"
         
-        static let videoColor = "editor_pref_video_color"
-        static let videoLineWidth = "editor_pref_video_lineWidth"
-        static let videoFontSize = "editor_pref_video_fontSize"
         static let videoPlaybackRate = "editor_pref_video_playbackRate"
     }
     
@@ -103,27 +100,6 @@ enum EditorPreferences {
     }
     
     // MARK: - Video editor
-    
-    static var videoColor: Color {
-        get { loadColor(key: Keys.videoColor) ?? .red }
-        set { saveColor(newValue, key: Keys.videoColor) }
-    }
-    
-    static var videoLineWidth: CGFloat {
-        get {
-            let v = UserDefaults.standard.object(forKey: Keys.videoLineWidth) as? Double
-            return CGFloat(v ?? 3)
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: Keys.videoLineWidth) }
-    }
-    
-    static var videoFontSize: CGFloat {
-        get {
-            let v = UserDefaults.standard.object(forKey: Keys.videoFontSize) as? Double
-            return CGFloat(v ?? 20)
-        }
-        set { UserDefaults.standard.set(Double(newValue), forKey: Keys.videoFontSize) }
-    }
     
     static var videoPlaybackRate: Float {
         get {

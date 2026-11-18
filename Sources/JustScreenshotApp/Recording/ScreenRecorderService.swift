@@ -28,6 +28,11 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     
     /// Запуск записи выбранной области экрана
     public func startRecording(rect: CGRect, destinationURL: URL) async throws {
+        let alreadyRecording = recordingQueue.sync { self.isRecording }
+        if alreadyRecording {
+            await cancelRecording()
+        }
+        
         let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { disp in
             let dispRect = CGRect(x: CGFloat(disp.frame.origin.x),
@@ -92,7 +97,13 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
             writer.add(input)
         }
         
-        writer.startWriting()
+        guard writer.startWriting() else {
+            throw writer.error ?? NSError(
+                domain: "ScreenRecorder",
+                code: -3,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to start AVAssetWriter"]
+            )
+        }
         
         let scStream = SCStream(filter: filter, configuration: config, delegate: self)
         
@@ -139,16 +150,17 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     public func stopRecording() async throws -> URL? {
         let activeStream: SCStream? = recordingQueue.sync {
             guard self.isRecording else { return nil }
-            return self.stream
+            self.isRecording = false
+            self.isPaused = false
+            let current = self.stream
+            self.stream = nil
+            return current
         }
         guard let scStream = activeStream else { return nil }
         
         try await scStream.stopCapture()
         
         let finalizeContext: (writer: AVAssetWriter?, url: URL?) = recordingQueue.sync {
-            self.stream = nil
-            self.isRecording = false
-            self.isPaused = false
             let writer = self.assetWriter
             let input = self.videoInput
             let url = self.outputURL
@@ -189,16 +201,17 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
     public func cancelRecording() async {
         let activeStream: SCStream? = recordingQueue.sync {
             guard self.isRecording else { return nil }
-            return self.stream
+            self.isRecording = false
+            self.isPaused = false
+            let current = self.stream
+            self.stream = nil
+            return current
         }
         if let scStream = activeStream {
             try? await scStream.stopCapture()
         }
         
         let urlToRemove: URL? = recordingQueue.sync {
-            self.stream = nil
-            self.isRecording = false
-            self.isPaused = false
             self.assetWriter?.cancelWriting()
             self.assetWriter = nil
             self.videoInput = nil
@@ -210,6 +223,21 @@ public final class ScreenRecorderService: NSObject, @unchecked Sendable, SCStrea
         
         if let urlToRemove {
             try? FileManager.default.removeItem(at: urlToRemove)
+        }
+    }
+    
+    // MARK: - SCStreamDelegate
+    public func stream(_ stream: SCStream, didStopWithError error: any Error) {
+        recordingQueue.async {
+            guard self.stream === stream else { return }
+            self.stream = nil
+            self.isRecording = false
+            self.isPaused = false
+            self.assetWriter?.cancelWriting()
+            self.assetWriter = nil
+            self.videoInput = nil
+            self.pixelBufferAdaptor = nil
+            print("ScreenRecorderService stream stopped with error: \(error.localizedDescription)")
         }
     }
     

@@ -4,6 +4,30 @@ import SwiftUI
 extension AppWindowManager {
     // MARK: - История
     
+    func makeGlassWindow<Content: View>(
+        contentRect: NSRect,
+        title: String,
+        minSize: NSSize,
+        rootView: Content
+    ) -> NSWindow {
+        let window = NSWindow(
+            contentRect: contentRect,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = true
+        window.minSize = minSize
+        window.contentView = NSHostingView(rootView: rootView)
+        return window
+    }
+
     public func showHistory() {
         history.pruneMissingFiles()
         if let existing = historyWindow {
@@ -20,20 +44,12 @@ extension AppWindowManager {
                 self?.history.copyToClipboard(entry)
             }
         )
-        let window = NSWindow(
+        let window = makeGlassWindow(
             contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered, defer: false
+            title: L("history.title"),
+            minSize: NSSize(width: 600, height: 440),
+            rootView: view
         )
-        window.title = L("history.title")
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.minSize = NSSize(width: 600, height: 440)
-        window.contentView = NSHostingView(rootView: view)
         window.center()
         
         let managed = ManagedWindow(window: window) { [weak self] _ in self?.historyWindow = nil }
@@ -67,20 +83,12 @@ extension AppWindowManager {
             return
         }
         let view = SettingsWindowView()
-        let window = NSWindow(
+        let window = makeGlassWindow(
             contentRect: NSRect(x: 0, y: 0, width: 660, height: 720),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
-            backing: .buffered, defer: false
+            title: L("settings.title"),
+            minSize: NSSize(width: 600, height: 600),
+            rootView: view
         )
-        window.title = L("settings.title")
-        window.titlebarAppearsTransparent = true
-        window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
-        window.backgroundColor = .clear
-        window.isOpaque = false
-        window.hasShadow = true
-        window.minSize = NSSize(width: 600, height: 600)
-        window.contentView = NSHostingView(rootView: view)
         window.center()
         
         let managed = ManagedWindow(window: window) { [weak self] _ in self?.settingsWindow = nil }

@@ -15,10 +15,10 @@ public struct VideoOverlayCanvasView: View {
             
             ZStack(alignment: .topLeading) {
                 if model.isCropping {
-                    CropOverlayView(
-                        model: model,
+                    NormalizedCropOverlayView(
+                        cropRect: Bindable(model).cropRect,
                         containerSize: containerSize,
-                        videoRect: videoRect
+                        contentRect: videoRect
                     )
                 }
                 

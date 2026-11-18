@@ -31,6 +31,7 @@ final class RecordingSessionState {
     var frameWindow: RecordingFrameWindow?
     var effectsWindow: RecordingEffectsOverlayWindow?
     var barWindow: RecordingControlBarWindow?
+    var countdownWindow: CountdownOverlayWindow?
     var dimWindows: [RecordingDimOverlayWindow] = []
     var timer: Timer?
     var startedAt: Date?
@@ -44,7 +45,6 @@ final class RecordingSessionState {
 public final class AppWindowManager {
     public static let shared = AppWindowManager()
     
-    public var currentCapturedItem: CapturedItem?
     public var isRecordingPreparing: Bool = false
     public var isRecording: Bool = false
     public var isRecordingPaused: Bool = false

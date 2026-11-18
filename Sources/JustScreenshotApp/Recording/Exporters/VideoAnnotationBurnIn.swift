@@ -7,26 +7,16 @@ import AVFoundation
 /// Плоский снимок аннотации для экспорта (без SwiftUI Color)
 public struct BurnInAnnotation: Sendable {
     public enum Kind: Sendable {
-        case text, rect, arrow, blur
+        case blur
     }
     
     public var kind: Kind
     public var rect: CGRect // нормализованные [0...1]
-    public var text: String
-    public var r: CGFloat
-    public var g: CGFloat
-    public var b: CGFloat
-    public var a: CGFloat
-    public var lineWidth: CGFloat
-    public var fontSize: CGFloat
     public var rotationAngle: Double
     
     @MainActor
     public static func from(_ items: [VideoAnnotationItem]) -> [BurnInAnnotation] {
         items.map { item in
-            let ns = NSColor(item.color)
-            var r: CGFloat = 1, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 1
-            ns.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
             let kind: Kind
             switch item.type {
             case .blur: kind = .blur
@@ -34,18 +24,17 @@ public struct BurnInAnnotation: Sendable {
             return BurnInAnnotation(
                 kind: kind,
                 rect: item.rect,
-                text: item.text,
-                r: r, g: g, b: b, a: a,
-                lineWidth: item.lineWidth,
-                fontSize: item.fontSize,
                 rotationAngle: item.rotationAngle
             )
         }
     }
 }
 
-/// Отрисовка аннотаций поверх кадра (GIF) и сборка CALayer для MP4
+/// Отрисовка аннотаций поверх кадра (GIF/WebP) и сборка CALayer для MP4
 enum VideoAnnotationBurnIn {
+    
+    private static let blurFillColor = CGColor(gray: 0.55, alpha: 0.85)
+    private static let blurStrokeColor = CGColor(gray: 1, alpha: 0.35)
     
     nonisolated private static func pixelRect(for item: BurnInAnnotation, in size: CGSize) -> CGRect {
         CGRect(
@@ -69,85 +58,20 @@ enum VideoAnnotationBurnIn {
             context.rotate(by: CGFloat(item.rotationAngle * .pi / 180))
             context.translateBy(x: -center.x, y: -center.y)
             
-            let color = CGColor(red: item.r, green: item.g, blue: item.b, alpha: item.a)
-            
             switch item.kind {
             case .blur:
-                context.setFillColor(CGColor(gray: 0.55, alpha: 0.85))
-                context.fill(pixelRect)
-                context.setStrokeColor(CGColor(gray: 1, alpha: 0.35))
-                context.setLineWidth(1)
-                context.stroke(pixelRect)
-                
-            case .rect:
-                context.setStrokeColor(color)
-                context.setLineWidth(item.lineWidth)
-                context.stroke(pixelRect.insetBy(dx: item.lineWidth / 2, dy: item.lineWidth / 2))
-                
-            case .arrow:
-                context.setStrokeColor(color)
-                context.setLineWidth(item.lineWidth)
-                context.setLineCap(.round)
-                context.setLineJoin(.round)
-                let geometry = AnnotationArrowGeometry.diagonal(in: pixelRect.size, lineWidth: item.lineWidth)
-                let origin = pixelRect.origin
-                context.move(to: CGPoint(x: origin.x + geometry.start.x, y: origin.y + geometry.start.y))
-                context.addLine(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
-                context.move(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
-                context.addLine(to: CGPoint(x: origin.x + geometry.headLeft.x, y: origin.y + geometry.headLeft.y))
-                context.move(to: CGPoint(x: origin.x + geometry.end.x, y: origin.y + geometry.end.y))
-                context.addLine(to: CGPoint(x: origin.x + geometry.headRight.x, y: origin.y + geometry.headRight.y))
-                context.strokePath()
-                
-            case .text:
-                let text = (item.text.isEmpty ? "Text" : item.text) as NSString
-                let font = NSFont.boldSystemFont(ofSize: item.fontSize)
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: NSColor(cgColor: color) ?? .red
-                ]
-                let size = text.size(withAttributes: attrs)
-                let bg = CGRect(
-                    x: pixelRect.midX - size.width / 2 - 8,
-                    y: pixelRect.midY - size.height / 2 - 4,
-                    width: size.width + 16,
-                    height: size.height + 8
-                )
-                context.setFillColor(CGColor(gray: 0, alpha: 0.65))
-                context.addPath(CGPath(roundedRect: bg, cornerWidth: 6, cornerHeight: 6, transform: nil))
+                let path = CGPath(roundedRect: pixelRect, cornerWidth: 6, cornerHeight: 6, transform: nil)
+                context.setFillColor(blurFillColor)
+                context.addPath(path)
                 context.fillPath()
-                text.draw(
-                    at: CGPoint(x: bg.minX + 8, y: bg.minY + 4),
-                    withAttributes: attrs
-                )
+                context.setStrokeColor(blurStrokeColor)
+                context.setLineWidth(1)
+                context.addPath(path)
+                context.strokePath()
             }
             
             context.restoreGState()
         }
-    }
-    
-    /// Накладывает аннотации на CGImage (для GIF)
-    nonisolated static func composite(_ image: CGImage, annotations: [BurnInAnnotation]) -> CGImage {
-        guard !annotations.isEmpty else { return image }
-        let width = image.width
-        let height = image.height
-        let size = CGSize(width: width, height: height)
-        guard let ctx = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return image }
-        
-        ctx.draw(image, in: CGRect(origin: .zero, size: size))
-        // CGContext имеет origin снизу; переворачиваем для top-left логики аннотаций
-        ctx.translateBy(x: 0, y: size.height)
-        ctx.scaleBy(x: 1, y: -1)
-        draw(annotations, in: ctx, videoSize: size)
-        return ctx.makeImage() ?? image
     }
     
     /// CALayer-композиция для AVVideoCompositionCoreAnimationTool (MP4)
@@ -174,47 +98,12 @@ enum VideoAnnotationBurnIn {
             layer.position = CGPoint(x: pixelRect.midX, y: pixelRect.midY)
             layer.transform = CATransform3DMakeRotation(CGFloat(item.rotationAngle * .pi / 180), 0, 0, 1)
             
-            let color = CGColor(red: item.r, green: item.g, blue: item.b, alpha: item.a)
-            
             switch item.kind {
             case .blur:
-                layer.backgroundColor = CGColor(gray: 0.55, alpha: 0.85)
+                layer.backgroundColor = blurFillColor
                 layer.cornerRadius = 6
                 layer.borderWidth = 1
-                layer.borderColor = CGColor(gray: 1, alpha: 0.35)
-                
-            case .rect:
-                layer.borderWidth = item.lineWidth
-                layer.borderColor = color
-                layer.cornerRadius = 6
-                layer.backgroundColor = NSColor.clear.cgColor
-                
-            case .arrow:
-                let shape = CAShapeLayer()
-                shape.frame = layer.bounds
-                let path = CGMutablePath()
-                let geometry = AnnotationArrowGeometry.diagonal(in: layer.bounds.size, lineWidth: item.lineWidth)
-                AnnotationArrowGeometry.addToPath(path, points: geometry)
-                shape.path = path
-                shape.strokeColor = color
-                shape.fillColor = nil
-                shape.lineWidth = item.lineWidth
-                shape.lineCap = .round
-                shape.lineJoin = .round
-                layer.addSublayer(shape)
-                
-            case .text:
-                let text = CATextLayer()
-                text.string = item.text.isEmpty ? "Text" : item.text
-                text.font = NSFont.boldSystemFont(ofSize: item.fontSize)
-                text.fontSize = item.fontSize
-                text.foregroundColor = color
-                text.alignmentMode = .center
-                text.contentsScale = 2
-                text.frame = layer.bounds
-                layer.backgroundColor = CGColor(gray: 0, alpha: 0.65)
-                layer.cornerRadius = 6
-                layer.addSublayer(text)
+                layer.borderColor = blurStrokeColor
             }
             
             parent.addSublayer(layer)

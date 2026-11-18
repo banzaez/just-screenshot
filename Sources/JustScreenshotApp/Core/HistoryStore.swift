@@ -117,7 +117,7 @@ public final class HistoryStore {
     /// Добавление снимка в историю (новые — в начале) с фоновым кодированием PNG и записью на диск
     @discardableResult
     public func add(_ image: NSImage, id: UUID = UUID()) -> HistoryEntry? {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let cgImage = ImageExporter.cgImage(from: image) else { return nil }
         let entry = HistoryEntry(
             id: id,
             date: Date(),
@@ -200,20 +200,6 @@ public final class HistoryStore {
     /// Мгновенное получение уже закэшированной в памяти миниатюры без I/O и задержек
     public func cachedThumbnail(for entry: HistoryEntry) -> NSImage? {
         thumbnails.object(forKey: entry.id as NSUUID)
-    }
-    
-    /// Синхронная миниатюра через ImageIO / AVAssetImageGenerator
-    public func thumbnail(for entry: HistoryEntry) -> NSImage? {
-        if let cached = thumbnails.object(forKey: entry.id as NSUUID) { return cached }
-        let url = fileURL(for: entry)
-        let cg = entry.kind == .video
-            ? Self.decodeVideoThumbnailCGImage(at: url)
-            : Self.decodeThumbnailCGImage(at: url)
-        guard let cg else { return nil }
-        let img = NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
-        let cost = max(1, Int(cg.width * cg.height * 4))
-        thumbnails.setObject(img, forKey: entry.id as NSUUID, cost: cost)
-        return img
     }
     
     /// Асинхронная загрузка миниатюры вне MainActor
@@ -341,11 +327,9 @@ public final class HistoryStore {
         
         if matching.isEmpty {
             let fallbackPNG = directory.appendingPathComponent("\(id.uuidString).png")
-            try? FileManager.default.removeItem(at: fallbackPNG)
+            Self.removeURLsInBackground([fallbackPNG])
         } else {
-            for item in matching {
-                removeFiles(for: item)
-            }
+            Self.removeURLsInBackground(matching.flatMap { fileURLsToRemove(for: $0) })
         }
         saveIndex()
     }
@@ -355,9 +339,8 @@ public final class HistoryStore {
         let targetPath = videoURL.standardizedFileURL.path
         let matching = entries.filter { fileURL(for: $0).standardizedFileURL.path == targetPath }
         if matching.isEmpty {
-            try? FileManager.default.removeItem(at: videoURL)
             let trackURL = videoURL.deletingPathExtension().appendingPathExtension("track.json")
-            try? FileManager.default.removeItem(at: trackURL)
+            Self.removeURLsInBackground([videoURL, trackURL])
         } else {
             for item in matching {
                 delete(id: item.id)
@@ -366,20 +349,29 @@ public final class HistoryStore {
     }
     
     public func clear() {
-        for e in entries {
-            removeFiles(for: e)
-        }
+        let urls = entries.flatMap { fileURLsToRemove(for: $0) }
+        Self.removeURLsInBackground(urls)
         entries.removeAll()
         thumbnails.removeAllObjects()
         saveIndex()
     }
     
-    private func removeFiles(for entry: HistoryEntry) {
+    private func fileURLsToRemove(for entry: HistoryEntry) -> [URL] {
         let url = fileURL(for: entry)
-        try? FileManager.default.removeItem(at: url)
         if entry.kind == .video {
             let trackURL = url.deletingPathExtension().appendingPathExtension("track.json")
-            try? FileManager.default.removeItem(at: trackURL)
+            return [url, trackURL]
+        }
+        return [url]
+    }
+    
+    private nonisolated static func removeURLsInBackground(_ urls: [URL]) {
+        guard !urls.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            let fm = FileManager.default
+            for url in urls {
+                try? fm.removeItem(at: url)
+            }
         }
     }
     

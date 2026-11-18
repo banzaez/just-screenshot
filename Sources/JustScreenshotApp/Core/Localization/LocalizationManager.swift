@@ -99,22 +99,9 @@ public func L(_ key: String) -> String {
     LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
 }
 
-/// Строго типизированная функция локализации по LocKey
-@MainActor
-public func L(_ key: LocKey) -> String {
-    LocalizationCatalog.translate(key.rawValue, for: LocalizationManager.shared.currentLanguage)
-}
-
 /// Глобальная функция с форматированием аргументов
 @MainActor
 public func L(_ key: String, _ args: CVarArg...) -> String {
     let format = LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
-    return String(format: format, arguments: args)
-}
-
-/// Строго типизированная функция с форматированием аргументов
-@MainActor
-public func L(_ key: LocKey, _ args: CVarArg...) -> String {
-    let format = LocalizationCatalog.translate(key.rawValue, for: LocalizationManager.shared.currentLanguage)
     return String(format: format, arguments: args)
 }

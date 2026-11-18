@@ -30,7 +30,6 @@ struct LocalizationTests {
             "settings.tab.recording",
             "editor.close",
             "editor.copy",
-            "editor.save",
             "history.title",
             "video_editor.save_mp4"
         ]
@@ -77,7 +76,6 @@ struct LocalizationTests {
         manager.setLanguage(.japanese)
         #expect(manager.currentLanguage == .japanese)
         #expect(L("editor.close") == "閉じる")
-        #expect(L(.editorClose) == "閉じる")
     }
 }
 

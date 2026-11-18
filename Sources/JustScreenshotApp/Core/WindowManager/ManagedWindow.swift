@@ -26,12 +26,15 @@ final class ManagedWindow: NSObject, NSWindowDelegate {
         onClose(self)
     }
     
-    /// Закрыть окно программно без повторного вызова onClose
-    func closeSilently() {
+    /// Закрыть окно программно; опционально выполнить onClose для освобождения ресурсов модели
+    func closeSilently(runOnClose: Bool = false) {
         window.delegate = nil
         window.orderOut(nil)
         window.contentView = nil
         window.close()
+        if runOnClose {
+            onClose(self)
+        }
     }
     
     func bringToFront() {

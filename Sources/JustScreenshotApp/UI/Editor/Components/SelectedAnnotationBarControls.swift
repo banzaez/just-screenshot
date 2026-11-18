@@ -58,37 +58,27 @@ enum SelectedAnnotationBarControls {
     struct RotationControls: View {
         let angle: Double
         let onSetAngle: (Double) -> Void
-        var sliderWidth: CGFloat = 110
-        var wrapAngle: Bool = false
         
         var body: some View {
             HStack(spacing: 10) {
                 EditorIconButton("rotate.left", title: L("editor.selected.rotate_left")) {
-                    onSetAngle(normalized(angle - 15))
+                    onSetAngle(angle - 15)
                 }
                 Slider(
                     value: Binding(get: { angle }, set: { onSetAngle($0) }),
                     in: -180...180
                 )
-                .frame(width: sliderWidth)
+                .frame(width: 110)
                 EditorIconButton("rotate.right", title: L("editor.selected.rotate_right")) {
-                    onSetAngle(normalized(angle + 15))
+                    onSetAngle(angle + 15)
                 }
                 Text("\(Int(angle.rounded()))°")
                     .font(.callout.monospacedDigit())
-                    .frame(width: wrapAngle ? 36 : 40)
+                    .frame(width: 40)
                 EditorIconButton("arrow.counterclockwise", title: L("editor.selected.reset_angle")) {
                     onSetAngle(0)
                 }
             }
-        }
-        
-        private func normalized(_ value: Double) -> Double {
-            guard wrapAngle else { return value }
-            var deg = value
-            if deg < -180 { deg += 360 }
-            if deg > 180 { deg -= 360 }
-            return deg
         }
     }
     
@@ -108,9 +98,6 @@ enum SelectedAnnotationBarControls {
     
     struct BarChrome<Content: View>: View {
         let isActive: Bool
-        var activeOpacity: Double = 0.1
-        var inactiveColor: Color = Color(nsColor: .controlBackgroundColor).opacity(0.55)
-        var showBottomDivider: Bool = false
         @ViewBuilder var content: () -> Content
         
         var body: some View {
@@ -121,12 +108,9 @@ enum SelectedAnnotationBarControls {
             .frame(maxWidth: .infinity)
             .background(
                 isActive
-                    ? Color.accentColor.opacity(activeOpacity)
-                    : inactiveColor
+                    ? Color.accentColor.opacity(0.1)
+                    : Color(nsColor: .controlBackgroundColor).opacity(0.55)
             )
-            .overlay(alignment: .bottom) {
-                if showBottomDivider { Divider() }
-            }
             .animation(.easeInOut(duration: 0.15), value: isActive)
         }
     }

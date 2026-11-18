@@ -14,7 +14,7 @@ public enum BlurFilter {
     
     /// Сильное гауссово размытие (можно вызывать вне MainActor)
     nonisolated public static func makeBlurred(_ image: NSImage, id: UUID? = nil) -> NSImage? {
-        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return nil }
+        guard let cg = ImageExporter.cgImage(from: image) else { return nil }
         let key = cacheKey(for: cg, size: image.size, id: id)
         if let cached = cache.object(forKey: key) {
             return cached

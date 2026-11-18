@@ -55,24 +55,15 @@ public enum ImageExporter {
         try? png.write(to: url)
     }
     
-    /// Копирование NSImage в буфер обмена с сохранением максимального Retina-разрешения (PNG + TIFF)
+    /// Копирование NSImage в буфер обмена в формате PNG без промежуточного тяжёлого TIFF-буфера
     public static func copyToClipboard(_ image: NSImage) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         
-        let item = NSPasteboardItem()
-        var hasData = false
         if let png = pngData(from: image) {
+            let item = NSPasteboardItem()
             item.setData(png, forType: .png)
             item.setData(png, forType: NSPasteboard.PasteboardType("public.png"))
-            hasData = true
-        }
-        if let tiff = image.tiffRepresentation {
-            item.setData(tiff, forType: .tiff)
-            hasData = true
-        }
-        
-        if hasData {
             pasteboard.writeObjects([item])
         } else {
             pasteboard.writeObjects([image])

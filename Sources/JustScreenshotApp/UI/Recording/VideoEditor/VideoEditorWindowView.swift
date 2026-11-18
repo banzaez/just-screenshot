@@ -5,16 +5,13 @@ import AVKit
 public struct VideoEditorWindowView: View {
     var model: VideoEditorModel
     var onDelete: (() -> Void)?
-    var onClose: () -> Void
     
     public init(
         model: VideoEditorModel,
-        onDelete: (() -> Void)? = nil,
-        onClose: @escaping () -> Void
+        onDelete: (() -> Void)? = nil
     ) {
         self.model = model
         self.onDelete = onDelete
-        self.onClose = onClose
     }
     
     public var body: some View {

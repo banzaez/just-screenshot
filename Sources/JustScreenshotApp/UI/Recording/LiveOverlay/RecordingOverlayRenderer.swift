@@ -20,44 +20,6 @@ enum RecordingOverlayRenderer {
         let startTime: Date
     }
     
-    static func drawBorder(bounds: CGRect, in context: CGContext) {
-        // Красная пульсирующая/яркая рамка вокруг записываемой области
-        let insetRect = bounds.insetBy(dx: 1.5, dy: 1.5)
-        context.setStrokeColor(CGColor(red: 1.0, green: 0.22, blue: 0.22, alpha: 0.9))
-        context.setLineWidth(3.0)
-        
-        let path = CGPath(roundedRect: insetRect, cornerWidth: 6, cornerHeight: 6, transform: nil)
-        context.addPath(path)
-        context.strokePath()
-        
-        // Маленькие маркеры по 4 углам для визуального акцента
-        let cornerLen: CGFloat = 16.0
-        context.setLineWidth(4.0)
-        context.setStrokeColor(CGColor(red: 1.0, green: 0.1, blue: 0.1, alpha: 1.0))
-        
-        // Нижний левый угол
-        context.move(to: CGPoint(x: bounds.minX + 1.5, y: bounds.minY + cornerLen))
-        context.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.minY + 1.5))
-        context.addLine(to: CGPoint(x: bounds.minX + cornerLen, y: bounds.minY + 1.5))
-        
-        // Нижний правый угол
-        context.move(to: CGPoint(x: bounds.maxX - cornerLen, y: bounds.minY + 1.5))
-        context.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.minY + 1.5))
-        context.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.minY + cornerLen))
-        
-        // Верхний правый угол
-        context.move(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.maxY - cornerLen))
-        context.addLine(to: CGPoint(x: bounds.maxX - 1.5, y: bounds.maxY - 1.5))
-        context.addLine(to: CGPoint(x: bounds.maxX - cornerLen, y: bounds.maxY - 1.5))
-        
-        // Верхний левый угол
-        context.move(to: CGPoint(x: bounds.minX + cornerLen, y: bounds.maxY - 1.5))
-        context.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.maxY - 1.5))
-        context.addLine(to: CGPoint(x: bounds.minX + 1.5, y: bounds.maxY - cornerLen))
-        
-        context.strokePath()
-    }
-    
     static func drawRipples(_ ripples: [ClickRipple], now: Date, in context: CGContext) {
         for ripple in ripples {
             let progress = CGFloat(min(1.0, now.timeIntervalSince(ripple.startTime) / 0.45))

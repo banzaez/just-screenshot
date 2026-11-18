@@ -281,7 +281,6 @@ extension AppWindowManager {
     }
     
     func processCapturedItem(_ item: CapturedItem) {
-        currentCapturedItem = item
         if AppSettings.shared.copyToClipboardOnCapture {
             ImageExporter.copyToClipboard(item.image)
         }
@@ -310,9 +309,6 @@ extension AppWindowManager {
     
     public func deleteCapturedItem(id: UUID) {
         history.delete(id: id)
-        if currentCapturedItem?.id == id {
-            currentCapturedItem = nil
-        }
         hudStack.dismiss(itemID: id)
         closeEditorSilently(id: id)
     }

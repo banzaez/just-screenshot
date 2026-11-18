@@ -196,6 +196,9 @@ extension AppWindowManager {
     
     public func cancelRecordingSetup() {
         isRecordingPreparing = false
+        recordingState.countdownWindow?.cancel()
+        recordingState.countdownWindow = nil
+        
         clearRecordingDimWindows()
         
         recordingFrameWindow?.orderOut(nil)
@@ -261,9 +264,12 @@ extension AppWindowManager {
             let center = CGPoint(x: rectToRecord.midX, y: rectToRecord.midY)
             let countdown = CountdownOverlayWindow(seconds: countdownSec, centerPoint: center) { [weak self] in
                 Task { [weak self] in
+                    self?.recordingState.countdownWindow?.cancel()
+                    self?.recordingState.countdownWindow = nil
                     await self?.beginActiveRecording(appKitRect: rectToRecord)
                 }
             }
+            recordingState.countdownWindow = countdown
             countdown.makeKeyAndOrderFront(nil)
         } else {
             Task { [weak self] in
@@ -339,10 +345,12 @@ extension AppWindowManager {
             }
             recordingPausedAt = nil
             ScreenRecorderService.shared.resumeRecording()
+            CursorTrackRecorder.shared.resume()
             isRecordingPaused = false
         } else {
             recordingPausedAt = Date()
             ScreenRecorderService.shared.pauseRecording()
+            CursorTrackRecorder.shared.pause()
             isRecordingPaused = true
         }
         tickRecordingDuration()
@@ -359,20 +367,16 @@ extension AppWindowManager {
             do {
                 if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
                     CursorTrackRecorder.saveTrack(cursorTrack, forVideoURL: savedURL)
-                    await MainActor.run {
-                        self.history.addVideo(
-                            url: savedURL,
-                            width: Int(recordedRect.width),
-                            height: Int(recordedRect.height),
-                            duration: recordedDuration
-                        )
-                        self.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
-                    }
+                    self.history.addVideo(
+                        url: savedURL,
+                        width: Int(recordedRect.width),
+                        height: Int(recordedRect.height),
+                        duration: recordedDuration
+                    )
+                    self.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
                 }
             } catch {
-                await MainActor.run {
-                    self.showRecordingError(error.localizedDescription)
-                }
+                self.showRecordingError(error.localizedDescription)
             }
         }
     }
@@ -397,6 +401,9 @@ extension AppWindowManager {
         recordingPausedAt = nil
         recordingAccumulatedPause = 0
         
+        recordingState.countdownWindow?.cancel()
+        recordingState.countdownWindow = nil
+        
         clearRecordingDimWindows()
         
         recordingFrameWindow?.orderOut(nil)
@@ -410,39 +417,6 @@ extension AppWindowManager {
     }
     
     // MARK: - Вспомогательные методы
-    
-    private func determineInitialRecordingRect() -> CGRect {
-        if let saved = AppSettings.shared.lastRecordingRect {
-            let matchesScreen = NSScreen.screens.contains(where: { $0.frame.intersects(saved) })
-            if matchesScreen, saved.width >= 160, saved.height >= 120 {
-                let w = Int(saved.width)
-                let h = Int(saved.height)
-                return CGRect(
-                    x: saved.origin.x,
-                    y: saved.origin.y,
-                    width: CGFloat(w - (w % 2)),
-                    height: CGFloat(h - (h % 2))
-                )
-            }
-        }
-        
-        let mouseLoc = NSEvent.mouseLocation
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(mouseLoc, $0.frame, false) })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        
-        guard let screen = targetScreen else {
-            return CGRect(x: 100, y: 100, width: 1280, height: 720)
-        }
-        
-        let sf = screen.frame
-        let targetW = min(1280, max(640, CGFloat(Int(sf.width * 0.7) / 2 * 2)))
-        let targetH = min(720, max(400, CGFloat(Int(sf.height * 0.7) / 2 * 2)))
-        
-        let x = sf.midX - targetW / 2
-        let y = sf.midY - targetH / 2
-        return CGRect(x: x, y: y, width: targetW, height: targetH)
-    }
     
     func repositionRecordingBar(relativeTo rect: CGRect) {
         guard let barWin = recordingBarWindow else { return }

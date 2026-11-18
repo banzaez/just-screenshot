@@ -147,6 +147,20 @@ public final class ScreenCaptureService {
         return content
     }
     
+    nonisolated private static func matchingDisplay(in content: SCShareableContent, for rect: CGRect) -> SCDisplay? {
+        content.displays.first(where: { displayFrame($0).intersects(rect) }) ?? content.displays.first
+    }
+    
+    nonisolated private static func displayScale(for display: SCDisplay?, fallback: CGFloat) -> CGFloat {
+        if let display, let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
+            let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
+            if ratio >= 1.0 {
+                return ratio
+            }
+        }
+        return fallback > 0 ? fallback : 2.0
+    }
+    
     nonisolated private static func captureRectImage(
         rect: CGRect,
         excludingWindowIDs: [CGWindowID],
@@ -154,9 +168,7 @@ public final class ScreenCaptureService {
     ) async throws -> NSImage {
         let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
         
-        guard let display = content.displays.first(where: { disp in
-            displayFrame(disp).intersects(rect)
-        }) ?? content.displays.first else {
+        guard let display = matchingDisplay(in: content, for: rect) else {
             throw NSError(domain: "ScreenCaptureService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Экран не найден"])
         }
         
@@ -164,15 +176,7 @@ public final class ScreenCaptureService {
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
         
         // Определение реального масштаба рендеринга (Retina backingScale / CGDisplayMode)
-        let displayScale: CGFloat = {
-            if let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
-                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
-                if ratio >= 1.0 {
-                    return ratio
-                }
-            }
-            return scaleHint > 0 ? scaleHint : 2.0
-        }()
+        let displayScale = displayScale(for: display, fallback: scaleHint)
         
         let localRect = CGRect(
             x: rect.origin.x - CGFloat(display.frame.origin.x),
@@ -198,19 +202,11 @@ public final class ScreenCaptureService {
     
     nonisolated private static func captureDisplayImage(frame: CGRect, scale: CGFloat) async throws -> CGImage {
         let content = try await shareableContent(excludeDesktopWindows: true, onScreenWindowsOnly: true)
-        guard let display = content.displays.first(where: { disp in
-            displayFrame(disp).intersects(frame)
-        }) ?? content.displays.first else {
+        guard let display = matchingDisplay(in: content, for: frame) else {
             throw NSError(domain: "ScreenCaptureService", code: -3, userInfo: [NSLocalizedDescriptionKey: "Дисплей не найден"])
         }
         
-        let displayScale: CGFloat = {
-            if let mode = CGDisplayCopyDisplayMode(display.displayID), mode.width > 0 {
-                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
-                if ratio >= 1.0 { return ratio }
-            }
-            return scale > 0 ? scale : 2.0
-        }()
+        let displayScale = displayScale(for: display, fallback: scale)
         
         let excludedWindows = overlayWindows(in: content, excludingWindowIDs: [])
         let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
@@ -230,14 +226,8 @@ public final class ScreenCaptureService {
             throw NSError(domain: "ScreenCaptureService", code: -2, userInfo: [NSLocalizedDescriptionKey: "Окно не найдено"])
         }
         
-        let windowDisplay = content.displays.first(where: { displayFrame($0).intersects(scWindow.frame) }) ?? content.displays.first
-        let windowScale: CGFloat = {
-            if let disp = windowDisplay, let mode = CGDisplayCopyDisplayMode(disp.displayID), mode.width > 0 {
-                let ratio = CGFloat(mode.pixelWidth) / CGFloat(mode.width)
-                if ratio >= 1.0 { return ratio }
-            }
-            return scale > 0 ? scale : 2.0
-        }()
+        let windowDisplay = matchingDisplay(in: content, for: scWindow.frame)
+        let windowScale = displayScale(for: windowDisplay, fallback: scale)
         
         let filter = SCContentFilter(desktopIndependentWindow: scWindow)
         let config = SCStreamConfiguration()
