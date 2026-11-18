@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 import AppKit
+import Carbon
 import CoreGraphics
 @testable import JustScreenshotApp
 
@@ -412,5 +413,71 @@ struct AnnotationEditorHistoryTests {
         #expect(ocrShortcut.keyCode == 22) // Key 6
         #expect(ocrShortcut.keyChar == "6")
         #expect(ocrShortcut.modifiers == AppSettings.DefaultShortcuts.repeatMod)
+    }
+}
+
+@Suite("Keystroke Formatter Tests")
+struct KeystrokeFormatterTests {
+    private func makeKeyEvent(
+        keyCode: Int,
+        characters: String,
+        charactersIgnoringModifiers: String? = nil,
+        modifiers: NSEvent.ModifierFlags = []
+    ) -> NSEvent? {
+        NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: modifiers,
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: characters,
+            charactersIgnoringModifiers: charactersIgnoringModifiers ?? characters,
+            isARepeat: false,
+            keyCode: UInt16(keyCode)
+        )
+    }
+    
+    @Test @MainActor func testUsesActiveKeyboardLayoutCharacters() throws {
+        let russianA = try #require(makeKeyEvent(keyCode: kVK_ANSI_A, characters: "ф"))
+        #expect(KeystrokeFormatter.format(event: russianA) == "Ф")
+        
+        let russianSemicolon = try #require(makeKeyEvent(keyCode: kVK_ANSI_Semicolon, characters: "ж"))
+        #expect(KeystrokeFormatter.format(event: russianSemicolon) == "Ж")
+        
+        let russianCmdC = try #require(makeKeyEvent(keyCode: kVK_ANSI_C, characters: "с", modifiers: [.command]))
+        #expect(KeystrokeFormatter.format(event: russianCmdC) == "⌘ С")
+        
+        let russianCtrlC = try #require(makeKeyEvent(
+            keyCode: kVK_ANSI_C,
+            characters: "\u{03}",
+            charactersIgnoringModifiers: "с",
+            modifiers: [.control]
+        ))
+        #expect(KeystrokeFormatter.format(event: russianCtrlC) == "⌃ С")
+        
+        let shiftExclamation = try #require(makeKeyEvent(
+            keyCode: kVK_ANSI_1,
+            characters: "!",
+            charactersIgnoringModifiers: "1",
+            modifiers: [.shift]
+        ))
+        #expect(KeystrokeFormatter.format(event: shiftExclamation) == "⇧ !")
+    }
+    
+    @Test @MainActor func testPreservesSpecialAndLocalizedKeys() throws {
+        let manager = LocalizationManager.shared
+        let previousLanguage = manager.currentLanguage
+        defer { manager.setLanguage(previousLanguage) }
+        
+        manager.setLanguage(.russian)
+        let space = try #require(makeKeyEvent(keyCode: kVK_Space, characters: " "))
+        #expect(KeystrokeFormatter.format(event: space) == L("keystroke.space"))
+        
+        let f5 = try #require(makeKeyEvent(keyCode: kVK_F5, characters: "\u{F708}"))
+        #expect(KeystrokeFormatter.format(event: f5) == "F5")
+        
+        let delete = try #require(makeKeyEvent(keyCode: kVK_Delete, characters: "\u{7F}"))
+        #expect(KeystrokeFormatter.format(event: delete) == "⌫ Delete")
     }
 }
