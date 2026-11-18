@@ -50,6 +50,9 @@ public final class PermissionsMonitor {
     public func refresh() {
         screenRecordingGranted = CGPreflightScreenCaptureAccess()
         accessibilityGranted = AXIsProcessTrusted()
+        if accessibilityGranted {
+            GlobalHotKeyManager.shared.ensureEventTapIfTrusted()
+        }
         if screenRecordingGranted {
             didOpenScreenRecordingSettings = false
         }
