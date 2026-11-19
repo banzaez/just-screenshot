@@ -20,6 +20,22 @@
 
 ---
 
+## 📸 Screenshots
+
+<p align="center">
+  <img src="docs/images/capture-and-hud.jpg" alt="Just Screenshot Precision Capture & Floating HUD" width="100%" />
+  <br>
+  <em>Precision Capture with Pixel Loupe, HEX Sampler, and Liquid Glass Quick-Access HUD</em>
+</p>
+
+<p align="center">
+  <img src="docs/images/annotation-studio.jpg" alt="Just Screenshot Annotation Studio" width="100%" />
+  <br>
+  <em>Annotation Studio with Presentation Gradient Backdrops, Step Badges, and Privacy Redaction</em>
+</p>
+
+---
+
 ## 🌟 Highlights
 
 - **⚡ Native Performance**: Built pure Swift 6 with AppKit & SwiftUI — instantaneous launch, sub-10ms capture response, zero Electron bloat.
