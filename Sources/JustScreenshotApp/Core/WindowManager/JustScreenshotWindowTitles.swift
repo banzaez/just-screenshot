@@ -9,20 +9,24 @@ enum JustScreenshotWindowTitles {
     static let recordingBar = "JustScreenshotRecordingBar"
     static let recordingEffects = "JustScreenshotRecordingEffects"
     static let recordingDim = "JustScreenshotRecordingDim"
-    
+    static let quickAccessHUD = "JustScreenshotQuickAccessHUD"
+    static let hudToast = "JustScreenshotHUDToast"
+
     static let allOverlayTitles: Set<String> = [
         areaOverlay,
         countdownOverlay,
         recordingFrame,
         recordingBar,
-        recordingDim
+        recordingDim,
+        quickAccessHUD,
+        hudToast
     ]
-    
+
     static func isOverlayTitle(_ title: String?) -> Bool {
         guard let title else { return false }
         return allOverlayTitles.contains(title)
     }
-    
+
     /// Окно нашего процесса, которое не должно попадать в захват/запись
     nonisolated static func shouldExcludeFromCapture(_ window: SCWindow, currentPID: pid_t? = nil) -> Bool {
         let pid = currentPID ?? ProcessInfo.processInfo.processIdentifier

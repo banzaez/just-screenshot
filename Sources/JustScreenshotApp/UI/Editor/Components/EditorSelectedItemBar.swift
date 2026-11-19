@@ -142,9 +142,9 @@ public struct EditorSelectedItemBar: View {
                                 step: 0.5
                             )
                             .frame(width: 110)
-                            Text(String(format: "%.1g×", item.scaleFactor > 0 ? item.scaleFactor : 2.0))
+                            Text(AnnotationFormatting.zoomLabel(item.scaleFactor > 0 ? item.scaleFactor : 2.0))
                                 .font(.callout.monospacedDigit())
-                                .frame(width: 36)
+                                .frame(width: 40)
                         }
                         
                         if item.tool != .blur && item.tool != .magnifier && item.tool != .spotlight {

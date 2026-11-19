@@ -4,7 +4,7 @@ import SwiftUI
 /// Плавающее окно с контроллером записи (настройки, запуск, таймер, пауза, стоп, отмена)
 public final class RecordingControlBarWindow: NSWindow {
     private var isRecordingMode = false
-    
+
     public init(
         initialPosition: CGPoint,
         windowManager: AppWindowManager,
@@ -18,21 +18,21 @@ public final class RecordingControlBarWindow: NSWindow {
     ) {
         let isRec = windowManager.isRecording
         self.isRecordingMode = isRec
-        let size = isRec ? CGSize(width: 340, height: 52) : CGSize(width: 560, height: 52)
+        let initialSize = isRec ? CGSize(width: 340, height: 52) : CGSize(width: 560, height: 52)
         let rect = NSRect(
-            x: initialPosition.x - size.width / 2,
-            y: initialPosition.y - size.height / 2,
-            width: size.width,
-            height: size.height
+            x: initialPosition.x - initialSize.width / 2,
+            y: initialPosition.y - initialSize.height / 2,
+            width: initialSize.width,
+            height: initialSize.height
         )
-        
+
         super.init(
             contentRect: rect,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        
+
         self.title = JustScreenshotWindowTitles.recordingBar
         self.level = .floating
         self.isOpaque = false
@@ -41,7 +41,7 @@ public final class RecordingControlBarWindow: NSWindow {
         self.isMovableByWindowBackground = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.animationBehavior = .none
-        
+
         let barView = RecordingControlBarView(
             windowManager: windowManager,
             onStartRecording: onStartRecording,
@@ -52,40 +52,56 @@ public final class RecordingControlBarWindow: NSWindow {
             onStop: onStop,
             onCancel: onCancel
         )
-        
-        self.contentView = NSHostingView(rootView: barView)
+
+        let hosting = NSHostingView(rootView: barView)
+        self.contentView = hosting
+        resizeToFitContent(center: initialPosition, animated: false)
     }
-    
+
     public func updateForRecordingMode() {
         guard !isRecordingMode else { return }
         isRecordingMode = true
-        animateToSize(CGSize(width: 340, height: 52))
+        Task { @MainActor [weak self] in
+            // Даем SwiftUI один цикл для переключения дерева на activeRecordingBar
+            self?.resizeToFitContent(center: nil, animated: true)
+        }
     }
-    
-    public func updateForSetupMode() {
-        guard isRecordingMode else { return }
-        isRecordingMode = false
-        animateToSize(CGSize(width: 560, height: 52))
-    }
-    
+
     public func updatePosition(center: NSPoint) {
         let size = frame.size
         let newOrigin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
         setFrameOrigin(newOrigin)
     }
-    
-    private func animateToSize(_ newSize: CGSize) {
-        let currentCenter = NSPoint(x: frame.midX, y: frame.midY)
-        let newRect = NSRect(
-            x: currentCenter.x - newSize.width / 2,
-            y: currentCenter.y - newSize.height / 2,
-            width: newSize.width,
-            height: newSize.height
-        )
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.animator().setFrame(newRect, display: true)
+
+    private func resizeToFitContent(center: NSPoint?, animated: Bool) {
+        contentView?.layoutSubtreeIfNeeded()
+        let fitting = contentView?.fittingSize ?? CGSize(width: isRecordingMode ? 340 : 560, height: 52)
+        let fallbackWidth: CGFloat = isRecordingMode ? 320 : 500
+        let rawWidth = fitting.width > 0 ? ceil(fitting.width) : fallbackWidth
+        let rawHeight = max(52, fitting.height > 0 ? ceil(fitting.height) : 52)
+
+        let targetCenter = center ?? NSPoint(x: frame.midX, y: frame.midY)
+        let visibleFrame = ScreenCoordinateSpace.targetScreen(for: targetCenter)?.visibleFrame
+            ?? ScreenCoordinateSpace.targetScreen(for: frame)?.visibleFrame
+        let clampedWidth = visibleFrame.map { min(rawWidth, max(280, $0.width - 24)) } ?? rawWidth
+        let newSize = CGSize(width: clampedWidth, height: rawHeight)
+
+        var originX = targetCenter.x - newSize.width / 2
+        var originY = targetCenter.y - newSize.height / 2
+        if let visibleFrame {
+            originX = min(max(visibleFrame.minX + 12, originX), max(visibleFrame.minX + 12, visibleFrame.maxX - newSize.width - 12))
+            originY = min(max(visibleFrame.minY + 12, originY), max(visibleFrame.minY + 12, visibleFrame.maxY - newSize.height - 12))
+        }
+
+        let newRect = NSRect(origin: CGPoint(x: originX, y: originY), size: newSize)
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                self.animator().setFrame(newRect, display: true)
+            }
+        } else {
+            setFrame(newRect, display: true)
         }
     }
 }

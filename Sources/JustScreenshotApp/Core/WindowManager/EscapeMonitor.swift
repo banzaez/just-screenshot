@@ -1,8 +1,7 @@
 import AppKit
 import Carbon
 
-/// Универсальный монитор отмены по клавише Escape:
-/// локальный монитор + опционально глобальный монитор и временный системный хоткей (работает без Accessibility).
+/// Универсальный монитор отмены по клавише Escape
 @MainActor
 final class EscapeMonitor {
     private static var nextHotKeyID: UInt32 = 10_000
@@ -17,6 +16,10 @@ final class EscapeMonitor {
         self.hotKeyID = Self.nextHotKeyID
     }
 
+    isolated deinit {
+        stop()
+    }
+
     func start(
         includeGlobal: Bool = false,
         useHotKeyFallback: Bool = false,
@@ -25,23 +28,28 @@ final class EscapeMonitor {
     ) {
         stop()
 
+        let escCode = UInt16(kVK_Escape)
+
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard event.keyCode == 53, shouldHandle() else { return event }
+            guard event.keyCode == escCode, shouldHandle() else { return event }
             onEscape()
             return nil
         }
 
         if includeGlobal {
             globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-                guard event.keyCode == 53 else { return }
+                guard event.keyCode == escCode else { return }
                 DispatchQueue.main.async {
-                    guard shouldHandle() else { return }
-                    onEscape()
+                    MainActor.assumeIsolated {
+                        guard shouldHandle() else { return }
+                        onEscape()
+                    }
                 }
             }
         }
 
-        if useHotKeyFallback {
+        // Регистрируем Carbon-фолбэк только когда неактивен globalMonitor (например, нет Accessibility)
+        if useHotKeyFallback && globalMonitor == nil {
             usesHotKeyFallback = true
             GlobalHotKeyManager.shared.register(
                 id: hotKeyID,

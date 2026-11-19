@@ -10,7 +10,12 @@ public enum BackdropPreset: String, CaseIterable, Identifiable, Sendable {
     case snow = "Снег"
     
     public var id: String { rawValue }
-    
+
+    @MainActor
+    public var localizedTitle: String {
+        L("editor.preset.\(storageKey)")
+    }
+
     public var storageKey: String {
         switch self {
         case .aurora: return "aurora"

@@ -6,7 +6,6 @@ struct RecordingSettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Карточка: Параметры живого оверлея при записи
             GlassCard {
                 VStack(alignment: .leading, spacing: 16) {
                     GlassSectionHeader(
@@ -15,56 +14,22 @@ struct RecordingSettingsTab: View {
                         iconColor: .red
                     )
 
-                    // 1. Пульт управления
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(L("settings.recording.show_bar"))
-                                .font(.system(size: 13))
-                                .foregroundColor(.primary)
+                    GlassToggleRow(
+                        title: L("settings.recording.show_bar"),
+                        subtitle: L("settings.recording.show_bar_desc"),
+                        isOn: $settings.showFloatingBarDuringRecording
+                    )
 
-                            Text(L("settings.recording.show_bar_desc"))
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
+                    GlassDivider()
 
-                        Spacer()
-
-                        Toggle(
-                            "",
-                            isOn: $settings.showFloatingBarDuringRecording
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 1)
-
-                    // 2. Отображение нажатий клавиш (HUD)
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(L("settings.recording.show_keystrokes"))
-                                .font(.system(size: 13))
-                                .foregroundColor(.primary)
-
-                            Text(L("settings.recording.show_keystrokes_desc"))
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Toggle(
-                            "",
-                            isOn: $settings.showKeystrokesDuringRecording
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .onChange(of: settings.showKeystrokesDuringRecording) { _, newValue in
-                            if newValue && !permissions.accessibilityGranted {
-                                permissions.requestAccessibility()
-                            }
+                    GlassToggleRow(
+                        title: L("settings.recording.show_keystrokes"),
+                        subtitle: L("settings.recording.show_keystrokes_desc"),
+                        isOn: $settings.showKeystrokesDuringRecording
+                    )
+                    .onChange(of: settings.showKeystrokesDuringRecording) { _, newValue in
+                        if newValue && !permissions.accessibilityGranted {
+                            permissions.requestAccessibility()
                         }
                     }
 
@@ -100,35 +65,16 @@ struct RecordingSettingsTab: View {
                         )
                     }
 
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 1)
+                    GlassDivider()
 
-                    // 3. Подсветка кликов мыши
-                    HStack(alignment: .center, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(L("settings.recording.show_clicks"))
-                                .font(.system(size: 13))
-                                .foregroundColor(.primary)
-
-                            Text(L("settings.recording.show_clicks_desc"))
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                        }
-
-                        Spacer()
-
-                        Toggle(
-                            "",
-                            isOn: $settings.showClicksDuringRecording
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
+                    GlassToggleRow(
+                        title: L("settings.recording.show_clicks"),
+                        subtitle: L("settings.recording.show_clicks_desc"),
+                        isOn: $settings.showClicksDuringRecording
+                    )
                 }
             }
 
-            // Карточка: Формат и кодек
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     GlassSectionHeader(
@@ -138,64 +84,35 @@ struct RecordingSettingsTab: View {
                     )
 
                     VStack(spacing: 10) {
-                        HStack {
-                            Text(L("settings.recording.codec_label"))
-                                .font(.system(size: 12))
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text("Apple H.264 (MP4)")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(Color.white.opacity(0.06))
-                                )
-                        }
-
-                        Rectangle()
-                            .fill(Color.white.opacity(0.08))
-                            .frame(height: 1)
-
-                        HStack {
-                            Text(L("settings.recording.cursor_label"))
-                                .font(.system(size: 12))
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text(L("settings.recording.cursor_enabled"))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(Color.white.opacity(0.06))
-                                )
-                        }
-
-                        Rectangle()
-                            .fill(Color.white.opacity(0.08))
-                            .frame(height: 1)
-
-                        HStack {
-                            Text(L("settings.recording.editor_label"))
-                                .font(.system(size: 12))
-                                .foregroundColor(.primary)
-                            Spacer()
-                            Text(L("settings.recording.editor_open"))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                        .fill(Color.white.opacity(0.06))
-                                )
-                        }
+                        formatRow(title: L("settings.recording.codec_label"), value: "Apple H.264 (MP4)")
+                        GlassDivider()
+                        formatRow(title: L("settings.recording.cursor_label"), value: L("settings.recording.cursor_enabled"))
+                        GlassDivider()
+                        formatRow(title: L("settings.recording.editor_label"), value: L("settings.recording.editor_open"))
                     }
                 }
             }
+        }
+        .onAppear {
+            permissions.refresh()
+        }
+    }
+
+    private func formatRow(title: String, value: String) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundColor(.primary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
         }
     }
 }

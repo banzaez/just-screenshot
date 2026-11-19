@@ -16,7 +16,7 @@ public struct WidthDropdown: View {
                 Text("\(Int(selection)) px").font(.callout.monospacedDigit())
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .frame(height: 30)
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
             .contentShape(Rectangle())

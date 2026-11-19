@@ -1,13 +1,20 @@
 import SwiftUI
 
 enum HotkeyTarget: Hashable {
-    case primary(String)
-    case alternate(String)
+    case primary(AppSettings.ShortcutAction)
+    case alternate(AppSettings.ShortcutAction)
+
+    var conflictTargetID: String {
+        switch self {
+        case .primary(let action): return "primary:\(action.rawValue)"
+        case .alternate(let action): return "alt:\(action.rawValue)"
+        }
+    }
 }
 
 struct SingleShortcutPillView: View {
     let target: HotkeyTarget
-    let shortcut: ShortcutKey
+    let shortcut: ShortcutKey?
     @Binding var recordingTarget: HotkeyTarget?
     let onRecord: (ShortcutKey) -> Void
     let onClear: (() -> Void)?
@@ -20,11 +27,11 @@ struct SingleShortcutPillView: View {
         HStack(spacing: 4) {
             if isRecordingThis {
                 ShortcutRecordingPillBody(
-                    shortcut: shortcut,
+                    shortcut: shortcut ?? ShortcutKey(keyCode: 0, keyChar: ""),
                     recordingTarget: $recordingTarget,
                     onRecord: onRecord
                 )
-            } else {
+            } else if let shortcut {
                 HStack(spacing: 4) {
                     Button {
                         recordingTarget = target
@@ -80,24 +87,37 @@ struct SingleShortcutPillView: View {
                         }
                         .buttonStyle(.plain)
                         .help(L("settings.hotkeys.remove_alt"))
+                        .accessibilityLabel(L("settings.hotkeys.remove_alt"))
                     }
                 }
+            } else {
+                Button {
+                    recordingTarget = target
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 10, weight: .bold))
+                        Text(L("settings.hotkeys.add_alt"))
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.white.opacity(0.04))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(
+                                Color.white.opacity(0.22),
+                                style: StrokeStyle(lineWidth: 1, dash: [3])
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
-    }
-}
-
-struct EmptyShortcutRecorderPillView: View {
-    let target: HotkeyTarget
-    @Binding var recordingTarget: HotkeyTarget?
-    let onRecord: (ShortcutKey) -> Void
-
-    var body: some View {
-        ShortcutRecordingPillBody(
-            shortcut: ShortcutKey(keyCode: 0, keyChar: ""),
-            recordingTarget: $recordingTarget,
-            onRecord: onRecord
-        )
     }
 }
 
@@ -105,7 +125,7 @@ private struct ShortcutRecordingPillBody: View {
     let shortcut: ShortcutKey
     @Binding var recordingTarget: HotkeyTarget?
     let onRecord: (ShortcutKey) -> Void
-    
+
     var body: some View {
         HStack(spacing: 6) {
             Circle()

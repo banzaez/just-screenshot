@@ -4,39 +4,43 @@ import AppKit
 /// Верхняя панель инструментов видеоредактора: аннотации, стили, обрезка, скорость, экспорт
 public struct VideoEditorToolbarView: View {
     @Bindable var model: VideoEditorModel
+    var justCopied: Bool
+    var onCopy: () -> Void
     var onExportMP4: () -> Void
     var onExportGIF: () -> Void
     var onExportWebP: () -> Void
     var onDelete: (() -> Void)?
-    
-    @State private var justCopied = false
-    
+
     public init(
         model: VideoEditorModel,
+        justCopied: Bool = false,
+        onCopy: @escaping () -> Void = {},
         onExportMP4: @escaping () -> Void,
         onExportGIF: @escaping () -> Void,
         onExportWebP: @escaping () -> Void,
         onDelete: (() -> Void)? = nil
     ) {
         self.model = model
+        self.justCopied = justCopied
+        self.onCopy = onCopy
         self.onExportMP4 = onExportMP4
         self.onExportGIF = onExportGIF
         self.onExportWebP = onExportWebP
         self.onDelete = onDelete
     }
-    
+
     public var body: some View {
         toolbarContent
             .background(.ultraThinMaterial)
             .overlay(Divider(), alignment: .bottom)
     }
-    
+
     private var toolbarContent: some View {
         HStack(spacing: 8) {
             // Отступ слева под кнопки окна macOS ("светофор")
             Spacer()
                 .frame(width: 68)
-            
+
             // Обрезка кадра (Crop)
             Button {
                 model.isCropping.toggle()
@@ -60,7 +64,7 @@ public struct VideoEditorToolbarView: View {
             .buttonStyle(.plain)
             .fixedSize()
             .help(L("video_editor.crop_help"))
-            
+
             // Размытие конфиденциальных данных (Blur / Redact)
             Button {
                 model.addAnnotation(type: .blur)
@@ -84,17 +88,16 @@ public struct VideoEditorToolbarView: View {
             .buttonStyle(.plain)
             .fixedSize()
             .help(L("video_editor.blur_help"))
-            
+
             // Умный зум на курсор (Smart Zoom / Camera Follow) с настройками
             HStack(spacing: 0) {
-                // Основная кнопка переключения Вкл / Выкл
                 Button {
                     model.isSmartZoomEnabled.toggle()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "camera.metering.matrix")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Smart Zoom")
+                        Text(L("video_editor.smart_zoom"))
                             .font(.system(size: 11, weight: .semibold))
                             .lineLimit(1)
                             .fixedSize()
@@ -114,13 +117,12 @@ public struct VideoEditorToolbarView: View {
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
-                
-                // Выпадающее меню настроек умного зума
+
                 Menu {
                     Toggle(L("video_editor.smart_zoom_enable"), isOn: $model.isSmartZoomEnabled)
-                    
+
                     Divider()
-                    
+
                     Section(L("video_editor.smart_zoom_scale_header")) {
                         ForEach(SmartZoomScale.allCases) { scale in
                             Button {
@@ -135,9 +137,9 @@ public struct VideoEditorToolbarView: View {
                             }
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Section(L("video_editor.smart_zoom_mode_header")) {
                         ForEach(SmartZoomMode.allCases) { mode in
                             Button {
@@ -152,9 +154,9 @@ public struct VideoEditorToolbarView: View {
                             }
                         }
                     }
-                    
+
                     Divider()
-                    
+
                     Toggle(L("video_editor.smart_zoom_idle_zoomout"), isOn: $model.autoZoomOutOnIdle)
                 } label: {
                     Image(systemName: "chevron.down")
@@ -172,7 +174,7 @@ public struct VideoEditorToolbarView: View {
             )
             .fixedSize()
             .help(L("video_editor.smart_zoom_help"))
-            
+
             // Скорость воспроизведения
             Menu {
                 Button(L("video_editor.speed_05")) { model.setRate(0.5) }
@@ -200,9 +202,9 @@ public struct VideoEditorToolbarView: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            
+
             Spacer(minLength: 16)
-            
+
             // Группа управления, копирования и экспорта (Удалить | Копировать, WebP, GIF, Сохранить MP4)
             HStack(spacing: 8) {
                 if let onDelete {
@@ -223,22 +225,13 @@ public struct VideoEditorToolbarView: View {
                     .buttonStyle(.plain)
                     .fixedSize()
                     .help(L("history.delete_button"))
-                    
+
                     Divider()
                         .frame(height: 18)
                 }
-                
-                // Копировать видеофайл в буфер обмена (только иконка)
-                Button {
-                    let pb = NSPasteboard.general
-                    pb.clearContents()
-                    pb.writeObjects([model.videoURL as NSURL])
-                    withAnimation(.easeInOut(duration: 0.15)) { justCopied = true }
-                    Task { @MainActor in
-                        try? await Task.sleep(for: .seconds(1.4))
-                        withAnimation(.easeInOut(duration: 0.15)) { justCopied = false }
-                    }
-                } label: {
+
+                // Копировать видеофайл (с учетом правок) в буфер обмена
+                Button(action: onCopy) {
                     Image(systemName: justCopied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 12, weight: .semibold))
                         .frame(width: 34, height: 30)
@@ -251,7 +244,7 @@ public struct VideoEditorToolbarView: View {
                 .buttonStyle(.plain)
                 .fixedSize()
                 .help(L("editor.copy"))
-                
+
                 Button(action: onExportWebP) {
                     HStack(spacing: 5) {
                         Image(systemName: "sparkles.tv")
@@ -272,7 +265,7 @@ public struct VideoEditorToolbarView: View {
                 .buttonStyle(.plain)
                 .fixedSize()
                 .help(L("video_editor.export_webp_help"))
-                
+
                 Button(action: onExportGIF) {
                     HStack(spacing: 5) {
                         Image(systemName: "photo.stack")
@@ -293,7 +286,7 @@ public struct VideoEditorToolbarView: View {
                 .buttonStyle(.plain)
                 .fixedSize()
                 .help(L("video_editor.export_gif_help"))
-                
+
                 Button(action: onExportMP4) {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.down.to.line")
@@ -320,7 +313,7 @@ public struct VideoEditorToolbarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
-    
+
     private func scaleTitle(_ scale: SmartZoomScale) -> String {
         switch scale {
         case .subtle: return L("video_editor.smart_zoom_scale_subtle")
@@ -328,7 +321,7 @@ public struct VideoEditorToolbarView: View {
         case .closeup: return L("video_editor.smart_zoom_scale_closeup")
         }
     }
-    
+
     private func modeTitle(_ mode: SmartZoomMode) -> String {
         switch mode {
         case .onClicks: return L("video_editor.smart_zoom_mode_clicks")

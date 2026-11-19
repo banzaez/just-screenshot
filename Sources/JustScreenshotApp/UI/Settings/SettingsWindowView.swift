@@ -36,60 +36,13 @@ public struct SettingsWindowView: View {
 
     public var body: some View {
         ZStack {
-            // Нативное размытие рабочего стола (Frosted Glass / Vibrancy)
-            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
-                .ignoresSafeArea()
-
-            // Верхний световой блик стеклянной поверхности
-            LinearGradient(
-                stops: [
-                    .init(color: Color.white.opacity(0.18), location: 0.0),
-                    .init(color: Color.white.opacity(0.04), location: 0.12),
-                    .init(color: Color.clear, location: 0.35)
-                ],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-
-            // Тонкая внутренняя световая фаска стекла по периметру окна
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        stops: [
-                            .init(color: Color.white.opacity(0.28), location: 0.0),
-                            .init(color: Color.white.opacity(0.08), location: 0.35),
-                            .init(color: Color.white.opacity(0.02), location: 1.0)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 1
-                )
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            GlassWindowBackground(showSpecularRim: true)
 
             VStack(spacing: 0) {
-                // Интегрированный стеклянный хедер с плавающим селектором
                 headerBar
 
-                // Разделитель с деликатным бликом
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: Color.white.opacity(0.02), location: 0.0),
-                                .init(color: Color.white.opacity(0.18), location: 0.5),
-                                .init(color: Color.white.opacity(0.02), location: 1.0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 1)
+                GlassDivider(isHeaderSeparator: true)
 
-                // Скроллируемая область контента настроек
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch selectedTab {
@@ -113,13 +66,11 @@ public struct SettingsWindowView: View {
 
     private var headerBar: some View {
         HStack(spacing: 0) {
-            // Отступ слева под кнопки окна macOS ("светофор")
             Spacer()
                 .frame(width: 76)
 
             Spacer()
 
-            // Плавающий селектор вкладок Liquid Glass
             HStack(spacing: 4) {
                 ForEach(SettingsTab.allCases) { tab in
                     let isSelected = selectedTab == tab
@@ -182,7 +133,11 @@ public struct SettingsWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { isHovering in
-                        hoveredTab = isHovering ? tab : nil
+                        if isHovering {
+                            hoveredTab = tab
+                        } else if hoveredTab == tab {
+                            hoveredTab = nil
+                        }
                     }
                 }
             }
@@ -210,7 +165,6 @@ public struct SettingsWindowView: View {
 
             Spacer()
 
-            // Балансировочный отступ справа
             Spacer()
                 .frame(width: 76)
         }

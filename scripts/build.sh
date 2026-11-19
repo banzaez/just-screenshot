@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 # Определение корня проекта
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,42 +15,62 @@ FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 
 # Чтение версии из единого источника истины (VERSION)
 if [ -f "VERSION" ]; then
+    # shellcheck disable=SC1091
     source "VERSION"
 fi
-APP_VERSION="${VERSION:-1.1.1}"
+APP_VERSION="${VERSION:-1.4.4}"
 APP_BUILD="${BUILD:-1}"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 
 RUN_AFTER_BUILD=false
 for arg in "$@"; do
     case "$arg" in
         --run|-r) RUN_AFTER_BUILD=true ;;
+        *)
+            echo "❌ Неизвестный аргумент: $arg" >&2
+            exit 1
+            ;;
     esac
 done
 
 echo "🔨 Сборка релизного бинарника v$APP_VERSION ($APP_BUILD)..."
 swift build -c release
 
+BIN_DIR="$(swift build -c release --show-bin-path)"
+EXECUTABLE_PATH="$BIN_DIR/JustScreenshotApp"
+if [ ! -f "$EXECUTABLE_PATH" ]; then
+    echo "❌ Релизный бинарник не найден: $EXECUTABLE_PATH" >&2
+    exit 1
+fi
+
 echo "📦 Создание macOS App Bundle ($BUNDLE_DIR)..."
 rm -rf "$BUNDLE_DIR"
-mkdir -p "$MACOS_DIR"
-mkdir -p "$RESOURCES_DIR"
-mkdir -p "$FRAMEWORKS_DIR"
+mkdir -p "$MACOS_DIR" "$RESOURCES_DIR" "$FRAMEWORKS_DIR"
 
 # Копируем бинарник и иконку
-cp .build/release/JustScreenshotApp "$MACOS_DIR/$APP_NAME"
+cp "$EXECUTABLE_PATH" "$MACOS_DIR/$APP_NAME"
 APP_ICON="Sources/JustScreenshotApp/Resources/AppIcon.icns"
 if [ -f "$APP_ICON" ]; then
     cp "$APP_ICON" "$RESOURCES_DIR/AppIcon.icns"
 fi
 
-# Копируем Sparkle.framework
-SPARKLE_FRAMEWORK=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
-if [ -d "$SPARKLE_FRAMEWORK" ]; then
-    cp -R "$SPARKLE_FRAMEWORK" "$FRAMEWORKS_DIR/"
-fi
+# Копируем все SPM resource bundles (если сгенерированы)
+while IFS= read -r resource_bundle; do
+    cp -R "$resource_bundle" "$RESOURCES_DIR/"
+done < <(find "$BIN_DIR" -maxdepth 1 -name "*.bundle" -type d)
 
-# Настраиваем rpath для поиска Frameworks
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME" 2>/dev/null || true
+# Копируем Sparkle.framework (обязательная зависимость автообновлений)
+SPARKLE_FRAMEWORK=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+if [ ! -d "$SPARKLE_FRAMEWORK" ]; then
+    echo "❌ Ошибка: Sparkle.framework не найден по пути $SPARKLE_FRAMEWORK" >&2
+    exit 1
+fi
+cp -R "$SPARKLE_FRAMEWORK" "$FRAMEWORKS_DIR/"
+
+# Настраиваем rpath для поиска Frameworks (без ошибки, если rpath уже прописан)
+if ! otool -l "$MACOS_DIR/$APP_NAME" | grep -q "@executable_path/../Frameworks"; then
+    install_name_tool -add_rpath "@executable_path/../Frameworks" "$MACOS_DIR/$APP_NAME"
+fi
 
 # Генерируем Info.plist внутри Bundle
 cat <<EOF > "$CONTENTS_DIR/Info.plist"
@@ -74,12 +94,12 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
     <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
     <string>$APP_BUILD</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
     <string>Just Screenshot requires screen recording access to capture screenshots and record video of your screen.</string>
-    <key>NSMicrophoneUsageDescription</key>
-    <string>Just Screenshot requires microphone access to record audio along with screen recording.</string>
     <key>SUFeedURL</key>
     <string>https://raw.githubusercontent.com/banzaez/just-screenshot/main/appcast.xml</string>
     <key>SUPublicEDKey</key>
@@ -90,33 +110,59 @@ cat <<EOF > "$CONTENTS_DIR/Info.plist"
 </plist>
 EOF
 
-echo "✍️ Подписание фреймворков и пакета..."
+sign_item() {
+    local identity="$1"
+    local target="$2"
+    codesign --force --sign "$identity" "$target"
+}
+
+echo "✍️ Подписание фреймворков и пакета (inside-out)..."
 if [ -n "$CODESIGN_IDENTITY" ]; then
     SIGN_IDENTITY="$CODESIGN_IDENTITY"
 else
-    # Ищем собственный локальный сертификат разработки JustScreenshotDev
-    SIGN_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep -E "JustScreenshotDev" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+    SIGN_IDENTITY="$(security find-identity -p codesigning -v 2>/dev/null | grep -E "JustScreenshotDev" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)"
 fi
 
 if [ -n "$SIGN_IDENTITY" ]; then
     echo "🔐 Подписание стабильным сертификатом: $SIGN_IDENTITY"
-    if [ -d "$FRAMEWORKS_DIR/Sparkle.framework" ]; then
-        codesign --force --sign "$SIGN_IDENTITY" "$FRAMEWORKS_DIR/Sparkle.framework"
-    fi
-    codesign --force --deep --sign "$SIGN_IDENTITY" "$BUNDLE_DIR"
+    ACTIVE_IDENTITY="$SIGN_IDENTITY"
 else
     echo "ℹ️ Локальный сертификат JustScreenshotDev не найден, используется ad-hoc подпись..."
-    if [ -d "$FRAMEWORKS_DIR/Sparkle.framework" ]; then
-        codesign --force --sign - "$FRAMEWORKS_DIR/Sparkle.framework"
-    fi
-    codesign --force --deep --sign - "$BUNDLE_DIR"
+    ACTIVE_IDENTITY="-"
 fi
+
+# Подписываем вложенные компоненты Sparkle изнутри наружу
+SPARKLE_DEST="$FRAMEWORKS_DIR/Sparkle.framework"
+if [ -d "$SPARKLE_DEST" ]; then
+    while IFS= read -r xpc; do
+        sign_item "$ACTIVE_IDENTITY" "$xpc"
+    done < <(find "$SPARKLE_DEST" -name "*.xpc" -type d)
+
+    if [ -e "$SPARKLE_DEST/Versions/B/Updater.app" ]; then
+        sign_item "$ACTIVE_IDENTITY" "$SPARKLE_DEST/Versions/B/Updater.app"
+    elif [ -e "$SPARKLE_DEST/Updater.app" ]; then
+        sign_item "$ACTIVE_IDENTITY" "$SPARKLE_DEST/Updater.app"
+    fi
+
+    if [ -e "$SPARKLE_DEST/Versions/B/Autoupdate" ]; then
+        sign_item "$ACTIVE_IDENTITY" "$SPARKLE_DEST/Versions/B/Autoupdate"
+    elif [ -e "$SPARKLE_DEST/Autoupdate" ]; then
+        sign_item "$ACTIVE_IDENTITY" "$SPARKLE_DEST/Autoupdate"
+    fi
+
+    sign_item "$ACTIVE_IDENTITY" "$SPARKLE_DEST"
+fi
+
+while IFS= read -r resource_bundle; do
+    sign_item "$ACTIVE_IDENTITY" "$resource_bundle"
+done < <(find "$RESOURCES_DIR" -maxdepth 1 -name "*.bundle" -type d)
+
+sign_item "$ACTIVE_IDENTITY" "$BUNDLE_DIR"
 
 echo "✅ $APP_NAME.app v$APP_VERSION (Build $APP_BUILD) успешно собран!"
 
 if [ "$RUN_AFTER_BUILD" = true ]; then
     echo "🚀 Запуск $APP_NAME.app..."
-    # Завершаем предыдущий запущенный экземпляр, если есть
     pkill -f "$BUNDLE_DIR/Contents/MacOS/$APP_NAME" 2>/dev/null || true
     sleep 0.5
     open "$BUNDLE_DIR"

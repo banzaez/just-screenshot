@@ -2,20 +2,22 @@ import SwiftUI
 import AppKit
 import Observation
 
-/// Наблюдаемая модель состояния редактора: элементы, сессия UI, фон, undo/redo
+/// Наблюдаемая модель состояния редактора: элементы, единый стек undo/redo, фон, кадрирование
 @Observable
 @MainActor
 public final class AnnotationEditorModel {
     public let capturedItem: CapturedItem
     public var currentBaseImage: NSImage
-    
+    public private(set) var imageRevision: Int = 0
+
     public var items: [AnnotationItem] = []
     public var selectedItemID: UUID? = nil
     public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-    
+    public private(set) var nextCounterNumber: Int = 1
+
     public var selectedTool: AnnotationTool = EditorPreferences.tool {
         didSet {
-            // Не затираем «рисовалку» при переходе в режим выбора или обрезки
+            // Не затираем активный инструмент рисования при переходе к выбору или обрезке
             if selectedTool != .select && selectedTool != .crop {
                 EditorPreferences.tool = selectedTool
             }
@@ -25,15 +27,15 @@ public final class AnnotationEditorModel {
         didSet { EditorPreferences.color = selectedColor }
     }
     public var lineWidth: CGFloat = EditorPreferences.lineWidth {
-        didSet { EditorPreferences.lineWidth = lineWidth }
+        didSet { schedulePreferencesSync() }
     }
     public var fontSize: CGFloat = EditorPreferences.fontSize {
-        didSet { EditorPreferences.fontSize = fontSize }
+        didSet { schedulePreferencesSync() }
     }
     public var textInputString: String = ""
     /// Запрос фокуса на поле текста в selected bar после создания/даблклика
     public var shouldFocusTextEditor: Bool = false
-    
+
     public var showBackdrop: Bool = EditorPreferences.showBackdrop {
         didSet {
             EditorPreferences.showBackdrop = showBackdrop
@@ -48,19 +50,19 @@ public final class AnnotationEditorModel {
     }
     public var backdropPadding: CGFloat = EditorPreferences.backdropPadding {
         didSet {
-            EditorPreferences.backdropPadding = backdropPadding
+            schedulePreferencesSync()
             markModified()
         }
     }
     public var backdropCornerRadius: CGFloat = EditorPreferences.backdropCornerRadius {
         didSet {
-            EditorPreferences.backdropCornerRadius = backdropCornerRadius
+            schedulePreferencesSync()
             markModified()
         }
     }
     public var backdropShadowRadius: CGFloat = EditorPreferences.backdropShadowRadius {
         didSet {
-            EditorPreferences.backdropShadowRadius = backdropShadowRadius
+            schedulePreferencesSync()
             markModified()
         }
     }
@@ -76,250 +78,292 @@ public final class AnnotationEditorModel {
             markModified()
         }
     }
-    
+
     public private(set) var canUndo: Bool = false
     public private(set) var canRedo: Bool = false
-    
-    private struct EditorStateSnapshot {
+
+    private struct HistorySnapshot {
         let image: NSImage
+        let imageRevision: Int
         let items: [AnnotationItem]
+        let nextCounterNumber: Int
     }
-    @ObservationIgnored private var snapshotUndoStack: [EditorStateSnapshot] = []
-    @ObservationIgnored private var snapshotRedoStack: [EditorStateSnapshot] = []
-    
-    @ObservationIgnored private var undoStack: [[AnnotationItem]] = []
-    @ObservationIgnored private var redoStack: [[AnnotationItem]] = []
-    @ObservationIgnored private var isRestoring = false
-    /// Снимок до текущего жеста (move/resize/draw commit)
-    @ObservationIgnored private var gestureBaseline: [AnnotationItem]?
-    @ObservationIgnored private var liveEditFinalizeTask: Task<Void, Never>?
-    
+
+    @ObservationIgnored private var historyUndoStack: [HistorySnapshot] = []
+    @ObservationIgnored private var historyRedoStack: [HistorySnapshot] = []
+    @ObservationIgnored private var gestureBaseline: HistorySnapshot?
+    @ObservationIgnored private nonisolated(unsafe) var liveEditFinalizeTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var prefSyncTask: Task<Void, Never>?
+
     @ObservationIgnored public private(set) var hasUnsavedChanges: Bool = false
     @ObservationIgnored private var initialLoaded = false
-    
+
     public var selectedItemIndex: Int? {
         guard let id = selectedItemID else { return nil }
         return items.firstIndex(where: { $0.id == id })
     }
-    
+
     public var selectedItem: AnnotationItem? {
         guard let idx = selectedItemIndex else { return nil }
         return items[idx]
     }
-    
+
     public init(capturedItem: CapturedItem) {
         self.capturedItem = capturedItem
         self.currentBaseImage = capturedItem.image
         self.textInputString = L("editor.default_note_text")
     }
-    
+
+    deinit {
+        liveEditFinalizeTask?.cancel()
+        prefSyncTask?.cancel()
+    }
+
     public func markSaved() {
         hasUnsavedChanges = false
     }
-    
+
     public func markModified() {
         if initialLoaded {
             hasUnsavedChanges = true
         }
     }
-    
+
     public func finishInitialLoading() {
         initialLoaded = true
         hasUnsavedChanges = false
     }
-    
+
+    public func flushPendingEdits() {
+        liveEditFinalizeTask?.cancel()
+        liveEditFinalizeTask = nil
+        endGestureEdit()
+
+        prefSyncTask?.cancel()
+        prefSyncTask = nil
+        syncNumericPreferences()
+    }
+
+    public func cleanup() {
+        flushPendingEdits()
+    }
+
+    private func schedulePreferencesSync() {
+        prefSyncTask?.cancel()
+        prefSyncTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled, let self else { return }
+            self.prefSyncTask = nil
+            self.syncNumericPreferences()
+        }
+    }
+
+    private func syncNumericPreferences() {
+        EditorPreferences.lineWidth = lineWidth
+        EditorPreferences.fontSize = fontSize
+        EditorPreferences.backdropPadding = backdropPadding
+        EditorPreferences.backdropCornerRadius = backdropCornerRadius
+        EditorPreferences.backdropShadowRadius = backdropShadowRadius
+    }
+
     // MARK: - Selection / tools
-    
+
     public func selectTool(_ tool: AnnotationTool) {
         selectedTool = tool
         if tool != .select {
             selectedItemID = nil
         }
     }
-    
+
     public func selectItem(id: UUID?) {
         selectedItemID = id
         if id != nil {
             selectedTool = .select
         }
     }
-    
+
     public func requestTextFocus() {
         shouldFocusTextEditor = true
     }
-    
+
     public func consumeTextFocusRequest() {
         shouldFocusTextEditor = false
     }
-    
-    // MARK: - Undo & Redo
-    
-    /// Начало жеста: один checkpoint на весь drag
+
+    // MARK: - Unified Chronological Undo & Redo
+
+    private func captureSnapshot() -> HistorySnapshot {
+        HistorySnapshot(
+            image: currentBaseImage,
+            imageRevision: imageRevision,
+            items: items,
+            nextCounterNumber: nextCounterNumber
+        )
+    }
+
+    private func pushUndoSnapshot(_ snapshot: HistorySnapshot) {
+        historyUndoStack.append(snapshot)
+        if historyUndoStack.count > 100 {
+            historyUndoStack.removeFirst()
+        }
+        historyRedoStack.removeAll()
+        updateUndoRedoAvailability()
+    }
+
+    private func restoreSnapshot(_ snap: HistorySnapshot) {
+        let previousSelection = selectedItemID
+        let imageChanged = snap.image !== currentBaseImage || snap.imageRevision != imageRevision
+        currentBaseImage = snap.image
+        imageRevision = snap.imageRevision
+        items = snap.items
+        nextCounterNumber = snap.nextCounterNumber
+        if imageChanged {
+            cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
+            selectedItemID = nil
+        } else if let previousSelection, snap.items.contains(where: { $0.id == previousSelection }) {
+            selectedItemID = previousSelection
+        } else {
+            selectedItemID = nil
+        }
+        markModified()
+        updateUndoRedoAvailability()
+    }
+
+    /// Начало жеста: сохраняем единый снимок перед drag/resize/slider
     public func beginGestureEdit() {
         guard gestureBaseline == nil else { return }
-        gestureBaseline = items
+        gestureBaseline = captureSnapshot()
     }
-    
-    /// Конец жеста: если items изменились — пушим baseline в undo
+
+    /// Конец жеста: если элементы изменились — фиксируем baseline в единый undo
     public func endGestureEdit() {
         guard let baseline = gestureBaseline else { return }
         gestureBaseline = nil
-        guard baseline != items else { return }
-        undoStack.append(baseline)
-        if undoStack.count > 100 { undoStack.removeFirst() }
-        redoStack.removeAll()
+        guard baseline.items != items else { return }
+        pushUndoSnapshot(baseline)
         markModified()
-        updateUndoRedoAvailability()
     }
-    
-    /// Явный checkpoint перед пакетным изменением (авто-редакт и т.п.)
-    public func pushExplicitUndoCheckpoint() {
-        undoStack.append(items)
-        redoStack.removeAll()
-        updateUndoRedoAvailability()
-    }
-    
-    /// Точечное изменение items с undo (append / delete / duplicate / property)
+
+    /// Точечное изменение элементов с сохранением единого undo-снимка
     public func commitItemsMutation(_ mutate: (inout [AnnotationItem]) -> Void) {
-        let baseline = items
+        flushPendingGestureIfDifferent()
+        let baseline = captureSnapshot()
         var next = items
         mutate(&next)
-        guard next != baseline else { return }
-        undoStack.append(baseline)
-        if undoStack.count > 100 { undoStack.removeFirst() }
-        redoStack.removeAll()
-        isRestoring = true
+        guard next != baseline.items else { return }
+        pushUndoSnapshot(baseline)
         items = next
-        isRestoring = false
         markModified()
-        updateUndoRedoAvailability()
     }
-    
+
+    private func flushPendingGestureIfDifferent() {
+        liveEditFinalizeTask?.cancel()
+        liveEditFinalizeTask = nil
+        if gestureBaseline != nil {
+            endGestureEdit()
+        }
+    }
+
     public func updateSelected(_ mutate: (inout AnnotationItem) -> Void) {
         guard let idx = selectedItemIndex else { return }
         commitItemsMutation { list in
             mutate(&list[idx])
         }
     }
-    
-    /// Непрерывное изменение (слайдер): один undo-checkpoint на жест с debounce
+
+    /// Непрерывное изменение (слайдер): один undo-сэмпл на жест с debounce
     public func liveUpdateSelected(_ mutate: (inout AnnotationItem) -> Void) {
         beginGestureEdit()
         guard let idx = selectedItemIndex else { return }
         mutate(&items[idx])
         markModified()
         liveEditFinalizeTask?.cancel()
-        liveEditFinalizeTask = Task { [weak self] in
+        liveEditFinalizeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 350_000_000)
-            await MainActor.run { self?.endGestureEdit() }
+            guard !Task.isCancelled else { return }
+            self?.endGestureEdit()
         }
     }
-    
+
     public func undo() {
-        if let lastSnap = snapshotUndoStack.popLast() {
-            snapshotRedoStack.append(EditorStateSnapshot(image: currentBaseImage, items: items))
-            isRestoring = true
-            currentBaseImage = lastSnap.image
-            items = lastSnap.items
-            cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-            selectedItemID = nil
-            isRestoring = false
-            markModified()
-            updateUndoRedoAvailability()
-            return
-        }
-        guard let prev = undoStack.popLast() else { return }
-        isRestoring = true
-        redoStack.append(items)
-        let previousSelection = selectedItemID
-        items = prev
-        if let previousSelection, prev.contains(where: { $0.id == previousSelection }) {
-            selectedItemID = previousSelection
-        } else {
-            selectedItemID = nil
-        }
-        isRestoring = false
-        markModified()
-        updateUndoRedoAvailability()
+        flushPendingGestureIfDifferent()
+        guard let prev = historyUndoStack.popLast() else { return }
+        historyRedoStack.append(captureSnapshot())
+        restoreSnapshot(prev)
     }
-    
+
     public func redo() {
-        if let nextSnap = snapshotRedoStack.popLast() {
-            snapshotUndoStack.append(EditorStateSnapshot(image: currentBaseImage, items: items))
-            isRestoring = true
-            currentBaseImage = nextSnap.image
-            items = nextSnap.items
-            cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
-            selectedItemID = nil
-            isRestoring = false
-            markModified()
-            updateUndoRedoAvailability()
-            return
-        }
-        guard let next = redoStack.popLast() else { return }
-        isRestoring = true
-        undoStack.append(items)
-        let previousSelection = selectedItemID
-        items = next
-        if let previousSelection, next.contains(where: { $0.id == previousSelection }) {
-            selectedItemID = previousSelection
-        } else {
-            selectedItemID = nil
-        }
-        isRestoring = false
-        markModified()
-        updateUndoRedoAvailability()
+        flushPendingGestureIfDifferent()
+        guard let next = historyRedoStack.popLast() else { return }
+        historyUndoStack.append(captureSnapshot())
+        restoreSnapshot(next)
     }
-    
+
     private func updateUndoRedoAvailability() {
-        canUndo = !undoStack.isEmpty || !snapshotUndoStack.isEmpty
-        canRedo = !redoStack.isEmpty || !snapshotRedoStack.isEmpty
+        canUndo = !historyUndoStack.isEmpty
+        canRedo = !historyRedoStack.isEmpty
     }
-    
+
     // MARK: - Обрезка (Crop)
-    
+
     public func resetCrop() {
         cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
     }
-    
+
     public func applyCrop() {
+        flushPendingGestureIfDifferent()
         guard cropRect.width > 0.01, cropRect.height > 0.01 else { return }
         guard cropRect.origin.x > 0.001 || cropRect.origin.y > 0.001 || cropRect.width < 0.999 || cropRect.height < 0.999 else {
             selectedTool = .select
             return
         }
-        
+
         let oldImg = currentBaseImage
         let imgW = oldImg.size.width
         let imgH = oldImg.size.height
-        
-        let pixelRect = CGRect(
-            x: cropRect.origin.x * imgW,
-            y: cropRect.origin.y * imgH,
-            width: cropRect.width * imgW,
-            height: cropRect.height * imgH
+        guard imgW > 0, imgH > 0 else { return }
+
+        let nx = min(max(0, cropRect.origin.x), 0.99)
+        let ny = min(max(0, cropRect.origin.y), 0.99)
+        let nw = min(1.0 - nx, max(0.01, cropRect.width))
+        let nh = min(1.0 - ny, max(0.01, cropRect.height))
+
+        let pointRect = CGRect(
+            x: nx * imgW,
+            y: ny * imgH,
+            width: nw * imgW,
+            height: nh * imgH
         )
-        
-        guard let cg = oldImg.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+
+        guard let cg = ImageExporter.cgImage(from: oldImg) else { return }
         let scaleX = CGFloat(cg.width) / imgW
         let scaleY = CGFloat(cg.height) / imgH
-        
+
+        let cgBounds = CGRect(x: 0, y: 0, width: cg.width, height: cg.height)
         let cgCropRect = CGRect(
-            x: pixelRect.origin.x * scaleX,
-            y: pixelRect.origin.y * scaleY,
-            width: pixelRect.width * scaleX,
-            height: pixelRect.height * scaleY
+            x: pointRect.origin.x * scaleX,
+            y: pointRect.origin.y * scaleY,
+            width: pointRect.width * scaleX,
+            height: pointRect.height * scaleY
+        ).integral.intersection(cgBounds)
+
+        guard !cgCropRect.isNull, cgCropRect.width >= 1, cgCropRect.height >= 1,
+              let croppedCG = cg.cropping(to: cgCropRect) else { return }
+
+        let newPointSize = NSSize(
+            width: cgCropRect.width / max(scaleX, 0.01),
+            height: cgCropRect.height / max(scaleY, 0.01)
         )
-        
-        guard let croppedCG = cg.cropping(to: cgCropRect) else { return }
-        let newImage = NSImage(cgImage: croppedCG, size: pixelRect.size)
-        
-        snapshotUndoStack.append(EditorStateSnapshot(image: oldImg, items: items))
-        if snapshotUndoStack.count > 10 { snapshotUndoStack.removeFirst() }
-        snapshotRedoStack.removeAll()
-        
-        let offsetX = pixelRect.origin.x
-        let offsetY = pixelRect.origin.y
+        let rep = NSBitmapImageRep(cgImage: croppedCG)
+        rep.size = newPointSize
+        let newImage = NSImage(size: newPointSize)
+        newImage.addRepresentation(rep)
+
+        let baseline = captureSnapshot()
+        pushUndoSnapshot(baseline)
+
+        let offsetX = cgCropRect.origin.x / max(scaleX, 0.01)
+        let offsetY = cgCropRect.origin.y / max(scaleY, 0.01)
         var updatedItems = items
         for i in updatedItems.indices {
             updatedItems[i].startPoint.x -= offsetX
@@ -327,22 +371,24 @@ public final class AnnotationEditorModel {
             updatedItems[i].endPoint.x -= offsetX
             updatedItems[i].endPoint.y -= offsetY
         }
-        
-        isRestoring = true
+
+        imageRevision += 1
         currentBaseImage = newImage
         items = updatedItems
         cropRect = CGRect(x: 0, y: 0, width: 1, height: 1)
         selectedTool = .select
-        isRestoring = false
+        selectedItemID = nil
         markModified()
-        updateUndoRedoAvailability()
     }
-    
+
     // MARK: - Convenience mutations
-    
+
     /// Добавляет элемент. Инструмент рисования не сбрасывается (можно рисовать серию).
     public func appendItem(_ item: AnnotationItem, select: Bool = true, focusText: Bool = false) {
         commitItemsMutation { $0.append(item) }
+        if item.tool == .counter {
+            nextCounterNumber = max(nextCounterNumber + 1, item.counterNumber + 1)
+        }
         if select {
             selectedItemID = item.id
         }
@@ -350,7 +396,7 @@ public final class AnnotationEditorModel {
             requestTextFocus()
         }
     }
-    
+
     public func deleteSelected() {
         guard let id = selectedItemID else { return }
         commitItemsMutation { list in
@@ -358,25 +404,32 @@ public final class AnnotationEditorModel {
         }
         selectedItemID = nil
     }
-    
+
     public func duplicateSelected() {
         guard let idx = selectedItemIndex else { return }
         let o = items[idx]
+        let nextCounter = o.tool == .counter ? nextCounterNumber : o.counterNumber
         let copy = AnnotationItem(
             tool: o.tool,
             startPoint: CGPoint(x: o.startPoint.x + 24, y: o.startPoint.y + 24),
             endPoint: CGPoint(x: o.endPoint.x + 24, y: o.endPoint.y + 24),
-            color: o.color, lineWidth: o.lineWidth, text: o.text,
-            counterNumber: o.counterNumber + 1, fontSize: o.fontSize,
-            rotationAngle: o.rotationAngle, scaleFactor: o.scaleFactor
+            color: o.color,
+            lineWidth: o.lineWidth,
+            text: o.text,
+            counterNumber: nextCounter,
+            fontSize: o.fontSize,
+            rotationAngle: o.rotationAngle,
+            scaleFactor: o.scaleFactor,
+            curveOffset: o.curveOffset
         )
         appendItem(copy, select: true, focusText: copy.tool == .text)
     }
-    
+
     // MARK: - Экспорт
-    
+
     public func renderFinalImage() -> NSImage {
-        AnnotationRenderer.render(
+        flushPendingEdits()
+        return AnnotationRenderer.render(
             baseImage: currentBaseImage,
             items: items,
             backdrop: showBackdrop ? backdropPreset : nil,
@@ -385,7 +438,8 @@ public final class AnnotationEditorModel {
             shadowRadius: backdropShadowRadius,
             shadow: addShadow,
             showWindowFrame: showWindowFrame,
-            imageID: capturedItem.id
+            imageID: capturedItem.id,
+            revision: imageRevision
         )
     }
 }

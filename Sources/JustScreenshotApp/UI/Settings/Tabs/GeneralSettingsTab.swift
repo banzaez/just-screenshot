@@ -8,10 +8,9 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Секция: Статус системных разрешений macOS
             PermissionsStatusCard()
 
-            // Секция: Выбор языка интерфейса
+            // Язык интерфейса
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     GlassSectionHeader(
@@ -22,21 +21,23 @@ struct GeneralSettingsTab: View {
                     )
 
                     HStack(spacing: 12) {
-                        Picker("", selection: $settings.language) {
+                        Picker(L("settings.language.header"), selection: $settings.language) {
                             ForEach(AppLanguage.allCases) { lang in
                                 Text("\(lang.flagIcon)  \(lang.localizedName)")
                                     .tag(lang)
                             }
                         }
+                        .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(width: 240)
+                        .accessibilityLabel(L("settings.language.header"))
 
                         Spacer()
                     }
                 }
             }
 
-            // Секция: Система и запуск
+            // Система и запуск
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     GlassSectionHeader(
@@ -45,27 +46,17 @@ struct GeneralSettingsTab: View {
                         iconColor: .teal
                     )
 
-                    HStack {
-                        Text(L("settings.launch_at_login"))
-                            .font(.system(size: 13))
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Toggle(
-                            "",
-                            isOn: Binding(
-                                get: { launchAtLogin.isEnabled },
-                                set: { launchAtLogin.setLaunchAtLogin($0) }
-                            )
+                    GlassToggleRow(
+                        title: L("settings.launch_at_login"),
+                        isOn: Binding(
+                            get: { launchAtLogin.isEnabled },
+                            set: { launchAtLogin.setLaunchAtLogin($0) }
                         )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
+                    )
                 }
             }
 
-            // Секция: Скриншоты и захват
+            // Скриншоты и захват
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     GlassSectionHeader(
@@ -74,43 +65,21 @@ struct GeneralSettingsTab: View {
                         iconColor: .indigo
                     )
 
-                    HStack {
-                        Text(L("settings.copy_clipboard"))
-                            .font(.system(size: 13))
-                            .foregroundColor(.primary)
+                    GlassToggleRow(
+                        title: L("settings.copy_clipboard"),
+                        isOn: $settings.copyToClipboardOnCapture
+                    )
 
-                        Spacer()
+                    GlassDivider()
 
-                        Toggle(
-                            "",
-                            isOn: $settings.copyToClipboardOnCapture
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
-
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 1)
-
-                    HStack {
-                        Text(L("settings.play_sound"))
-                            .font(.system(size: 13))
-                            .foregroundColor(.primary)
-
-                        Spacer()
-
-                        Toggle(
-                            "",
-                            isOn: $settings.playSound
-                        )
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                    }
+                    GlassToggleRow(
+                        title: L("settings.play_sound"),
+                        isOn: $settings.playSound
+                    )
                 }
             }
 
-            // Секция: Папка для сохранения по умолчанию
+            // Папка для сохранения по умолчанию
             GlassCard {
                 VStack(alignment: .leading, spacing: 14) {
                     GlassSectionHeader(
@@ -154,48 +123,37 @@ struct GeneralSettingsTab: View {
                 }
             }
 
-            // Секция: О программе и обновления Sparkle
+            // О программе и обновления Sparkle
             GlassCard {
                 HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.purple.opacity(0.28), Color.purple.opacity(0.10)],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 38, height: 38)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                                    .strokeBorder(Color.purple.opacity(0.5), lineWidth: 1)
-                            )
-                            .shadow(color: Color.purple.opacity(0.25), radius: 6, x: 0, y: 2)
-                        
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundColor(.purple)
-                    }
+                    GlassIconBadge(
+                        systemImage: "sparkles",
+                        color: .purple,
+                        size: 38,
+                        cornerRadius: 11,
+                        iconSize: 17
+                    )
 
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 6) {
                             Text("Just Screenshot")
                                 .font(.system(size: 13.5, weight: .semibold))
-                            Text("v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0")")
-                                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Capsule().fill(Color.white.opacity(0.08)))
-                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+                            if let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String {
+                                Text("v\(appVersion)")
+                                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Capsule().fill(Color.white.opacity(0.08)))
+                                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.15), lineWidth: 1))
+                            }
                         }
-                        
+
                         if let status = updater.lastStatus {
                             Text(status)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.green)
+                                .foregroundColor(updater.isLastStatusError ? .red : .green)
                         } else {
-                            Text("Sparkle Autoupdate")
+                            Text(L("updater.subtitle"))
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
@@ -204,7 +162,7 @@ struct GeneralSettingsTab: View {
                     Spacer()
 
                     GlassButton(
-                        title: updater.isChecking ? "Проверка…" : L("menu.check_updates"),
+                        title: updater.isChecking ? L("updater.checking") : L("menu.check_updates"),
                         icon: "arrow.triangle.2.circlepath",
                         isLoading: updater.isChecking
                     ) {
@@ -215,6 +173,9 @@ struct GeneralSettingsTab: View {
                 }
             }
         }
+        .onAppear {
+            launchAtLogin.refreshStatus()
+        }
     }
 
     private func selectSaveDirectory() {
@@ -222,9 +183,15 @@ struct GeneralSettingsTab: View {
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
         panel.prompt = L("settings.select_button")
+        if !settings.defaultSaveDirectoryPath.isEmpty {
+            panel.directoryURL = URL(fileURLWithPath: settings.defaultSaveDirectoryPath, isDirectory: true)
+        } else {
+            panel.directoryURL = ImageExporter.defaultSaveDirectoryURL()
+        }
 
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         if panel.runModal() == .OK, let url = panel.url {
             settings.defaultSaveDirectoryPath = url.path
         }

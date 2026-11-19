@@ -1,27 +1,19 @@
 import SwiftUI
 
-/// Оверлей поверх плеера для добавления аннотаций и интерактивного кадрирования (Crop)
+/// Оверлей поверх плеера для отображения и редактирования blur-аннотаций поверх видео
 public struct VideoOverlayCanvasView: View {
     var model: VideoEditorModel
-    
+
     public init(model: VideoEditorModel) {
         self.model = model
     }
-    
+
     public var body: some View {
         GeometryReader { geo in
             let containerSize = geo.size
             let videoRect = model.videoContentRect(in: containerSize)
-            
+
             ZStack(alignment: .topLeading) {
-                if model.isCropping {
-                    NormalizedCropOverlayView(
-                        cropRect: Bindable(model).cropRect,
-                        containerSize: containerSize,
-                        contentRect: videoRect
-                    )
-                }
-                
                 ForEach(model.annotations) { item in
                     VideoAnnotationItemView(
                         item: item,
@@ -39,6 +31,7 @@ public struct VideoOverlayCanvasView: View {
                     )
                 }
             }
+            .coordinateSpace(name: "videoOverlay")
             .frame(width: containerSize.width, height: containerSize.height)
             .contentShape(Rectangle())
             .onTapGesture {

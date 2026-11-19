@@ -1,10 +1,10 @@
 import Cocoa
 
-/// Рендерер аннотаций поверх NSImage через CoreGraphics в оригинальном разрешении 1:1
+/// Рендерер аннотаций поверх NSImage через CoreGraphics в оригинальном разрешении
 @MainActor
 public enum AnnotationRenderer {
-    
-    /// Итоговое изображение: аннотации + (опционально) красивый градиентный фон с тенью и рамка окна macOS
+
+    /// Итоговое изображение: аннотации + опциональный фон с тенью и рамка окна macOS
     public static func render(
         baseImage: NSImage,
         items: [AnnotationItem],
@@ -14,241 +14,320 @@ public enum AnnotationRenderer {
         shadowRadius: CGFloat = 24,
         shadow: Bool,
         showWindowFrame: Bool = false,
-        imageID: UUID? = nil
+        imageID: UUID? = nil,
+        revision: Int = 0
     ) -> NSImage {
         let size = baseImage.size
         guard size.width > 0, size.height > 0 else { return baseImage }
-        
-        let titlebarH: CGFloat = showWindowFrame ? 30 : 0
+
+        let titlebarH: CGFloat = showWindowFrame ? WindowTitlebarSpec.height : 0
         let contentSize = NSSize(width: size.width, height: size.height + titlebarH)
         let scale = backingScale(for: baseImage)
-        let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage, id: imageID) : nil
-        
+        let blurred = items.contains(where: { $0.tool == .blur })
+            ? BlurFilter.makeBlurred(baseImage, id: imageID, revision: revision)
+            : nil
+
+        let spotlightItems = items.filter { $0.tool == .spotlight }
+
         if let backdrop {
             let pad = padding
             let outSize = NSSize(width: contentSize.width + pad * 2, height: contentSize.height + pad * 2)
-            
-            return renderInBitmapContext(pointSize: outSize, scale: scale) { context in
-                // 1. Отрисовка градиента подложки
+
+            return renderInBitmapContext(baseImage: baseImage, pointSize: outSize, scale: scale) { context in
                 let cols = backdrop.colors.map { NSColor($0) }
                 let bgRect = NSRect(origin: .zero, size: outSize)
                 let bgPath = NSBezierPath(rect: bgRect)
                 NSGradient(colors: cols)?.draw(in: bgPath, angle: -45)
-                
-                // 2. Отрисовка тени под скриншотом
+
                 let innerRect = NSRect(x: pad, y: pad, width: contentSize.width, height: contentSize.height)
-                let clip = NSBezierPath(roundedRect: innerRect, xRadius: cornerRadius, yRadius: cornerRadius)
-                
+                let clampedCorner = AnnotationGeometry.clampedCornerRadius(cornerRadius, in: innerRect)
+                let clip = NSBezierPath(roundedRect: innerRect, xRadius: clampedCorner, yRadius: clampedCorner)
+
+                context.saveGState()
                 if shadow && shadowRadius > 0 {
-                    NSGraphicsContext.saveGraphicsState()
-                    let sh = NSShadow()
-                    sh.shadowColor = NSColor.black.withAlphaComponent(0.4)
-                    sh.shadowBlurRadius = shadowRadius
-                    sh.shadowOffset = NSSize(width: 0, height: -shadowRadius * 0.4)
-                    sh.set()
-                    NSColor.black.setFill()
-                    clip.fill()
-                    NSGraphicsContext.restoreGraphicsState()
+                    context.setShadow(
+                        offset: CGSize(width: 0, height: -shadowRadius * 0.4),
+                        blur: shadowRadius,
+                        color: CGColor(gray: 0, alpha: 0.4)
+                    )
                 }
-                
-                // 3. Однопроходная отрисовка снимка, рамки окна и аннотаций
+                context.beginTransparencyLayer(auxiliaryInfo: nil)
                 NSGraphicsContext.saveGraphicsState()
                 clip.addClip()
-                
+
                 let imageRect = NSRect(x: pad, y: pad, width: size.width, height: size.height)
                 baseImage.draw(in: imageRect)
-                
+
                 if showWindowFrame {
                     let titlebarRect = NSRect(x: pad, y: pad + size.height, width: size.width, height: titlebarH)
                     drawWindowFrameTitlebar(in: titlebarRect)
                 }
-                
+
                 context.saveGState()
                 context.translateBy(x: pad, y: pad)
-                for item in items {
-                    renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
-                }
+                renderItems(
+                    items,
+                    spotlightItems: spotlightItems,
+                    in: context,
+                    imageSize: size,
+                    baseImage: baseImage,
+                    blurred: blurred
+                )
                 context.restoreGState()
-                
+
                 NSGraphicsContext.restoreGraphicsState()
+                context.endTransparencyLayer()
+                context.restoreGState()
             } ?? baseImage
         } else if showWindowFrame {
-            return renderInBitmapContext(pointSize: contentSize, scale: scale) { context in
+            return renderInBitmapContext(baseImage: baseImage, pointSize: contentSize, scale: scale) { context in
                 let fullRect = NSRect(origin: .zero, size: contentSize)
-                let clip = NSBezierPath(roundedRect: fullRect, xRadius: cornerRadius, yRadius: cornerRadius)
-                
+                let clampedCorner = AnnotationGeometry.clampedCornerRadius(cornerRadius, in: fullRect)
+                let clip = NSBezierPath(roundedRect: fullRect, xRadius: clampedCorner, yRadius: clampedCorner)
+
                 NSGraphicsContext.saveGraphicsState()
                 clip.addClip()
-                
+
                 let imageRect = NSRect(x: 0, y: 0, width: size.width, height: size.height)
                 baseImage.draw(in: imageRect)
-                
+
                 let titlebarRect = NSRect(x: 0, y: size.height, width: size.width, height: titlebarH)
                 drawWindowFrameTitlebar(in: titlebarRect)
-                
-                for item in items {
-                    renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
-                }
-                
+
+                renderItems(
+                    items,
+                    spotlightItems: spotlightItems,
+                    in: context,
+                    imageSize: size,
+                    baseImage: baseImage,
+                    blurred: blurred
+                )
+
                 NSGraphicsContext.restoreGraphicsState()
             } ?? baseImage
         } else {
-            return render(baseImage: baseImage, items: items, imageID: imageID)
+            return render(baseImage: baseImage, items: items, imageID: imageID, revision: revision)
         }
     }
-    
+
     private static func drawWindowFrameTitlebar(in rect: NSRect) {
-        NSColor(calibratedWhite: 0.18, alpha: 1.0).setFill()
+        NSColor(calibratedWhite: WindowTitlebarSpec.backgroundWhite, alpha: 1.0).setFill()
         NSBezierPath(rect: rect).fill()
-        
-        let diameter: CGFloat = 12
+
+        let diameter = WindowTitlebarSpec.buttonDiameter
         let y = rect.minY + (rect.height - diameter) / 2
-        let startX = rect.minX + 13
-        let spacing: CGFloat = 20
-        
-        let colors: [NSColor] = [
-            NSColor(srgbRed: 255/255, green: 95/255, blue: 86/255, alpha: 1.0),
-            NSColor(srgbRed: 255/255, green: 189/255, blue: 46/255, alpha: 1.0),
-            NSColor(srgbRed: 39/255, green: 201/255, blue: 63/255, alpha: 1.0)
-        ]
-        
-        for (i, col) in colors.enumerated() {
-            let circleRect = NSRect(x: startX + CGFloat(i) * spacing, y: y, width: diameter, height: diameter)
+        let startX = rect.minX + WindowTitlebarSpec.leadingInset
+        let step = diameter + WindowTitlebarSpec.buttonSpacing
+
+        for (i, rgb) in WindowTitlebarSpec.trafficLightRGB.enumerated() {
+            let circleRect = NSRect(x: startX + CGFloat(i) * step, y: y, width: diameter, height: diameter)
             let path = NSBezierPath(ovalIn: circleRect)
-            col.setFill()
+            NSColor(srgbRed: rgb.r, green: rgb.g, blue: rgb.b, alpha: 1.0).setFill()
             path.fill()
-            NSColor.black.withAlphaComponent(0.18).setStroke()
+            NSColor.black.withAlphaComponent(WindowTitlebarSpec.borderWhiteAlpha).setStroke()
             path.lineWidth = 0.5
             path.stroke()
         }
     }
-    
-    /// Отрисовка исходного изображения со списком аннотаций в точном Retina-разрешении без lockFocus()
+
+    /// Отрисовка исходного изображения со списком аннотаций 1:1
     public static func render(
         baseImage: NSImage,
         items: [AnnotationItem],
-        imageID: UUID? = nil
+        imageID: UUID? = nil,
+        revision: Int = 0
     ) -> NSImage {
         let size = baseImage.size
         guard size.width > 0, size.height > 0 else { return baseImage }
         let scale = backingScale(for: baseImage)
-        let blurred = items.contains(where: { $0.tool == .blur }) ? BlurFilter.makeBlurred(baseImage, id: imageID) : nil
-        
-        return renderInBitmapContext(pointSize: size, scale: scale) { context in
+        let blurred = items.contains(where: { $0.tool == .blur })
+            ? BlurFilter.makeBlurred(baseImage, id: imageID, revision: revision)
+            : nil
+        let spotlightItems = items.filter { $0.tool == .spotlight }
+
+        return renderInBitmapContext(baseImage: baseImage, pointSize: size, scale: scale) { context in
             baseImage.draw(at: .zero, from: NSRect(origin: .zero, size: size), operation: .copy, fraction: 1.0)
-            for item in items {
-                renderItem(item, in: context, imageSize: size, baseImage: baseImage, blurred: blurred)
-            }
+            renderItems(
+                items,
+                spotlightItems: spotlightItems,
+                in: context,
+                imageSize: size,
+                baseImage: baseImage,
+                blurred: blurred
+            )
         } ?? baseImage
     }
-    
+
     private static func backingScale(for image: NSImage) -> CGFloat {
         guard image.size.width > 0,
-              let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+              let cg = ImageExporter.cgImage(from: image) else {
             return NSScreen.main?.backingScaleFactor ?? 2.0
         }
         return max(1.0, CGFloat(cg.width) / image.size.width)
     }
-    
+
     private static func renderInBitmapContext(
+        baseImage: NSImage,
         pointSize: NSSize,
         scale: CGFloat,
         drawBlock: (CGContext) -> Void
     ) -> NSImage? {
         let pixelWidth = max(1, Int((pointSize.width * scale).rounded()))
         let pixelHeight = max(1, Int((pointSize.height * scale).rounded()))
-        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
-        
-        guard let cgContext = CGContext(
+
+        let srgb = CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+        var preferredSpace = srgb
+        if let cg = ImageExporter.cgImage(from: baseImage),
+           let srcSpace = cg.colorSpace,
+           srcSpace.model == .rgb,
+           srcSpace.numberOfComponents == 3 {
+            preferredSpace = srcSpace
+        }
+
+        let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue
+        let cgContext = CGContext(
             data: nil,
             width: pixelWidth,
             height: pixelHeight,
             bitsPerComponent: 8,
             bytesPerRow: 0,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else {
-            return nil
-        }
-        
+            space: preferredSpace,
+            bitmapInfo: bitmapInfo
+        ) ?? CGContext(
+            data: nil,
+            width: pixelWidth,
+            height: pixelHeight,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: srgb,
+            bitmapInfo: bitmapInfo
+        )
+
+        guard let cgContext else { return nil }
+
         cgContext.scaleBy(x: scale, y: scale)
         let nsContext = NSGraphicsContext(cgContext: cgContext, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsContext
         drawBlock(cgContext)
         NSGraphicsContext.restoreGraphicsState()
-        
+
         guard let cgImage = cgContext.makeImage() else { return nil }
-        return NSImage(cgImage: cgImage, size: pointSize)
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        rep.size = pointSize
+        let result = NSImage(size: pointSize)
+        result.addRepresentation(rep)
+        return result
     }
-    
+
+    private static func renderItems(
+        _ items: [AnnotationItem],
+        spotlightItems: [AnnotationItem],
+        in context: CGContext,
+        imageSize: CGSize,
+        baseImage: NSImage,
+        blurred: NSImage?
+    ) {
+        var didDrawSpotlightScrim = false
+        for item in items {
+            if item.tool == .spotlight, !didDrawSpotlightScrim {
+                drawCompositeSpotlightDim(spotlights: spotlightItems, imageSize: imageSize, in: context)
+                didDrawSpotlightScrim = true
+            }
+            renderItem(item, in: context, imageSize: imageSize, baseImage: baseImage, blurred: blurred)
+        }
+    }
+
+    private static func drawCompositeSpotlightDim(
+        spotlights: [AnnotationItem],
+        imageSize: CGSize,
+        in context: CGContext
+    ) {
+        guard !spotlights.isEmpty, imageSize.width > 0, imageSize.height > 0 else { return }
+        context.saveGState()
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
+        context.setFillColor(CGColor(gray: 0.0, alpha: 0.55))
+        context.fill(CGRect(origin: .zero, size: imageSize))
+        context.setBlendMode(.clear)
+
+        for spot in spotlights {
+            let p1 = CGPoint(x: spot.startPoint.x, y: imageSize.height - spot.startPoint.y)
+            let p2 = CGPoint(x: spot.endPoint.x, y: imageSize.height - spot.endPoint.y)
+            let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
+            let r = AnnotationGeometry.clampedCornerRadius(8, in: rect)
+
+            context.saveGState()
+            if spot.rotationAngle != 0 {
+                let center = CGPoint(x: spot.center.x, y: imageSize.height - spot.center.y)
+                context.translateBy(x: center.x, y: center.y)
+                context.rotate(by: CGFloat(-spot.rotationAngle * .pi / 180.0))
+                context.translateBy(x: -center.x, y: -center.y)
+            }
+            let holePath = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
+            context.addPath(holePath)
+            context.fillPath()
+            context.restoreGState()
+        }
+
+        context.endTransparencyLayer()
+        context.restoreGState()
+    }
+
     private static func renderItem(_ item: AnnotationItem, in context: CGContext, imageSize: CGSize, baseImage: NSImage, blurred: NSImage?) {
         context.saveGState()
-        
-        // Перевод координат из SwiftUI (y сверху вниз) в CoreGraphics (y снизу вверх)
-        let p1 = CGPoint(
-            x: item.startPoint.x,
-            y: imageSize.height - item.startPoint.y
-        )
-        let p2 = CGPoint(
-            x: item.endPoint.x,
-            y: imageSize.height - item.endPoint.y
-        )
-        
-        // Точный центр вращения
-        let center = CGPoint(
-            x: item.center.x,
-            y: imageSize.height - item.center.y
-        )
-        
-        // Поворот вокруг центра элемента
+
+        let p1 = CGPoint(x: item.startPoint.x, y: imageSize.height - item.startPoint.y)
+        let p2 = CGPoint(x: item.endPoint.x, y: imageSize.height - item.endPoint.y)
+        let center = CGPoint(x: item.center.x, y: imageSize.height - item.center.y)
+
         if item.rotationAngle != 0 {
             context.translateBy(x: center.x, y: center.y)
             let rad = -item.rotationAngle * .pi / 180.0
             context.rotate(by: CGFloat(rad))
             context.translateBy(x: -center.x, y: -center.y)
         }
-        
+
         let nsColor = NSColor(item.color)
         context.setStrokeColor(nsColor.cgColor)
         context.setFillColor(nsColor.cgColor)
         context.setLineWidth(item.lineWidth)
         context.setLineCap(.round)
         context.setLineJoin(.round)
-        
+
         switch item.tool {
         case .select, .crop:
             break
-            
+
         case .arrow:
             drawArrow(p1: p1, p2: p2, in: context, headLength: max(14, item.lineWidth * 3.2))
-            
+
         case .curvedArrow:
             drawCurvedArrow(p1: p1, p2: p2, curveOffset: item.curveOffset, in: context, headLength: max(14, item.lineWidth * 3.2))
-            
+
         case .ellipse:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             context.strokeEllipse(in: rect)
-            
+
         case .rectangle:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             context.stroke(rect)
-            
+
         case .roundedRect:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
-            let path = CGPath(roundedRect: rect, cornerWidth: 10, cornerHeight: 10, transform: nil)
+            let r = AnnotationGeometry.clampedCornerRadius(10, in: rect)
+            let path = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
             let dashLen = max(4.0, item.lineWidth * 2.0)
             context.saveGState()
             context.setLineDash(phase: 0, lengths: [dashLen, dashLen])
             context.addPath(path)
             context.strokePath()
             context.restoreGState()
-            
+
         case .counter:
             let radius: CGFloat = 16
             let rect = CGRect(x: p1.x - radius, y: p1.y - radius, width: radius * 2, height: radius * 2)
             context.fillEllipse(in: rect)
-            
+
             let numStr = "\(item.counterNumber)" as NSString
             let font = NSFont.boldSystemFont(ofSize: 15)
             let attrs: [NSAttributedString.Key: Any] = [
@@ -257,13 +336,14 @@ public enum AnnotationRenderer {
             ]
             let strSize = numStr.size(withAttributes: attrs)
             numStr.draw(at: NSPoint(x: p1.x - strSize.width / 2, y: p1.y - strSize.height / 2), withAttributes: attrs)
-            
+
         case .blur:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
             if let blurred {
-                // Рисуем только нужный фрагмент, а не весь кадр
-                let nsRect = NSRect(origin: rect.origin, size: rect.size)
-                blurred.draw(in: nsRect, from: nsRect, operation: .copy, fraction: 1.0)
+                context.saveGState()
+                context.clip(to: rect)
+                blurred.draw(in: NSRect(origin: .zero, size: imageSize), from: .zero, operation: .sourceOver, fraction: 1.0)
+                context.restoreGState()
             } else {
                 context.setFillColor(CGColor(gray: 0.5, alpha: 0.7))
                 context.fill(rect)
@@ -271,130 +351,107 @@ public enum AnnotationRenderer {
             context.setStrokeColor(CGColor(gray: 1, alpha: 0.35))
             context.setLineWidth(1)
             context.stroke(rect)
-            
+
         case .spotlight:
+            // Затемнение рисуется единым composite-проходом; здесь обводим только контур фокуса
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
-            let cornerRadius: CGFloat = 8.0
-            
-            // Затемнение вокруг выделенной области фокуса
-            context.saveGState()
-            let fullRect = CGRect(origin: .zero, size: imageSize)
-            let path = CGMutablePath()
-            path.addRect(fullRect)
-            path.addRoundedRect(in: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius)
-            context.addPath(path)
-            context.setFillColor(CGColor(gray: 0.0, alpha: 0.55))
-            context.fillPath(using: .evenOdd)
-            context.restoreGState()
-            
-            // Подсветка контура фокуса
-            context.saveGState()
-            let strokePath = CGPath(roundedRect: rect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+            let r = AnnotationGeometry.clampedCornerRadius(8.0, in: rect)
+            let strokePath = CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
             context.addPath(strokePath)
             context.setStrokeColor(CGColor(gray: 1.0, alpha: 0.85))
             context.setLineWidth(2.0)
             context.strokePath()
-            context.restoreGState()
-            
+
         case .highlighter:
             context.setStrokeColor(nsColor.withAlphaComponent(0.45).cgColor)
             context.setLineWidth(item.lineWidth * 4)
             context.move(to: p1)
             context.addLine(to: p2)
             context.strokePath()
-            
+
         case .magnifier:
             let rect = CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p1.x - p2.x), height: abs(p1.y - p2.y))
-            let center = CGPoint(x: rect.midX, y: rect.midY)
-            let radius = max(min(rect.width, rect.height) / 2, 16)
-            let circleRect = CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)
-            
-            // Тень вокруг линзы
+            let circleRect = AnnotationGeometry.magnifierCircleRect(for: rect)
+            let lensCenter = CGPoint(x: circleRect.midX, y: circleRect.midY)
+
             context.saveGState()
-            context.setShadow(offset: CGSize(width: 0, height: -4), blur: 12, color: CGColor(gray: 0, alpha: 0.45))
+            context.setShadow(offset: CGSize(width: 0, height: -4), blur: 10, color: CGColor(gray: 0, alpha: 0.45))
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fillEllipse(in: circleRect)
             context.restoreGState()
-            
-            // Клиппинг кругом и отрисовка масштабированного фрагмента
+
             context.saveGState()
             context.addEllipse(in: circleRect)
             context.clip()
-            
+
             let zoomFactor = CGFloat(item.scaleFactor > 0 ? item.scaleFactor : 2.0)
-            context.translateBy(x: center.x, y: center.y)
+            context.translateBy(x: lensCenter.x, y: lensCenter.y)
             context.scaleBy(x: zoomFactor, y: zoomFactor)
-            context.translateBy(x: -center.x, y: -center.y)
-            
+            context.translateBy(x: -lensCenter.x, y: -lensCenter.y)
+
             baseImage.draw(at: .zero, from: NSRect(origin: .zero, size: imageSize), operation: .copy, fraction: 1.0)
             context.restoreGState()
-            
-            // Ободок линзы
+
             context.setStrokeColor(CGColor(gray: 1, alpha: 0.95))
             context.setLineWidth(4)
             context.strokeEllipse(in: circleRect)
-            
-            let label = String(format: "%.1g×", Double(zoomFactor)) as NSString
+
+            context.setStrokeColor(CGColor(gray: 0, alpha: 0.35))
+            context.setLineWidth(1.0)
+            context.strokeEllipse(in: circleRect.insetBy(dx: -1.5, dy: -1.5))
+
+            let labelStr = AnnotationFormatting.zoomLabel(Double(zoomFactor)) as NSString
+            let pillRect = CGRect(x: lensCenter.x - 20, y: circleRect.minY + 6, width: 40, height: 16)
+            let pillPath = CGPath(roundedRect: pillRect, cornerWidth: 8, cornerHeight: 8, transform: nil)
+            context.setFillColor(CGColor(gray: 0, alpha: 0.55))
+            context.addPath(pillPath)
+            context.fillPath()
+
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .bold),
                 .foregroundColor: NSColor.white
             ]
-            let labelSize = label.size(withAttributes: attrs)
-            label.draw(
-                at: NSPoint(x: center.x - labelSize.width / 2, y: circleRect.minY + 4),
+            let labelSize = labelStr.size(withAttributes: attrs)
+            labelStr.draw(
+                at: NSPoint(x: lensCenter.x - labelSize.width / 2, y: pillRect.minY + (pillRect.height - labelSize.height) / 2),
                 withAttributes: attrs
             )
-            
+
         case .text:
-            let text = (item.text.isEmpty ? L("editor.default_text") : item.text) as NSString
+            let text = item.effectiveText as NSString
             let font = NSFont.boldSystemFont(ofSize: item.fontSize)
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: nsColor
             ]
             let strSize = text.size(withAttributes: attrs)
-            // Координата верхнего левого угла в CG
             let yInCG = imageSize.height - item.startPoint.y - strSize.height
             text.draw(at: NSPoint(x: item.startPoint.x, y: yInCG), withAttributes: attrs)
         }
-        
+
         context.restoreGState()
     }
-    
+
     private static func drawArrow(p1: CGPoint, p2: CGPoint, in context: CGContext, headLength: CGFloat) {
         context.move(to: p1)
         context.addLine(to: p2)
         context.strokePath()
-        
-        let angle = atan2(p2.y - p1.y, p2.x - p1.x)
-        let tip1 = CGPoint(x: p2.x - headLength * cos(angle - .pi / 6), y: p2.y - headLength * sin(angle - .pi / 6))
-        let tip2 = CGPoint(x: p2.x - headLength * cos(angle + .pi / 6), y: p2.y - headLength * sin(angle + .pi / 6))
+
+        let (tip1, tip2) = AnnotationGeometry.arrowHeadEndpoints(tip: p2, from: p1, headLength: headLength)
         context.move(to: p2)
         context.addLine(to: tip1)
         context.move(to: p2)
         context.addLine(to: tip2)
         context.strokePath()
     }
-    
+
     private static func drawCurvedArrow(p1: CGPoint, p2: CGPoint, curveOffset: CGFloat, in context: CGContext, headLength: CGFloat) {
-        let dx = p2.x - p1.x
-        let dy = p2.y - p1.y
-        let len = hypot(dx, dy)
-        guard len > 1 else { return }
-        
-        let normal = CGPoint(x: -dy / len, y: dx / len)
-        let mid = CGPoint(x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2)
-        // curveOffset инвертирован для зеркальной системы координат CoreGraphics
-        let control = CGPoint(x: mid.x - normal.x * curveOffset, y: mid.y - normal.y * curveOffset)
-        
+        guard let control = AnnotationGeometry.curvedControlPoint(start: p1, end: p2, curveOffset: -curveOffset) else { return }
         context.move(to: p1)
         context.addQuadCurve(to: p2, control: control)
         context.strokePath()
-        
-        let tangentAngle = atan2(p2.y - control.y, p2.x - control.x)
-        let spread: CGFloat = .pi / 6
-        let tip1 = CGPoint(x: p2.x - headLength * cos(tangentAngle - spread), y: p2.y - headLength * sin(tangentAngle - spread))
-        let tip2 = CGPoint(x: p2.x - headLength * cos(tangentAngle + spread), y: p2.y - headLength * sin(tangentAngle + spread))
+
+        let (tip1, tip2) = AnnotationGeometry.arrowHeadEndpoints(tip: p2, from: control, headLength: headLength)
         context.move(to: p2)
         context.addLine(to: tip1)
         context.move(to: p2)

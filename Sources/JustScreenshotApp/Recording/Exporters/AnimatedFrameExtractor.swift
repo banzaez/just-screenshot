@@ -1,12 +1,16 @@
 import Foundation
 import AVFoundation
 import CoreGraphics
+import CoreImage
 import CoreVideo
-import VideoToolbox
 
-/// Единый высокопроизводительный конвейер извлечения и однопроходной обработки кадров для GIF и WebP
+/// Единый конвейер извлечения и CoreImage-обработки кадров для GIF и WebP
 enum AnimatedFrameExtractor {
-    
+
+    private struct ConsumerFrameError: Error {
+        let underlying: Error
+    }
+
     struct Plan: Sendable {
         let startTime: Double
         let endTime: Double
@@ -14,11 +18,11 @@ enum AnimatedFrameExtractor {
         let fps: Int
         let rate: Double
         let frameDelay: Double
-        let sampleInterval: Double
+        let sourceSampleInterval: Double
         let expectedFrames: Int
         let burnIn: [BurnInAnnotation]
     }
-    
+
     static func preparePlan(
         asset: AVURLAsset,
         options: VideoExportOptions,
@@ -28,16 +32,22 @@ enum AnimatedFrameExtractor {
         let trim = VideoExportTrim.range(duration: duration, options: options)
         let startTime = trim.start
         let endTime = trim.end
-        let totalDuration = max(0.01, endTime - startTime)
-        
+        let totalDuration = endTime - startTime
+
+        guard totalDuration > 0 else {
+            throw VideoExportError.invalidTrimRange
+        }
+
         let rawFPS = options.gifFPS > 0 ? options.gifFPS : defaultFPS
         let fps = max(5, min(30, rawFPS))
-        let rate = max(0.01, Double(options.playbackRate > 0 ? options.playbackRate : 1))
-        let frameDelay = (1.0 / Double(fps)) / rate
-        let sampleInterval = 1.0 / Double(fps)
-        let expectedFrames = max(1, Int((totalDuration / rate) * Double(fps)))
-        let burnIn = await MainActor.run { BurnInAnnotation.from(options.annotations) }
-        
+        let rate = max(0.1, Double(options.playbackRate > 0 ? options.playbackRate : 1.0))
+        // Задержка кадра в выходной анимации зависит только от FPS выходного потока
+        let frameDelay = 1.0 / Double(fps)
+        // Шаг выборки вдоль исходного времени видео пропорционален playbackRate
+        let sourceSampleInterval = rate / Double(fps)
+        let expectedFrames = max(1, Int(ceil((totalDuration / rate) * Double(fps))))
+        let burnIn = BurnInAnnotation.from(options.annotations)
+
         return Plan(
             startTime: startTime,
             endTime: endTime,
@@ -45,13 +55,13 @@ enum AnimatedFrameExtractor {
             fps: fps,
             rate: rate,
             frameDelay: frameDelay,
-            sampleInterval: sampleInterval,
+            sourceSampleInterval: sourceSampleInterval,
             expectedFrames: expectedFrames,
             burnIn: burnIn
         )
     }
-    
-    /// Декодирует кадры с применением кропа, Smart Zoom, даунскейла и burn-in аннотаций за один проход CGContext
+
+    /// Декодирует кадры с hold-сэмплированием VFR-источника и обработкой через VideoAnnotationBurnIn
     static func extractFrames(
         asset: AVURLAsset,
         plan: Plan,
@@ -60,10 +70,23 @@ enum AnimatedFrameExtractor {
         onFrame: (CGImage, Int) throws -> Void
     ) async throws -> Int {
         var decodedFrames = 0
-        var cachedContext: (ctx: CGContext, width: Int, height: Int)?
         let tracks = try await asset.loadTracks(withMediaType: .video)
-        
-        if let videoTrack = tracks.first {
+        let blurMask: CIImage?
+
+        if let firstTrack = tracks.first {
+            let naturalSize = try await firstTrack.load(.naturalSize)
+            let preferredTransform = try await firstTrack.load(.preferredTransform)
+            let displaySize = VideoAnnotationBurnIn.displaySize(
+                naturalSize: naturalSize,
+                preferredTransform: preferredTransform
+            )
+            blurMask = VideoAnnotationBurnIn.makeBlurMask(annotations: plan.burnIn, frameSize: displaySize)
+
+            let orientTransform = VideoAnnotationBurnIn.orientingTransform(
+                naturalSize: naturalSize,
+                preferredTransform: preferredTransform
+            )
+
             do {
                 let reader = try AVAssetReader(asset: asset)
                 reader.timeRange = CMTimeRange(
@@ -73,188 +96,146 @@ enum AnimatedFrameExtractor {
                 let outputSettings: [String: Any] = [
                     kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA)
                 ]
-                let trackOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: outputSettings)
+                let trackOutput = AVAssetReaderTrackOutput(track: firstTrack, outputSettings: outputSettings)
                 trackOutput.alwaysCopiesSampleData = false
                 reader.add(trackOutput)
-                
+
                 if reader.startReading() {
+                    defer {
+                        if reader.status == .reading {
+                            reader.cancelReading()
+                        }
+                    }
+
+                    let maxSlots = max(plan.expectedFrames + 2, 1)
                     var nextSampleTime = plan.startTime
+                    var heldPixelBuffer: CVPixelBuffer?
+
+                    func emitHeldBuffer(_ pixelBuffer: CVPixelBuffer, at sourceTime: Double) throws {
+                        try autoreleasepool {
+                            let baseCI = CIImage(cvPixelBuffer: pixelBuffer).transformed(by: orientTransform)
+                            let processed = VideoAnnotationBurnIn.processCIImage(
+                                baseCI,
+                                blurMask: blurMask,
+                                sourceTime: sourceTime,
+                                compositionTime: (sourceTime - plan.startTime) / plan.rate,
+                                compositionDuration: plan.totalDuration / plan.rate,
+                                options: options,
+                                maxDimension: maxDimension
+                            )
+                            guard let cgImage = VideoAnnotationBurnIn.renderCGImage(processed) else { return }
+                            decodedFrames += 1
+                            do {
+                                try onFrame(cgImage, decodedFrames)
+                            } catch {
+                                throw ConsumerFrameError(underlying: error)
+                            }
+                        }
+                    }
+
                     while let sampleBuffer = trackOutput.copyNextSampleBuffer() {
                         try Task.checkCancellation()
+                        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { continue }
                         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
-                        if pts >= nextSampleTime || decodedFrames == 0 {
-                            try autoreleasepool {
-                                if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-                                    var rawCGImage: CGImage?
-                                    VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &rawCGImage)
-                                    if let rawCGImage {
-                                        let processed = processFrameSinglePass(
-                                            rawCGImage,
-                                            at: max(0, pts - plan.startTime),
-                                            burnIn: plan.burnIn,
-                                            options: options,
-                                            maxDimension: maxDimension,
-                                            cachedContext: &cachedContext
-                                        )
-                                        decodedFrames += 1
-                                        try onFrame(processed, decodedFrames)
-                                    }
-                                }
+
+                        if let prev = heldPixelBuffer {
+                            while nextSampleTime + 1e-6 < pts && nextSampleTime < plan.endTime - 1e-6 && decodedFrames < maxSlots {
+                                try emitHeldBuffer(prev, at: nextSampleTime)
+                                nextSampleTime += plan.sourceSampleInterval
                             }
-                            nextSampleTime += plan.sampleInterval
+                        } else {
+                            // Если первый кадр в триме начинается чуть позже startTime, заполняем начальные слоты первым буфером
+                            while nextSampleTime + 1e-6 < pts && nextSampleTime < plan.endTime - 1e-6 && decodedFrames < maxSlots {
+                                try emitHeldBuffer(pixelBuffer, at: nextSampleTime)
+                                nextSampleTime += plan.sourceSampleInterval
+                            }
+                        }
+
+                        heldPixelBuffer = pixelBuffer
+                        if nextSampleTime <= pts + 1e-6 && nextSampleTime < plan.endTime - 1e-6 && decodedFrames < maxSlots {
+                            try emitHeldBuffer(pixelBuffer, at: nextSampleTime)
+                            nextSampleTime += plan.sourceSampleInterval
+                        }
+                    }
+
+                    // VFR tail hold до конца обрезанного диапазона
+                    if let tailBuffer = heldPixelBuffer {
+                        while nextSampleTime < plan.endTime - 1e-6 && decodedFrames < maxSlots {
+                            try Task.checkCancellation()
+                            try emitHeldBuffer(tailBuffer, at: nextSampleTime)
+                            nextSampleTime += plan.sourceSampleInterval
+                        }
+                        if decodedFrames == 0 {
+                            try emitHeldBuffer(tailBuffer, at: plan.startTime)
                         }
                     }
                 }
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let consumerError as ConsumerFrameError {
+                throw consumerError.underlying
             } catch {
-                decodedFrames = 0
+                // Если поток чтения упал до декодирования первого кадра, пробуем fallback ниже
+                if decodedFrames > 0 {
+                    throw error
+                }
             }
+        } else {
+            blurMask = nil
         }
-        
-        // Резервный механизм (Fallback): AVAssetImageGenerator с мягкими допусками по времени
+
+        // Резервный механизм (Fallback): AVAssetImageGenerator
         if decodedFrames == 0 {
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            if !options.smartZoom && options.cropRect == nil {
+            if !options.smartZoom && options.cropRect == nil && plan.burnIn.isEmpty {
                 generator.maximumSize = CGSize(width: maxDimension, height: maxDimension)
             }
             let tolerance = CMTime(seconds: 0.05, preferredTimescale: 600)
             generator.requestedTimeToleranceBefore = tolerance
             generator.requestedTimeToleranceAfter = tolerance
-            
+
             var cmTimes: [CMTime] = []
             cmTimes.reserveCapacity(plan.expectedFrames)
-            for i in 0..<plan.expectedFrames {
-                let timeSec = plan.startTime + (Double(i) / Double(max(plan.expectedFrames - 1, 1))) * plan.totalDuration
-                cmTimes.append(CMTime(seconds: min(plan.endTime - 0.001, timeSec), preferredTimescale: 600))
+            var t = plan.startTime
+            while t < plan.endTime - 1e-6 && cmTimes.count < plan.expectedFrames + 2 {
+                cmTimes.append(CMTime(seconds: min(plan.endTime - 0.001, t), preferredTimescale: 600))
+                t += plan.sourceSampleInterval
             }
-            
+            if cmTimes.isEmpty {
+                cmTimes.append(CMTime(seconds: plan.startTime, preferredTimescale: 600))
+            }
+
+            var cachedFallbackMask = blurMask
             for try await result in generator.images(for: cmTimes) {
                 try Task.checkCancellation()
                 try autoreleasepool {
                     let rawCGImage = try result.image
-                    let actualSeconds = (try? result.actualTime.seconds) ?? result.requestedTime.seconds
-                    let relTime = max(0, actualSeconds - plan.startTime)
-                    let processed = processFrameSinglePass(
-                        rawCGImage,
-                        at: relTime,
-                        burnIn: plan.burnIn,
+                    let ci = CIImage(cgImage: rawCGImage)
+                    if cachedFallbackMask == nil && !plan.burnIn.isEmpty {
+                        cachedFallbackMask = VideoAnnotationBurnIn.makeBlurMask(
+                            annotations: plan.burnIn,
+                            frameSize: ci.extent.size
+                        )
+                    }
+                    let actualSeconds = (try? result.actualTime.seconds).flatMap { $0.isFinite ? $0 : nil }
+                        ?? result.requestedTime.seconds
+                    let processed = VideoAnnotationBurnIn.processCIImage(
+                        ci,
+                        blurMask: cachedFallbackMask,
+                        sourceTime: actualSeconds,
+                        compositionTime: (actualSeconds - plan.startTime) / plan.rate,
+                        compositionDuration: plan.totalDuration / plan.rate,
                         options: options,
-                        maxDimension: maxDimension,
-                        cachedContext: &cachedContext
+                        maxDimension: maxDimension
                     )
+                    guard let cgImage = VideoAnnotationBurnIn.renderCGImage(processed) else { return }
                     decodedFrames += 1
-                    try onFrame(processed, decodedFrames)
+                    try onFrame(cgImage, decodedFrames)
                 }
             }
         }
-        
+
         return decodedFrames
-    }
-    
-    /// Однопроходная обработка кадра: аннотации + Smart Zoom + кроп + масштабирование в едином CGContext
-    private static func processFrameSinglePass(
-        _ image: CGImage,
-        at relativeTime: Double,
-        burnIn: [BurnInAnnotation],
-        options: VideoExportOptions,
-        maxDimension: CGFloat,
-        cachedContext: inout (ctx: CGContext, width: Int, height: Int)?
-    ) -> CGImage {
-        let srcW = CGFloat(image.width)
-        let srcH = CGFloat(image.height)
-        guard srcW > 0, srcH > 0 else { return image }
-        
-        let cropNorm: CGRect
-        if let c = options.cropRect, c.width > 0, c.height > 0 {
-            cropNorm = c
-        } else {
-            cropNorm = CGRect(x: 0, y: 0, width: 1, height: 1)
-        }
-        
-        let croppedW = max(1, srcW * cropNorm.width)
-        let croppedH = max(1, srcH * cropNorm.height)
-        let maxSide = max(croppedW, croppedH)
-        let downscaleFactor = maxSide > maxDimension ? (maxDimension / maxSide) : 1.0
-        
-        let targetWidth = max(1, Int((croppedW * downscaleFactor).rounded()))
-        let targetHeight = max(1, Int((croppedH * downscaleFactor).rounded()))
-        
-        // Быстрый путь: если нет аннотаций, кропа, Smart Zoom и даунскейла — возвращаем исходный CGImage без копирования
-        if burnIn.isEmpty,
-           !options.smartZoom,
-           cropNorm == CGRect(x: 0, y: 0, width: 1, height: 1),
-           targetWidth == image.width,
-           targetHeight == image.height {
-            return image
-        }
-        
-        let ctx: CGContext
-        if let cached = cachedContext, cached.width == targetWidth, cached.height == targetHeight {
-            ctx = cached.ctx
-            ctx.clear(CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
-        } else {
-            let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-            guard let newCtx = CGContext(
-                data: nil,
-                width: targetWidth,
-                height: targetHeight,
-                bitsPerComponent: 8,
-                bytesPerRow: 0,
-                space: colorSpace,
-                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else {
-                return image
-            }
-            newCtx.interpolationQuality = .high
-            cachedContext = (newCtx, targetWidth, targetHeight)
-            ctx = newCtx
-        }
-        
-        ctx.saveGState()
-        defer { ctx.restoreGState() }
-        
-        // Масштабируем из пространства кропнутого исходника в целевой буфер
-        let scaleX = CGFloat(targetWidth) / croppedW
-        let scaleY = CGFloat(targetHeight) / croppedH
-        ctx.scaleBy(x: scaleX, y: scaleY)
-        
-        // Сдвиг для учёта кропа (в CGContext origin внизу слева, а в cropNorm origin вверху слева)
-        let cropOffsetX = cropNorm.origin.x * srcW
-        let cropOffsetYBottom = (1.0 - cropNorm.origin.y - cropNorm.height) * srcH
-        ctx.translateBy(x: -cropOffsetX, y: -cropOffsetYBottom)
-        
-        // Применение Smart Zoom вокруг точки фокуса
-        if options.smartZoom, let track = options.cursorTrack, !track.keyframes.isEmpty {
-            let state = track.cameraState(
-                at: relativeTime,
-                scale: options.smartZoomScale,
-                mode: options.smartZoomMode,
-                autoZoomOutOnIdle: options.autoZoomOutOnIdle
-            )
-            if state.zoom > 1.001 {
-                let fx = min(1.0, max(0.0, state.focus.x)) * srcW
-                let fy = min(1.0, max(0.0, 1.0 - state.focus.y)) * srcH
-                ctx.translateBy(x: fx, y: fy)
-                ctx.scaleBy(x: state.zoom, y: state.zoom)
-                ctx.translateBy(x: -fx, y: -fy)
-            }
-        }
-        
-        // 1. Отрисовка исходного видеокадра
-        let fullSize = CGSize(width: srcW, height: srcH)
-        ctx.draw(image, in: CGRect(origin: .zero, size: fullSize))
-        
-        // 2. Отрисовка burn-in аннотаций в том же контексте (top-left координаты)
-        if !burnIn.isEmpty {
-            ctx.saveGState()
-            ctx.translateBy(x: 0, y: srcH)
-            ctx.scaleBy(x: 1, y: -1)
-            VideoAnnotationBurnIn.draw(burnIn, in: ctx, videoSize: fullSize)
-            ctx.restoreGState()
-        }
-        
-        return ctx.makeImage() ?? image
     }
 }

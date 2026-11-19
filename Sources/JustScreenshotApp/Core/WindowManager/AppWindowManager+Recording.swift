@@ -3,88 +3,88 @@ import ScreenCaptureKit
 
 extension AppWindowManager {
     // MARK: - Запись экрана
-    
+
     public func toggleRecording() {
-        if isRecording {
+        switch recordingPhase {
+        case .recording:
             stopScreenRecording()
-        } else if isRecordingPreparing {
+        case .preparing:
             startActiveRecording()
-        } else {
+        case .idle:
             startScreenRecording()
+        case .selectingArea, .countdown, .starting, .stopping:
+            break
         }
     }
-    
+
     public func startScreenRecording() {
+        guard recordingPhase == .idle || recordingPhase == .preparing else { return }
         Task { [weak self] in
             guard let self else { return }
             guard await ScreenCaptureService.shared.ensurePermission() else { return }
-            
-            if self.isRecordingPreparing {
+
+            if self.recordingPhase == .preparing {
                 self.recordingDimWindows.forEach { $0.orderFrontRegardless() }
                 self.recordingFrameWindow?.orderFrontRegardless()
                 self.recordingBarWindow?.orderFrontRegardless()
                 return
             }
-            if self.isRecording {
-                return
-            }
-            
-            // Сначала пользователь сам выделяет область курсором как при скриншоте
+            guard self.recordingPhase == .idle else { return }
+
+            self.cancelActiveTimedCapture()
             self.presentRecordingAreaSelection()
         }
     }
-    
-    // MARK: - Первичное выделение области (как при скриншоте)
-    
-    public func presentRecordingAreaSelection() {
-        closeAllOverlays()
-        cleanupRecordingSession()
-        
-        beginOverlaySession()
-        let screens = activeScreens()
-        guard !screens.isEmpty else { return }
-        
-        let overlays = screens.map { screen in
-            acquireOverlay(for: screen).configured(
-                screen: screen,
-                mode: .recordingArea,
-                onCompleteRect: { [weak self] quartzRect in
-                    self?.closeAllOverlays()
-                    let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
-                    let w = Int(appKitRect.width)
-                    let h = Int(appKitRect.height)
-                    let evenRect = CGRect(
-                        x: appKitRect.origin.x,
-                        y: appKitRect.origin.y,
-                        width: CGFloat(max(160, w - (w % 2))),
-                        height: CGFloat(max(120, h - (h % 2)))
-                    )
-                    self?.enterRecordingSetup(appKitRect: evenRect)
-                },
-                onCompleteWindow: { _ in },
-                onCancel: { [weak self] in
-                    self?.closeAllOverlays()
-                }
-            )
-        }
-        presentOverlays(overlays)
+
+    private func evenRecordingRect(_ rect: CGRect) -> CGRect {
+        let w = Int(rect.width.rounded())
+        let h = Int(rect.height.rounded())
+        return CGRect(
+            x: rect.origin.x,
+            y: rect.origin.y,
+            width: CGFloat(max(160, w - (w % 2))),
+            height: CGFloat(max(120, h - (h % 2)))
+        )
     }
-    
-    // MARK: - Режим подготовки к записи (Setup / Adjustment Mode)
-    
-    public func enterRecordingSetup(appKitRect: CGRect) {
-        closeAllOverlays()
+
+    // MARK: - Первичное выделение области
+
+    public func presentRecordingAreaSelection() {
         cleanupRecordingSession()
-        
-        isRecordingPreparing = true
-        isRecording = false
-        recordingRect = appKitRect
-        
-        // Создаем и показываем мягкое затемнение экрана вокруг рамки
-        setupRecordingDimWindows(holeRect: appKitRect)
-        
+        recordingPhase = .selectingArea
+
+        guard presentSelectionOverlays(
+            mode: .recordingArea,
+            needsSampler: false,
+            onCompleteRect: { [weak self] quartzRect, _ in
+                let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
+                self?.enterRecordingSetup(appKitRect: self?.evenRecordingRect(appKitRect) ?? appKitRect)
+            },
+            onCancel: { [weak self] in
+                if self?.recordingPhase == .selectingArea {
+                    self?.recordingPhase = .idle
+                }
+            }
+        ) != nil else {
+            recordingPhase = .idle
+            return
+        }
+    }
+
+    // MARK: - Режим подготовки к записи (Setup / Adjustment Mode)
+
+    public func enterRecordingSetup(appKitRect: CGRect) {
+        closeAllOverlays(restoreRecordingSetup: false)
+        cleanupRecordingSession()
+
+        let normalizedRect = evenRecordingRect(appKitRect)
+        recordingPhase = .preparing
+        recordingRect = normalizedRect
+
+        setupRecordingDimWindows(holeRect: normalizedRect)
+
         let frameWin = RecordingFrameWindow(
-            screenRect: appKitRect,
+            screenRect: normalizedRect,
             mode: .setup,
             onRectChanged: { [weak self] newRect in
                 guard let self else { return }
@@ -102,9 +102,9 @@ extension AppWindowManager {
         NSApp.activate()
         frameWin.makeKeyAndOrderFront(nil)
         recordingFrameWindow = frameWin
-        
+
         let barWin = RecordingControlBarWindow(
-            initialPosition: calculateBarCenter(for: appKitRect),
+            initialPosition: calculateBarCenter(for: normalizedRect),
             windowManager: self,
             onStartRecording: { [weak self] in
                 self?.startActiveRecording()
@@ -126,7 +126,7 @@ extension AppWindowManager {
                 self?.stopScreenRecording()
             },
             onCancel: { [weak self] in
-                if self?.isRecording == true {
+                if self?.recordingPhase == .recording {
                     self?.cancelScreenRecording()
                 } else {
                     self?.cancelRecordingSetup()
@@ -135,92 +135,62 @@ extension AppWindowManager {
         )
         barWin.orderFrontRegardless()
         recordingBarWindow = barWin
+
         recordingState.setupEscMonitor.start(
             shouldHandle: { [weak self] in
                 guard let self else { return false }
-                return self.isRecordingPreparing && self.overlayWindows.isEmpty
+                return self.recordingPhase == .preparing && self.overlayWindows.isEmpty
             },
             onEscape: { [weak self] in
                 self?.cancelRecordingSetup()
             }
         )
     }
-    
+
     public func applyPresetRect(_ rect: CGRect) {
-        let w = Int(rect.width)
-        let h = Int(rect.height)
-        let evenRect = CGRect(
-            x: rect.origin.x,
-            y: rect.origin.y,
-            width: CGFloat(w - (w % 2)),
-            height: CGFloat(h - (h % 2))
-        )
+        let evenRect = evenRecordingRect(rect)
         recordingRect = evenRect
-        recordingFrameWindow?.updateFrame(evenRect)
+        recordingFrameWindow?.updateFrame(evenRect, notify: false)
         repositionRecordingBar(relativeTo: evenRect)
         updateRecordingDimHole(evenRect)
     }
-    
+
     public func selectNewRecordingArea() {
+        guard recordingPhase == .preparing else { return }
         recordingDimWindows.forEach { $0.orderOut(nil) }
         recordingFrameWindow?.orderOut(nil)
         recordingBarWindow?.orderOut(nil)
-        
-        beginOverlaySession()
-        let screens = activeScreens()
-        guard !screens.isEmpty else {
+        recordingPhase = .selectingArea
+
+        guard presentSelectionOverlays(
+            mode: .recordingArea,
+            needsSampler: false,
+            onCompleteRect: { [weak self] quartzRect, _ in
+                let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
+                self?.enterRecordingSetup(appKitRect: appKitRect)
+            },
+            onCancel: { [weak self] in
+                guard let self else { return }
+                self.recordingPhase = .preparing
+                self.recordingDimWindows.forEach { $0.orderFrontRegardless() }
+                self.recordingFrameWindow?.makeKeyAndOrderFront(nil)
+                self.recordingBarWindow?.orderFrontRegardless()
+            }
+        ) != nil else {
+            recordingPhase = .preparing
             recordingDimWindows.forEach { $0.orderFrontRegardless() }
-            recordingFrameWindow?.orderFrontRegardless()
+            recordingFrameWindow?.makeKeyAndOrderFront(nil)
             recordingBarWindow?.orderFrontRegardless()
             return
         }
-        
-        let overlays = screens.map { screen in
-            acquireOverlay(for: screen).configured(
-                screen: screen,
-                mode: .recordingArea,
-                onCompleteRect: { [weak self] quartzRect in
-                    self?.closeAllOverlays()
-                    let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
-                    let w = Int(appKitRect.width)
-                    let h = Int(appKitRect.height)
-                    let evenRect = CGRect(
-                        x: appKitRect.origin.x,
-                        y: appKitRect.origin.y,
-                        width: CGFloat(w - (w % 2)),
-                        height: CGFloat(h - (h % 2))
-                    )
-                    self?.enterRecordingSetup(appKitRect: evenRect)
-                },
-                onCompleteWindow: { _ in },
-                onCancel: { [weak self] in
-                    self?.closeAllOverlays()
-                    self?.recordingDimWindows.forEach { $0.orderFrontRegardless() }
-                    self?.recordingFrameWindow?.orderFrontRegardless()
-                    self?.recordingBarWindow?.orderFrontRegardless()
-                }
-            )
-        }
-        presentOverlays(overlays)
     }
-    
+
     public func cancelRecordingSetup() {
-        isRecordingPreparing = false
-        recordingState.setupEscMonitor.stop()
-        recordingState.countdownEscMonitor.stop()
-        recordingState.countdownWindow?.cancel()
-        recordingState.countdownWindow = nil
-        
-        clearRecordingDimWindows()
-        
-        recordingFrameWindow?.orderOut(nil)
-        recordingFrameWindow = nil
-        recordingBarWindow?.orderOut(nil)
-        recordingBarWindow = nil
+        cleanupRecordingSession()
     }
-    
+
     // MARK: - Затемнение экрана (Dimming Overlay)
-    
+
     func setupRecordingDimWindows(holeRect: CGRect) {
         clearRecordingDimWindows()
         guard AppSettings.shared.dimOutsideRecordingArea else { return }
@@ -231,14 +201,14 @@ extension AppWindowManager {
             return win
         }
     }
-    
+
     func updateRecordingDimHole(_ rect: CGRect) {
         guard AppSettings.shared.dimOutsideRecordingArea else { return }
         for win in recordingDimWindows {
             win.updateHole(appKitRect: rect)
         }
     }
-    
+
     func syncRecordingDimWindows(holeRect: CGRect) {
         if AppSettings.shared.dimOutsideRecordingArea {
             if recordingDimWindows.isEmpty {
@@ -253,33 +223,38 @@ extension AppWindowManager {
             clearRecordingDimWindows()
         }
         recordingFrameWindow?.orderFrontRegardless()
-        recordingBarWindow?.orderFrontRegardless()
+        if recordingPhase != .recording || AppSettings.shared.showFloatingBarDuringRecording {
+            recordingBarWindow?.orderFrontRegardless()
+        }
     }
-    
+
     func clearRecordingDimWindows() {
         for win in recordingDimWindows {
             win.orderOut(nil)
+            win.contentView = nil
+            win.close()
         }
         recordingDimWindows.removeAll()
     }
-    
+
     // MARK: - Запуск активной записи (Active Recording)
-    
+
     public func startActiveRecording() {
-        guard isRecordingPreparing else { return }
-        
+        guard recordingPhase == .preparing else { return }
+
         let rectToRecord = recordingRect
-        AppSettings.shared.lastRecordingRect = rectToRecord
-        
         let countdownSec = AppSettings.shared.recordingCountdownSeconds
+
         if countdownSec > 0 {
+            recordingPhase = .countdown
             let center = CGPoint(x: rectToRecord.midX, y: rectToRecord.midY)
             let countdown = CountdownOverlayWindow(seconds: countdownSec, centerPoint: center) { [weak self] in
-                Task { [weak self] in
-                    self?.recordingState.countdownEscMonitor.stop()
-                    self?.recordingState.countdownWindow?.cancel()
-                    self?.recordingState.countdownWindow = nil
-                    await self?.beginActiveRecording(appKitRect: rectToRecord)
+                Task { @MainActor [weak self] in
+                    guard let self, self.recordingPhase == .countdown else { return }
+                    self.recordingState.countdownEscMonitor.stop()
+                    self.recordingState.countdownWindow?.cancel()
+                    self.recordingState.countdownWindow = nil
+                    await self.beginActiveRecording(appKitRect: rectToRecord)
                 }
             }
             recordingState.countdownWindow = countdown
@@ -289,75 +264,104 @@ extension AppWindowManager {
             NSApp.activate()
             countdown.makeKeyAndOrderFront(nil)
         } else {
+            recordingPhase = .starting
             Task { [weak self] in
                 await self?.beginActiveRecording(appKitRect: rectToRecord)
             }
         }
     }
-    
+
     private func beginActiveRecording(appKitRect: CGRect) async {
+        guard recordingPhase == .countdown || recordingPhase == .starting else { return }
+        recordingPhase = .starting
+
         recordingState.setupEscMonitor.stop()
         recordingState.countdownEscMonitor.stop()
-        let customPath = AppSettings.shared.defaultSaveDirectoryPath
-        var isDir: ObjCBool = false
+
         let baseDir: URL
-        if !customPath.isEmpty, FileManager.default.fileExists(atPath: customPath, isDirectory: &isDir), isDir.boolValue {
-            baseDir = URL(fileURLWithPath: customPath, isDirectory: true)
+        if let customDir = ImageExporter.defaultSaveDirectoryURL() {
+            baseDir = customDir
         } else {
-            baseDir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
+            baseDir = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
+                ?? FileManager.default.temporaryDirectory
         }
-        let outputURL = baseDir.appendingPathComponent("ScreenRecording-\(Int(Date().timeIntervalSince1970)).mp4")
-        
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        let outputURL = baseDir.appendingPathComponent("ScreenRecording-\(df.string(from: Date())).mp4")
+
         let quartzRect = ScreenCoordinateSpace.quartzRect(fromAppKit: appKitRect)
-        
+
         recordingFrameWindow?.setMode(.recording)
-        
-        // Синхронизируем затемнение экрана при начале записи
+
         if AppSettings.shared.dimOutsideRecordingArea {
             syncRecordingDimWindows(holeRect: appKitRect)
         } else {
             clearRecordingDimWindows()
         }
-        
+
         if AppSettings.shared.showClicksDuringRecording || AppSettings.shared.showKeystrokesDuringRecording {
             let effectsWin = RecordingEffectsOverlayWindow(screenRect: appKitRect)
             effectsWin.orderFrontRegardless()
             recordingEffectsWindow = effectsWin
         }
-        
+
+        ScreenRecorderService.shared.onUnexpectedStop = { [weak self] error in
+            Task { @MainActor [weak self] in
+                guard let self, self.recordingPhase == .recording || self.recordingPhase == .starting else { return }
+                self.cleanupRecordingSession()
+                self.presentAlert(
+                    title: L("recording.error_title"),
+                    message: error.localizedDescription
+                )
+            }
+        }
+
         do {
             try await ScreenRecorderService.shared.startRecording(rect: quartzRect, destinationURL: outputURL)
+            guard recordingPhase == .starting else {
+                await ScreenRecorderService.shared.cancelRecording()
+                cleanupRecordingSession()
+                return
+            }
+
             CursorTrackRecorder.shared.start(recordingRect: appKitRect)
-            isRecording = true
-            isRecordingPreparing = false
+            recordingPhase = .recording
             isRecordingPaused = false
             recordingDuration = 0
             recordingStartedAt = Date()
             recordingPausedAt = nil
             recordingAccumulatedPause = 0
-            
-            if AppSettings.shared.playSound {
-                NSSound(named: "Purr")?.play()
+
+            SoundEffects.playRecordStart()
+
+            if AppSettings.shared.showFloatingBarDuringRecording {
+                recordingBarWindow?.updateForRecordingMode()
+                repositionRecordingBar(relativeTo: appKitRect)
+                recordingBarWindow?.orderFrontRegardless()
+            } else {
+                recordingBarWindow?.orderOut(nil)
             }
-            
-            recordingBarWindow?.updateForRecordingMode()
-            repositionRecordingBar(relativeTo: appKitRect)
-            
+
             recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated {
                     self?.tickRecordingDuration()
                 }
             }
         } catch {
             cleanupRecordingSession()
-            showRecordingError(error.localizedDescription)
+            presentAlert(
+                title: L("recording.error_title"),
+                message: error.localizedDescription
+            )
         }
     }
-    
+
     // MARK: - Пауза, возобновление, остановка
-    
+
     public func togglePauseResumeScreenRecording() {
-        guard isRecording else { return }
+        guard recordingPhase == .recording else { return }
         if isRecordingPaused {
             if let pausedAt = recordingPausedAt {
                 recordingAccumulatedPause += Date().timeIntervalSince(pausedAt)
@@ -372,118 +376,130 @@ extension AppWindowManager {
             CursorTrackRecorder.shared.pause()
             isRecordingPaused = true
         }
-        tickRecordingDuration()
+        tickRecordingDuration(force: true)
     }
-    
+
     public func stopScreenRecording() {
-        tickRecordingDuration()
+        guard recordingPhase == .recording else { return }
+        tickRecordingDuration(force: true)
+        recordingPhase = .stopping
+
         let recordedRect = recordingRect
         let recordedDuration = max(0.1, recordingDuration)
         let cursorTrack = CursorTrackRecorder.shared.stop()
-        cleanupRecordingSession()
-        
-        Task {
+        cleanupRecordingSession(targetPhase: .stopping)
+
+        Task { [weak self] in
+            defer {
+                self?.recordingPhase = .idle
+            }
             do {
                 if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
                     CursorTrackRecorder.saveTrack(cursorTrack, forVideoURL: savedURL)
-                    self.history.addVideo(
+                    self?.history.addVideo(
                         url: savedURL,
                         width: Int(recordedRect.width),
                         height: Int(recordedRect.height),
                         duration: recordedDuration
                     )
-                    self.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
+                    self?.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
                 }
             } catch {
-                self.showRecordingError(error.localizedDescription)
+                self?.presentAlert(
+                    title: L("recording.error_title"),
+                    message: error.localizedDescription
+                )
             }
         }
     }
-    
+
     public func cancelScreenRecording() {
         _ = CursorTrackRecorder.shared.stop()
         cleanupRecordingSession()
-        
+
         Task {
             await ScreenRecorderService.shared.cancelRecording()
         }
     }
-    
-    func cleanupRecordingSession() {
+
+    func cleanupRecordingSession(targetPhase: RecordingPhase = .idle) {
         _ = CursorTrackRecorder.shared.stop()
+        ScreenRecorderService.shared.onUnexpectedStop = nil
         recordingState.setupEscMonitor.stop()
         recordingState.countdownEscMonitor.stop()
         recordingTimer?.invalidate()
         recordingTimer = nil
-        isRecording = false
-        isRecordingPreparing = false
+
+        recordingPhase = targetPhase
         isRecordingPaused = false
         recordingStartedAt = nil
         recordingPausedAt = nil
         recordingAccumulatedPause = 0
-        
+
         recordingState.countdownWindow?.cancel()
+        recordingState.countdownWindow?.close()
         recordingState.countdownWindow = nil
-        
+
         clearRecordingDimWindows()
-        
+
         recordingFrameWindow?.orderOut(nil)
+        recordingFrameWindow?.contentView = nil
+        recordingFrameWindow?.close()
         recordingFrameWindow = nil
-        
+
+        recordingEffectsWindow?.cleanUp()
         recordingEffectsWindow?.orderOut(nil)
+        recordingEffectsWindow?.contentView = nil
+        recordingEffectsWindow?.close()
         recordingEffectsWindow = nil
-        
+
         recordingBarWindow?.orderOut(nil)
+        recordingBarWindow?.contentView = nil
+        recordingBarWindow?.close()
         recordingBarWindow = nil
     }
-    
+
     // MARK: - Вспомогательные методы
-    
+
     func repositionRecordingBar(relativeTo rect: CGRect) {
         guard let barWin = recordingBarWindow else { return }
         let center = calculateBarCenter(for: rect)
         barWin.updatePosition(center: center)
     }
-    
+
     func calculateBarCenter(for rect: CGRect) -> NSPoint {
+        let targetScreen = ScreenCoordinateSpace.targetScreen(for: rect)
+        let screenFrame = targetScreen?.visibleFrame ?? targetScreen?.frame
+        let barSize = recordingBarWindow?.frame.size
+            ?? CGSize(width: recordingPhase == .recording ? 340 : 560, height: 52)
+        let halfW = barSize.width / 2
+        let halfH = barSize.height / 2
+
         var barCenter = NSPoint(x: rect.midX, y: rect.minY - 40)
-        if barCenter.y < 60 {
-            barCenter.y = rect.maxY + 40
-        }
-        
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(barCenter, $0.frame, false) })
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(rect) })
-            ?? NSScreen.main
-            ?? NSScreen.screens.first
-        
-        if let targetScreen {
-            let halfW: CGFloat = isRecording ? 170 : 280
-            let minX = targetScreen.frame.minX + halfW + 10
-            let maxX = targetScreen.frame.maxX - halfW - 10
+        if let screenFrame {
+            if barCenter.y - halfH < screenFrame.minY + 10 {
+                barCenter.y = rect.maxY + 40
+            }
+            let minX = screenFrame.minX + halfW + 10
+            let maxX = max(minX, screenFrame.maxX - halfW - 10)
             barCenter.x = max(minX, min(maxX, barCenter.x))
-            let minY = targetScreen.frame.minY + 38
-            let maxY = targetScreen.frame.maxY - 38
+            let minY = screenFrame.minY + halfH + 8
+            let maxY = max(minY, screenFrame.maxY - halfH - 8)
             barCenter.y = max(minY, min(maxY, barCenter.y))
         }
         return barCenter
     }
-    
-    private func tickRecordingDuration() {
-        guard isRecording, let start = recordingStartedAt else { return }
+
+    private func tickRecordingDuration(force: Bool = false) {
+        guard recordingPhase == .recording, let start = recordingStartedAt else { return }
+        if isRecordingPaused && !force { return }
         var paused = recordingAccumulatedPause
         if let pausedAt = recordingPausedAt {
             paused += Date().timeIntervalSince(pausedAt)
         }
-        recordingDuration = max(0, Date().timeIntervalSince(start) - paused)
-    }
-    
-    private func showRecordingError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = L("recording.error_title")
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: L("alert.cancel"))
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        let elapsed = max(0, Date().timeIntervalSince(start) - paused)
+        if force || Int(elapsed) != Int(recordingDuration) {
+            recordingDuration = elapsed
+        }
     }
 }

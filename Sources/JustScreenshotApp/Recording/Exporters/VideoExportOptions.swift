@@ -45,8 +45,13 @@ public struct VideoExportOptions: Sendable {
 /// Нормализованный диапазон обрезки по длительности ассета
 enum VideoExportTrim {
     static func range(duration: Double, options: VideoExportOptions) -> (start: Double, end: Double) {
-        let start = max(0, options.trimStart)
-        let end = options.trimEnd > start ? min(duration, options.trimEnd) : duration
-        return (start, end)
+        guard duration.isFinite, duration > 0 else { return (0, 0) }
+        let rawStart = options.trimStart.isFinite ? options.trimStart : 0
+        let rawEnd = options.trimEnd.isFinite ? options.trimEnd : 0
+        let start = min(max(0, rawStart), duration)
+        if rawEnd > start {
+            return (start, min(duration, rawEnd))
+        }
+        return (start, duration)
     }
 }

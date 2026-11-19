@@ -21,20 +21,24 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 
+# Archives & Updates
 *.zip
+*.delta
 
 # Build Products & Bundles
 *.app/
 *.dSYM/
-*.ipa/
-*.dmg/
+*.ipa
+*.dmg
 
-# Credentials & Temp Files
+# Credentials, Certificates & Temp Files
+.env
 .netrc
 *.swp
 *~
 *.p12
 *.key
 *.crt
+*.pem
+*.cer
 certificates/
-

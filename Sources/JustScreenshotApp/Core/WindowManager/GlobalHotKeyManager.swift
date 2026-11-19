@@ -4,11 +4,12 @@ import ApplicationServices
 
 /// Глобальный менеджер горячих клавиш.
 /// При наличии разрешения Accessibility использует CGEventTap (`.cghidEventTap`, `.headInsertEventTap`),
-/// что позволяет перехватывать даже системные сочетания (⌘⇧3, ⌘⇧4, ⌘⇧5) до их обработки macOS.
-/// Без Accessibility автоматически работает через Carbon Events API (`RegisterEventHotKey`).
+/// иначе автоматически работает через Carbon Events API (`RegisterEventHotKey`).
 @MainActor
 public final class GlobalHotKeyManager {
     public static let shared = GlobalHotKeyManager()
+
+    private static let hotKeySignature = OSType(0x434C4E53) // 'CLNS'
 
     private struct HotKeyCombo: Hashable, Sendable {
         let keyCode: UInt32
@@ -20,11 +21,24 @@ public final class GlobalHotKeyManager {
         private var comboToID: [HotKeyCombo: UInt32] = [:]
         private var eventTap: CFMachPort?
         private var runLoopSource: CFRunLoopSource?
+        private var suspended = false
 
         var isTapActive: Bool {
             lock.lock()
             defer { lock.unlock() }
             return eventTap != nil
+        }
+
+        var isSuspended: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return suspended
+        }
+
+        func setSuspended(_ value: Bool) {
+            lock.lock()
+            suspended = value
+            lock.unlock()
         }
 
         func setTap(_ tap: CFMachPort, source: CFRunLoopSource) {
@@ -59,6 +73,7 @@ public final class GlobalHotKeyManager {
         func hotKeyID(for combo: HotKeyCombo) -> UInt32? {
             lock.lock()
             defer { lock.unlock() }
+            if suspended { return nil }
             return comboToID[combo]
         }
     }
@@ -69,19 +84,17 @@ public final class GlobalHotKeyManager {
     private var eventHandler: EventHandlerRef?
     private let tapState = TapState()
 
+    public var isEventTapActive: Bool {
+        tapState.isTapActive
+    }
+
     private init() {
         installCarbonEventHandler()
         _ = ensureEventTapIfTrusted()
     }
 
     isolated deinit {
-        let (tap, source) = tapState.clearTap()
-        if let tap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
-        if let source {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
-        }
+        teardownEventTap()
         if let eventHandler {
             RemoveEventHandler(eventHandler)
         }
@@ -90,11 +103,55 @@ public final class GlobalHotKeyManager {
         }
     }
 
+    /// Временно приостанавливает глобальные шорткаты (например, при записи нового сочетания в Настройках)
+    public func setSuspended(_ suspended: Bool) {
+        guard tapState.isSuspended != suspended else { return }
+        tapState.setSuspended(suspended)
+
+        if !tapState.isTapActive {
+            if suspended {
+                unregisterCarbonHotKeys()
+            } else {
+                for (id, combo) in registeredConfigs {
+                    registerCarbonHotKey(id: id, keyCode: combo.keyCode, modifiers: combo.modifiers)
+                }
+            }
+        }
+    }
+
+    /// Реагирует на выдачу или отзыв Accessibility в рантайме (автоматический fallback на Carbon при отзыве)
+    public func handleAccessibilityStatusChanged(trusted: Bool) {
+        if trusted {
+            _ = ensureEventTapIfTrusted()
+        } else if tapState.isTapActive {
+            teardownEventTap()
+            if !tapState.isSuspended {
+                for (id, combo) in registeredConfigs {
+                    registerCarbonHotKey(id: id, keyCode: combo.keyCode, modifiers: combo.modifiers)
+                }
+            }
+        }
+    }
+
+    private func teardownEventTap() {
+        let (tap, source) = tapState.clearTap()
+        if let tap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+        }
+        if let source {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+    }
+
     /// Пытается активировать CGEventTap, если выдано разрешение Accessibility.
-    /// При успешной активации отключает Carbon-регистрацию, чтобы избежать дублирования и системных конфликтов.
     @discardableResult
     public func ensureEventTapIfTrusted() -> Bool {
         if tapState.isTapActive {
+            guard AXIsProcessTrusted() else {
+                handleAccessibilityStatusChanged(trusted: false)
+                return false
+            }
             return true
         }
         guard AXIsProcessTrusted() else {
@@ -138,7 +195,6 @@ public final class GlobalHotKeyManager {
                 }
             }
 
-            // Поглощаем событие, чтобы macOS не запускала системный скриншотер
             return nil
         }
 
@@ -154,6 +210,7 @@ public final class GlobalHotKeyManager {
         }
 
         guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0) else {
+            CFMachPortInvalidate(tap)
             return false
         }
 
@@ -161,17 +218,10 @@ public final class GlobalHotKeyManager {
         CGEvent.tapEnable(tap: tap, enable: true)
         tapState.setTap(tap, source: source)
 
-        // Переходим на перехват через Event Tap — снимаем Carbon-хоткеи
         unregisterCarbonHotKeys()
         return true
     }
 
-    /// Регистрация глобального сочетания клавиш
-    /// - Parameters:
-    ///   - id: Уникальный ID шортката
-    ///   - keyCode: Виртуальный код клавиши (Carbon keyCode, например kVK_ANSI_4 = 0x15)
-    ///   - modifiers: Модификаторы (cmdKey, shiftKey, optionKey, controlKey)
-    ///   - action: Замыкание, вызываемое при нажатии
     public func register(id: UInt32, keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
         _ = ensureEventTapIfTrusted()
 
@@ -180,7 +230,7 @@ public final class GlobalHotKeyManager {
         handlers[id] = action
         syncTapCombos()
 
-        if !tapState.isTapActive {
+        if !tapState.isTapActive && !tapState.isSuspended {
             registerCarbonHotKey(id: id, keyCode: keyCode, modifiers: normalizedModifiers)
         }
     }
@@ -194,6 +244,17 @@ public final class GlobalHotKeyManager {
         syncTapCombos()
     }
 
+    public func unregister(ids: Set<UInt32>) {
+        for id in ids {
+            if let existingRef = hotKeyRefs.removeValue(forKey: id) {
+                UnregisterEventHotKey(existingRef)
+            }
+            registeredConfigs.removeValue(forKey: id)
+            handlers.removeValue(forKey: id)
+        }
+        syncTapCombos()
+    }
+
     public func unregisterAll() {
         unregisterCarbonHotKeys()
         registeredConfigs.removeAll()
@@ -204,7 +265,6 @@ public final class GlobalHotKeyManager {
     private func syncTapCombos() {
         var map: [HotKeyCombo: UInt32] = [:]
         for (id, combo) in registeredConfigs {
-            // При совпадении комбинации сохраняем детерминированный приоритет по меньшему id
             if let existingID = map[combo] {
                 map[combo] = min(existingID, id)
             } else {
@@ -220,7 +280,7 @@ public final class GlobalHotKeyManager {
         }
 
         var hotKeyID = EventHotKeyID()
-        hotKeyID.signature = OSType(0x434C4E53) // 'CLNS'
+        hotKeyID.signature = Self.hotKeySignature
         hotKeyID.id = id
 
         var hotKeyRef: EventHotKeyRef?
@@ -236,7 +296,7 @@ public final class GlobalHotKeyManager {
         if status == noErr, let ref = hotKeyRef {
             hotKeyRefs[id] = ref
         } else {
-            print("Failed to register hotkey id \(id), status: \(status)")
+            AppLogger.hotkeys.warning("Failed to register Carbon hotkey id \(id), status: \(status)")
         }
     }
 
@@ -277,10 +337,8 @@ public final class GlobalHotKeyManager {
                 &hotKeyID
             )
 
-            if err == noErr {
+            if err == noErr && hotKeyID.signature == GlobalHotKeyManager.hotKeySignature {
                 let hotKeyNumber = hotKeyID.id
-                // Выходим из Carbon-обработчика и ставим действие в очередь главного потока
-                // с приоритетом UI. Task { @MainActor } отсюда легко опаздывает на несколько кадров.
                 DispatchQueue.main.async {
                     MainActor.assumeIsolated {
                         GlobalHotKeyManager.shared.handlers[hotKeyNumber]?()

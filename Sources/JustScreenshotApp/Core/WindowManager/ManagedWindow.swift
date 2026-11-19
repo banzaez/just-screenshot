@@ -1,12 +1,13 @@
 import AppKit
 
-/// Окно + делегат, который сообщает о закрытии (безопасное освобождение ссылок)
+/// Окно + делегат, который сообщает о закрытии (безопасное освобождение ссылок и contentView)
 @MainActor
 final class ManagedWindow: NSObject, NSWindowDelegate {
     let window: NSWindow
     private let onClose: (ManagedWindow) -> Void
+    private var isClosing = false
     var shouldClose: ((ManagedWindow) -> Bool)?
-    
+
     init(window: NSWindow, onClose: @escaping (ManagedWindow) -> Void) {
         self.window = window
         self.onClose = onClose
@@ -14,20 +15,26 @@ final class ManagedWindow: NSObject, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
     }
-    
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         if let check = shouldClose {
             return check(self)
         }
         return true
     }
-    
+
     func windowWillClose(_ notification: Notification) {
+        guard !isClosing else { return }
+        isClosing = true
+        window.delegate = nil
         onClose(self)
+        window.contentView = nil
     }
-    
+
     /// Закрыть окно программно; опционально выполнить onClose для освобождения ресурсов модели
     func closeSilently(runOnClose: Bool = false) {
+        guard !isClosing else { return }
+        isClosing = true
         window.delegate = nil
         window.orderOut(nil)
         window.contentView = nil
@@ -36,10 +43,10 @@ final class ManagedWindow: NSObject, NSWindowDelegate {
             onClose(self)
         }
     }
-    
+
     func bringToFront() {
         if window.isMiniaturized { window.deminiaturize(nil) }
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
     }
 }

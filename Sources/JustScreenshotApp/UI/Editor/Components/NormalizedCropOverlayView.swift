@@ -7,10 +7,20 @@ struct NormalizedCropOverlayView: View {
     let contentRect: CGRect
     var minPixelSize: CGFloat = 10
     var handleSize: CGFloat = 16
-    
+
     @State private var dragInitialCrop: CGRect?
     @State private var resizeCornerStartCrop: CGRect?
-    
+
+    private var minNormalizedWidth: CGFloat {
+        guard contentRect.width > 0 else { return 0.05 }
+        return min(0.5, max(0.02, minPixelSize / contentRect.width))
+    }
+
+    private var minNormalizedHeight: CGFloat {
+        guard contentRect.height > 0 else { return 0.05 }
+        return min(0.5, max(0.02, minPixelSize / contentRect.height))
+    }
+
     var body: some View {
         let cropPixelRect = CGRect(
             x: contentRect.origin.x + cropRect.origin.x * contentRect.width,
@@ -18,7 +28,7 @@ struct NormalizedCropOverlayView: View {
             width: max(minPixelSize, cropRect.width * contentRect.width),
             height: max(minPixelSize, cropRect.height * contentRect.height)
         )
-        
+
         ZStack(alignment: .topLeading) {
             Path { path in
                 path.addRect(CGRect(origin: .zero, size: containerSize))
@@ -26,7 +36,7 @@ struct NormalizedCropOverlayView: View {
             }
             .fill(Color.black.opacity(0.65), style: FillStyle(eoFill: true))
             .allowsHitTesting(false)
-            
+
             ZStack {
                 VStack(spacing: 0) {
                     Spacer()
@@ -51,7 +61,7 @@ struct NormalizedCropOverlayView: View {
             .contentShape(Rectangle())
             .position(x: cropPixelRect.midX, y: cropPixelRect.midY)
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 0)
                     .onChanged { val in
                         if dragInitialCrop == nil {
                             dragInitialCrop = cropRect
@@ -59,7 +69,7 @@ struct NormalizedCropOverlayView: View {
                         guard let initial = dragInitialCrop, contentRect.width > 0, contentRect.height > 0 else { return }
                         let dx = val.translation.width / contentRect.width
                         let dy = val.translation.height / contentRect.height
-                        
+
                         let newX = max(0, min(1 - initial.width, initial.origin.x + dx))
                         let newY = max(0, min(1 - initial.height, initial.origin.y + dy))
                         cropRect.origin = CGPoint(x: newX, y: newY)
@@ -68,19 +78,19 @@ struct NormalizedCropOverlayView: View {
                         dragInitialCrop = nil
                     }
             )
-            
+
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: true, isTop: true)
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: false, isTop: true)
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: true, isTop: false)
             cropCornerHandle(cropPixelRect: cropPixelRect, isLeft: false, isTop: false)
         }
     }
-    
+
     @ViewBuilder
     private func cropCornerHandle(cropPixelRect: CGRect, isLeft: Bool, isTop: Bool) -> some View {
         let x = isLeft ? cropPixelRect.minX : cropPixelRect.maxX
         let y = isTop ? cropPixelRect.minY : cropPixelRect.maxY
-        
+
         Circle()
             .fill(Color.white)
             .overlay(Circle().stroke(Color.black.opacity(0.55), lineWidth: 1.5))
@@ -88,7 +98,7 @@ struct NormalizedCropOverlayView: View {
             .shadow(radius: 2)
             .position(x: x, y: y)
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 0)
                     .onChanged { val in
                         if resizeCornerStartCrop == nil {
                             resizeCornerStartCrop = cropRect
@@ -96,25 +106,26 @@ struct NormalizedCropOverlayView: View {
                         guard let initial = resizeCornerStartCrop, contentRect.width > 0, contentRect.height > 0 else { return }
                         let dx = val.translation.width / contentRect.width
                         let dy = val.translation.height / contentRect.height
-                        
+
                         var minX = initial.minX
                         var maxX = initial.maxX
                         var minY = initial.minY
                         var maxY = initial.maxY
-                        let minSize: CGFloat = 0.05
-                        
+                        let minW = minNormalizedWidth
+                        let minH = minNormalizedHeight
+
                         if isLeft {
-                            minX = max(0, min(maxX - minSize, initial.minX + dx))
+                            minX = max(0, min(maxX - minW, initial.minX + dx))
                         } else {
-                            maxX = min(1.0, max(minX + minSize, initial.maxX + dx))
+                            maxX = min(1.0, max(minX + minW, initial.maxX + dx))
                         }
-                        
+
                         if isTop {
-                            minY = max(0, min(maxY - minSize, initial.minY + dy))
+                            minY = max(0, min(maxY - minH, initial.minY + dy))
                         } else {
-                            maxY = min(1.0, max(minY + minSize, initial.maxY + dy))
+                            maxY = min(1.0, max(minY + minH, initial.maxY + dy))
                         }
-                        
+
                         cropRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
                     }
                     .onEnded { _ in

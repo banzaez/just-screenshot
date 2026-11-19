@@ -1,17 +1,21 @@
 import SwiftUI
 import AppKit
 
-/// Плавающий оверлей обратного отсчета перед созданием скриншота
+/// Плавающий оверлей обратного отсчета перед созданием скриншота / записью
 public final class CountdownOverlayWindow: NSWindow {
-    
+    private var isCancelled = false
+
     public init(seconds: Int, centerPoint: CGPoint? = nil, onComplete: @escaping () -> Void) {
+        let clampedSeconds = max(1, seconds)
         let center: CGPoint
         if let centerPoint {
             center = centerPoint
-        } else {
-            let screen = NSScreen.main ?? NSScreen.screens[0]
+        } else if let screen = ScreenCoordinateSpace.targetScreen(for: NSEvent.mouseLocation) {
             center = CGPoint(x: screen.frame.midX, y: screen.frame.midY)
+        } else {
+            center = CGPoint(x: 720, y: 450)
         }
+
         let size: CGFloat = 84
         let rect = NSRect(
             x: center.x - size / 2,
@@ -19,14 +23,14 @@ public final class CountdownOverlayWindow: NSWindow {
             width: size,
             height: size
         )
-        
+
         super.init(
             contentRect: rect,
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        
+
         self.isOpaque = false
         self.backgroundColor = .clear
         self.hasShadow = true
@@ -35,14 +39,18 @@ public final class CountdownOverlayWindow: NSWindow {
         self.ignoresMouseEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         self.isReleasedWhenClosed = false
-        
+
         let hostingView = NSHostingView(
-            rootView: CountdownView(initialSeconds: seconds, onComplete: onComplete)
+            rootView: CountdownView(initialSeconds: clampedSeconds) { [weak self] in
+                guard let self, !self.isCancelled else { return }
+                onComplete()
+            }
         )
         self.contentView = hostingView
     }
-    
+
     func cancel() {
+        isCancelled = true
         orderOut(nil)
         contentView = nil
     }
@@ -51,16 +59,17 @@ public final class CountdownOverlayWindow: NSWindow {
 private struct CountdownView: View {
     let initialSeconds: Int
     let onComplete: () -> Void
-    
+
     @State private var remaining: Int
     @State private var scale: CGFloat = 1.2
-    
+
     init(initialSeconds: Int, onComplete: @escaping () -> Void) {
-        self.initialSeconds = initialSeconds
+        let safeSeconds = max(1, initialSeconds)
+        self.initialSeconds = safeSeconds
         self.onComplete = onComplete
-        self._remaining = State(initialValue: initialSeconds)
+        self._remaining = State(initialValue: safeSeconds)
     }
-    
+
     var body: some View {
         ZStack {
             Circle()
@@ -69,8 +78,7 @@ private struct CountdownView: View {
                     Circle()
                         .stroke(Color.white.opacity(0.35), lineWidth: 2)
                 )
-            
-            // Круговой прогресс
+
             Circle()
                 .trim(from: 0, to: CGFloat(remaining) / CGFloat(max(1, initialSeconds)))
                 .stroke(
@@ -80,7 +88,7 @@ private struct CountdownView: View {
                 .rotationEffect(.degrees(-90))
                 .padding(4)
                 .animation(.easeInOut(duration: 0.3), value: remaining)
-            
+
             Text("\(remaining)")
                 .font(.system(size: 38, weight: .bold, design: .rounded))
                 .foregroundColor(.white)
@@ -89,18 +97,20 @@ private struct CountdownView: View {
         .frame(width: 80, height: 80)
         .task {
             animateTick()
-            for _ in 1..<initialSeconds {
-                guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil, !Task.isCancelled else { return }
-                remaining -= 1
-                animateTick()
+            if initialSeconds > 1 {
+                for _ in 1..<initialSeconds {
+                    guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil, !Task.isCancelled else { return }
+                    remaining -= 1
+                    animateTick()
+                }
             }
             guard (try? await Task.sleep(nanoseconds: 1_000_000_000)) != nil, !Task.isCancelled else { return }
             onComplete()
         }
     }
-    
+
     private func animateTick() {
-        NSSound(named: "Tink")?.play()
+        SoundEffects.playTick()
         scale = 1.25
         withAnimation(.easeOut(duration: 0.3)) {
             scale = 1.0

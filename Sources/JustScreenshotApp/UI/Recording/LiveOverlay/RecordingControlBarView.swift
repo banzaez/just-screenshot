@@ -347,16 +347,17 @@ public struct RecordingControlBarView: View {
     
     // MARK: - Helpers для расчета прямоугольников пресетов
     
-    private func presetRect(width: CGFloat, height: CGFloat) -> CGRect {
-        let center = CGPoint(x: windowManager.recordingRect.midX, y: windowManager.recordingRect.midY)
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(center, $0.frame, false) })
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(windowManager.recordingRect) })
-            ?? NSScreen.main
-            ?? NSScreen.screens[0]
-        
+    private func presetRect(width pixelWidth: CGFloat, height pixelHeight: CGFloat) -> CGRect {
+        guard let targetScreen = ScreenCoordinateSpace.targetScreen(for: windowManager.recordingRect) else {
+            return windowManager.recordingRect
+        }
+        let scale = max(1.0, targetScreen.backingScaleFactor)
+        let logicalWidth = (pixelWidth / scale).rounded()
+        let logicalHeight = (pixelHeight / scale).rounded()
         let screenFrame = targetScreen.frame
-        let w = min(width, screenFrame.width)
-        let h = min(height, screenFrame.height)
+        let w = min(logicalWidth, screenFrame.width)
+        let h = min(logicalHeight, screenFrame.height)
+        let center = CGPoint(x: windowManager.recordingRect.midX, y: windowManager.recordingRect.midY)
         var x = center.x - w / 2
         var y = center.y - h / 2
         
@@ -366,11 +367,9 @@ public struct RecordingControlBarView: View {
     }
     
     private func fullScreenRect() -> CGRect {
-        let center = CGPoint(x: windowManager.recordingRect.midX, y: windowManager.recordingRect.midY)
-        let targetScreen = NSScreen.screens.first(where: { NSMouseInRect(center, $0.frame, false) })
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(windowManager.recordingRect) })
-            ?? NSScreen.main
-            ?? NSScreen.screens[0]
+        guard let targetScreen = ScreenCoordinateSpace.targetScreen(for: windowManager.recordingRect) else {
+            return windowManager.recordingRect
+        }
         return targetScreen.frame
     }
 }

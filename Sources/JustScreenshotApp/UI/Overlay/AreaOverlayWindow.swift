@@ -94,8 +94,8 @@ public final class AreaOverlayWindow: NSWindow {
         (contentView as? AreaSelectionNSView)?.updateSampler(sampler)
     }
     
-    public func updateVisibleWindows(_ windows: [SCWindow]) {
-        (contentView as? AreaSelectionNSView)?.updateVisibleWindows(windows)
+    public func updateVisibleWindows(_ windows: [SCWindow], alreadySorted: Bool = false) {
+        (contentView as? AreaSelectionNSView)?.updateVisibleWindows(windows, alreadySorted: alreadySorted)
     }
     
     public override var canBecomeKey: Bool { true }

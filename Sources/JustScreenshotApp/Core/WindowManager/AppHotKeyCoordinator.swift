@@ -4,78 +4,66 @@ import Foundation
 @MainActor
 final class AppHotKeyCoordinator {
     private weak var windowManager: AppWindowManager?
-    
+
+    private struct BindingSpec {
+        let primaryID: UInt32
+        let altID: UInt32
+        let action: AppSettings.ShortcutAction
+        let handler: (AppWindowManager) -> Void
+    }
+
+    private let specs: [BindingSpec] = [
+        BindingSpec(primaryID: 1, altID: 11, action: .recording) { $0.toggleRecording() },
+        BindingSpec(primaryID: 2, altID: 12, action: .window) { $0.startWindowCapture() },
+        BindingSpec(primaryID: 3, altID: 13, action: .area) { $0.startAreaCapture() },
+        BindingSpec(primaryID: 4, altID: 14, action: .history) { $0.showHistory() },
+        BindingSpec(primaryID: 5, altID: 15, action: .repeatCapture) { $0.repeatLastCapture() },
+        BindingSpec(primaryID: 6, altID: 16, action: .ocr) { $0.startTextCapture() }
+    ]
+
+    private var managedIDs: Set<UInt32> {
+        var ids = Set<UInt32>()
+        for spec in specs {
+            ids.insert(spec.primaryID)
+            ids.insert(spec.altID)
+        }
+        return ids
+    }
+
     init(windowManager: AppWindowManager) {
         self.windowManager = windowManager
     }
-    
+
     func reload() {
-        GlobalHotKeyManager.shared.unregisterAll()
+        // Снимаем только собственные ID, не трогая временный EscapeMonitor
+        GlobalHotKeyManager.shared.unregister(ids: managedIDs)
         setup()
     }
-    
+
     func setup() {
         guard let wm = windowManager else { return }
         let settings = AppSettings.shared
         let hk = GlobalHotKeyManager.shared
-        
-        // 1. Запись экрана (Основной и Альтернативный)
-        hk.register(id: 1, keyCode: settings.shortcutRecording.keyCode, modifiers: settings.shortcutRecording.modifiers) { [weak wm] in
-            wm?.toggleRecording()
-        }
-        if let alt = settings.shortcutRecordingAlt {
-            hk.register(id: 11, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.toggleRecording()
+
+        for spec in specs {
+            let pair = settings.shortcutPair(for: spec.action)
+            let invoke: () -> Void = { [weak wm] in
+                guard let wm else { return }
+                spec.handler(wm)
             }
-        }
-        
-        // 2. Снимок окна
-        hk.register(id: 2, keyCode: settings.shortcutWindow.keyCode, modifiers: settings.shortcutWindow.modifiers) { [weak wm] in
-            wm?.startWindowCapture()
-        }
-        if let alt = settings.shortcutWindowAlt {
-            hk.register(id: 12, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.startWindowCapture()
-            }
-        }
-        
-        // 3. Снимок области
-        hk.register(id: 3, keyCode: settings.shortcutArea.keyCode, modifiers: settings.shortcutArea.modifiers) { [weak wm] in
-            wm?.startAreaCapture()
-        }
-        if let alt = settings.shortcutAreaAlt {
-            hk.register(id: 13, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.startAreaCapture()
-            }
-        }
-        
-        // 4. История снимков
-        hk.register(id: 4, keyCode: settings.shortcutHistory.keyCode, modifiers: settings.shortcutHistory.modifiers) { [weak wm] in
-            wm?.showHistory()
-        }
-        if let alt = settings.shortcutHistoryAlt {
-            hk.register(id: 14, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.showHistory()
-            }
-        }
-        
-        // 5. Повтор предыдущего захвата (Repeat Last Capture)
-        hk.register(id: 5, keyCode: settings.shortcutRepeat.keyCode, modifiers: settings.shortcutRepeat.modifiers) { [weak wm] in
-            wm?.repeatLastCapture()
-        }
-        if let alt = settings.shortcutRepeatAlt {
-            hk.register(id: 15, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.repeatLastCapture()
-            }
-        }
-        
-        // 6. Быстрый захват текста (Text Capture / OCR)
-        hk.register(id: 6, keyCode: settings.shortcutOCR.keyCode, modifiers: settings.shortcutOCR.modifiers) { [weak wm] in
-            wm?.startTextCapture()
-        }
-        if let alt = settings.shortcutOCRAlt {
-            hk.register(id: 16, keyCode: alt.keyCode, modifiers: alt.modifiers) { [weak wm] in
-                wm?.startTextCapture()
+            hk.register(
+                id: spec.primaryID,
+                keyCode: pair.primary.keyCode,
+                modifiers: pair.primary.modifiers,
+                action: invoke
+            )
+            if let alt = pair.alternate {
+                hk.register(
+                    id: spec.altID,
+                    keyCode: alt.keyCode,
+                    modifiers: alt.modifiers,
+                    action: invoke
+                )
             }
         }
     }

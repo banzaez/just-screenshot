@@ -8,16 +8,16 @@ struct VideoAnnotationItemView: View {
     let onSelect: () -> Void
     let onUpdate: (VideoAnnotationItem) -> Void
     let onDelete: () -> Void
-    
+
     @State private var dragInitialOrigin: CGPoint?
     @State private var resizeInitialRect: CGRect?
-    
+
     var body: some View {
         let itemWidth = max(24, item.rect.width * videoRect.width)
         let itemHeight = max(24, item.rect.height * videoRect.height)
         let itemCenterX = videoRect.origin.x + (item.rect.origin.x + item.rect.width / 2) * videoRect.width
         let itemCenterY = videoRect.origin.y + (item.rect.origin.y + item.rect.height / 2) * videoRect.height
-        
+
         ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .fill(.ultraThinMaterial)
@@ -27,15 +27,16 @@ struct VideoAnnotationItemView: View {
                         .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.4), lineWidth: isSelected ? 1.5 : 1)
                 )
                 .contentShape(Rectangle())
-            
+
             if isSelected {
                 selectionControls(width: itemWidth, height: itemHeight)
             }
         }
         .frame(width: itemWidth, height: itemHeight)
+        .rotationEffect(.degrees(item.rotationAngle))
         .position(x: itemCenterX, y: itemCenterY)
         .gesture(
-            DragGesture()
+            DragGesture(coordinateSpace: .named("videoOverlay"))
                 .onChanged { val in
                     onSelect()
                     if dragInitialOrigin == nil {
@@ -44,7 +45,7 @@ struct VideoAnnotationItemView: View {
                     guard let initial = dragInitialOrigin, videoRect.width > 0, videoRect.height > 0 else { return }
                     let dx = val.translation.width / videoRect.width
                     let dy = val.translation.height / videoRect.height
-                    
+
                     var updated = item
                     let newX = max(0, min(1 - item.rect.width, initial.x + dx))
                     let newY = max(0, min(1 - item.rect.height, initial.y + dy))
@@ -59,15 +60,15 @@ struct VideoAnnotationItemView: View {
             onSelect()
         }
     }
-    
+
     @ViewBuilder
     private func selectionControls(width: CGFloat, height: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                 .frame(width: width + 8, height: height + 8)
-            
-            // Кнопка удаления в верхнем правом углу
+
+            // Кнопка удаления вынесена над рамкой, чтобы не пересекаться с угловыми ручками
             Button {
                 onDelete()
             } label: {
@@ -77,8 +78,9 @@ struct VideoAnnotationItemView: View {
                     .shadow(radius: 2)
             }
             .buttonStyle(.plain)
-            .offset(x: width / 2 + 6, y: -(height / 2 + 6))
-            
+            .offset(x: 0, y: -(height / 2 + 16))
+            .zIndex(2)
+
             resizeHandle(width: width, height: height, isLeft: true, isTop: true)
             resizeHandle(width: width, height: height, isLeft: false, isTop: true)
             resizeHandle(width: width, height: height, isLeft: true, isTop: false)
@@ -86,12 +88,12 @@ struct VideoAnnotationItemView: View {
         }
         .frame(width: width, height: height)
     }
-    
+
     @ViewBuilder
     private func resizeHandle(width: CGFloat, height: CGFloat, isLeft: Bool, isTop: Bool) -> some View {
         let xOffset = (isLeft ? -width / 2 : width / 2) + (isLeft ? -5 : 5)
         let yOffset = (isTop ? -height / 2 : height / 2) + (isTop ? -5 : 5)
-        
+
         Circle()
             .fill(Color.white)
             .overlay(Circle().stroke(Color.accentColor, lineWidth: 2))
@@ -99,42 +101,37 @@ struct VideoAnnotationItemView: View {
             .shadow(radius: 2)
             .offset(x: xOffset, y: yOffset)
             .gesture(
-                DragGesture()
+                DragGesture(coordinateSpace: .named("videoOverlay"))
                     .onChanged { val in
                         if resizeInitialRect == nil {
                             resizeInitialRect = item.rect
                         }
                         guard let initial = resizeInitialRect, videoRect.width > 0, videoRect.height > 0 else { return }
+                        let minNorm: CGFloat = 0.03
                         let dx = val.translation.width / videoRect.width
                         let dy = val.translation.height / videoRect.height
-                        
+
                         var newRect = initial
                         if isLeft {
-                            let adjustedW = initial.width - dx
-                            if adjustedW > 0.03 {
-                                newRect.origin.x = initial.origin.x + dx
-                                newRect.size.width = adjustedW
-                            }
+                            let maxRight = initial.maxX
+                            let clampedX = max(0, min(maxRight - minNorm, initial.origin.x + dx))
+                            newRect.origin.x = clampedX
+                            newRect.size.width = maxRight - clampedX
                         } else {
-                            let adjustedW = initial.width + dx
-                            if adjustedW > 0.03 {
-                                newRect.size.width = adjustedW
-                            }
+                            let clampedW = max(minNorm, min(1.0 - initial.origin.x, initial.width + dx))
+                            newRect.size.width = clampedW
                         }
-                        
+
                         if isTop {
-                            let adjustedH = initial.height - dy
-                            if adjustedH > 0.03 {
-                                newRect.origin.y = initial.origin.y + dy
-                                newRect.size.height = adjustedH
-                            }
+                            let maxBottom = initial.maxY
+                            let clampedY = max(0, min(maxBottom - minNorm, initial.origin.y + dy))
+                            newRect.origin.y = clampedY
+                            newRect.size.height = maxBottom - clampedY
                         } else {
-                            let adjustedH = initial.height + dy
-                            if adjustedH > 0.03 {
-                                newRect.size.height = adjustedH
-                            }
+                            let clampedH = max(minNorm, min(1.0 - initial.origin.y, initial.height + dy))
+                            newRect.size.height = clampedH
                         }
-                        
+
                         var updated = item
                         updated.rect = newRect
                         onUpdate(updated)

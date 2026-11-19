@@ -12,6 +12,25 @@ enum AnnotationCanvasDrawer {
         ctx.translateBy(x: -c.x, y: -c.y)
     }
 
+    static func drawCompositeSpotlightDim(
+        spotlights: [AnnotationItem],
+        canvasSize: CGSize,
+        in context: GraphicsContext
+    ) {
+        guard !spotlights.isEmpty, canvasSize.width > 0, canvasSize.height > 0 else { return }
+        context.drawLayer { layerCtx in
+            layerCtx.fill(Path(CGRect(origin: .zero, size: canvasSize)), with: .color(Color.black.opacity(0.55)))
+            layerCtx.blendMode = .clear
+            for spot in spotlights {
+                var holeCtx = layerCtx
+                applyRotation(of: spot, to: &holeCtx)
+                let rect = AnnotationGeometry.itemRect(spot)
+                let r = AnnotationGeometry.clampedCornerRadius(8, in: rect)
+                holeCtx.fill(Path(roundedRect: rect, cornerRadius: r), with: .color(.black))
+            }
+        }
+    }
+
     static func drawSelection(
         _ item: AnnotationItem,
         in base: GraphicsContext,
@@ -23,22 +42,37 @@ enum AnnotationCanvasDrawer {
         let dash: [CGFloat] = [3 * px, 3 * px]
         let accent = Color.accentColor
         var ctx = base
-        
+
         if item.isLineLike {
-            let c = item.center
+            let chordMid = CGPoint(
+                x: (item.startPoint.x + item.endPoint.x) / 2.0,
+                y: (item.startPoint.y + item.endPoint.y) / 2.0
+            )
             let angle = atan2(item.endPoint.y - item.startPoint.y, item.endPoint.x - item.startPoint.x)
             let len = hypot(item.endPoint.x - item.startPoint.x, item.endPoint.y - item.startPoint.y)
             let pad = item.lineHalfThickness + 5 * px
-            ctx.translateBy(x: c.x, y: c.y)
+            ctx.translateBy(x: chordMid.x, y: chordMid.y)
             ctx.rotate(by: .radians(angle))
-            let rect = CGRect(x: -len / 2 - pad, y: -pad, width: len + pad * 2, height: pad * 2)
-            ctx.stroke(Path(roundedRect: rect, cornerRadius: pad), with: .color(accent.opacity(0.9)),
-                       style: StrokeStyle(lineWidth: px, dash: dash))
+
+            let sag = item.tool == .curvedArrow ? item.curveOffset * 0.5 : 0
+            let minY = min(0, sag) - pad
+            let maxY = max(0, sag) + pad
+            let rect = CGRect(x: -len / 2.0 - pad, y: minY, width: len + pad * 2.0, height: maxY - minY)
+            let r = AnnotationGeometry.clampedCornerRadius(pad, in: rect)
+            ctx.stroke(
+                Path(roundedRect: rect, cornerRadius: r),
+                with: .color(accent.opacity(0.9)),
+                style: StrokeStyle(lineWidth: px, dash: dash)
+            )
         } else {
             applyRotation(of: item, to: &ctx)
             let box = item.boundingBox
-            ctx.stroke(Path(roundedRect: box, cornerRadius: 2 * px), with: .color(accent.opacity(0.9)),
-                       style: StrokeStyle(lineWidth: px, dash: dash))
+            let r = AnnotationGeometry.clampedCornerRadius(2 * px, in: box)
+            ctx.stroke(
+                Path(roundedRect: box, cornerRadius: r),
+                with: .color(accent.opacity(0.9)),
+                style: StrokeStyle(lineWidth: px, dash: dash)
+            )
             if item.supportsRotation {
                 let rotateOffset: CGFloat = 26 / z
                 let top = CGPoint(x: box.midX, y: box.minY)
@@ -49,7 +83,7 @@ enum AnnotationCanvasDrawer {
                 ctx.stroke(line, with: .color(accent.opacity(0.9)), lineWidth: px)
             }
         }
-        
+
         var handleCtx = base
         if !item.isLineLike { applyRotation(of: item, to: &handleCtx) }
         let r = 5 * px
@@ -77,12 +111,9 @@ enum AnnotationCanvasDrawer {
         baseImage: NSImage?,
         blurredImage: NSImage?
     ) {
-        let rect = CGRect(
-            x: min(item.startPoint.x, item.endPoint.x), y: min(item.startPoint.y, item.endPoint.y),
-            width: abs(item.startPoint.x - item.endPoint.x), height: abs(item.startPoint.y - item.endPoint.y)
-        )
+        let rect = AnnotationGeometry.itemRect(item)
         let style = StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round)
-        
+
         switch item.tool {
         case .select, .crop:
             break
@@ -99,7 +130,8 @@ enum AnnotationCanvasDrawer {
         case .roundedRect:
             let dashLen = max(4.0, item.lineWidth * 2.0)
             let dashedStyle = StrokeStyle(lineWidth: item.lineWidth, lineCap: .round, lineJoin: .round, dash: [dashLen, dashLen])
-            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 10, height: 10)), with: .color(item.color), style: dashedStyle)
+            let r = AnnotationGeometry.clampedCornerRadius(10, in: rect)
+            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r)), with: .color(item.color), style: dashedStyle)
         case .ellipse:
             context.stroke(Path(ellipseIn: rect), with: .color(item.color), style: style)
         case .counter:
@@ -111,50 +143,50 @@ enum AnnotationCanvasDrawer {
             if let blurred = blurredImage {
                 var clipped = context
                 clipped.clip(to: Path(rect))
-                // Рисуем только покрывающий rect: масштабируем полный blur так,
-                // чтобы пиксели совпали с исходником, clip отсекает остальное.
                 clipped.draw(Image(nsImage: blurred), in: CGRect(origin: .zero, size: blurred.size))
             } else {
                 context.fill(Path(rect), with: .color(Color.gray.opacity(0.7)))
             }
             context.stroke(Path(rect), with: .color(.white.opacity(0.35)), lineWidth: 1)
         case .spotlight:
-            if let baseImage {
-                var dimPath = Path()
-                dimPath.addRect(CGRect(origin: .zero, size: baseImage.size))
-                dimPath.addRoundedRect(in: rect, cornerSize: CGSize(width: 8, height: 8))
-                context.fill(dimPath, with: .color(Color.black.opacity(0.55)), style: FillStyle(eoFill: true))
-            }
-            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: 8, height: 8)), with: .color(.white.opacity(0.85)), lineWidth: 2)
+            // Затемнение рисуется общим composite-проходом, здесь только белая рамка контура фокуса
+            let r = AnnotationGeometry.clampedCornerRadius(8, in: rect)
+            context.stroke(Path(roundedRect: rect, cornerSize: CGSize(width: r, height: r)), with: .color(.white.opacity(0.85)), lineWidth: 2)
         case .highlighter:
             var p = Path()
             p.move(to: item.startPoint)
             p.addLine(to: item.endPoint)
-            context.stroke(p, with: .color(item.color.opacity(0.45)),
-                           style: StrokeStyle(lineWidth: item.lineWidth * 4, lineCap: .round, lineJoin: .round))
+            context.stroke(
+                p,
+                with: .color(item.color.opacity(0.45)),
+                style: StrokeStyle(lineWidth: item.lineWidth * 4, lineCap: .round, lineJoin: .round)
+            )
         case .magnifier:
             drawMagnifier(item: item, rect: rect, in: &context, baseImage: baseImage)
         case .text:
-            let label = item.text.isEmpty ? L("editor.default_text") : item.text
-            let t = Text(label)
+            let t = Text(item.effectiveText)
                 .font(.system(size: item.fontSize, weight: .bold))
                 .foregroundColor(item.color)
             context.draw(t, at: item.startPoint, anchor: .topLeading)
         }
     }
-    
+
     private static func drawMagnifier(
         item: AnnotationItem,
         rect: CGRect,
         in context: inout GraphicsContext,
         baseImage: NSImage?
     ) {
-        let radius = max(min(rect.width, rect.height) / 2, 16)
-        let circleRect = CGRect(x: rect.midX - radius, y: rect.midY - radius, width: radius * 2, height: radius * 2)
+        let circleRect = AnnotationGeometry.magnifierCircleRect(for: rect)
         let circlePath = Path(ellipseIn: circleRect)
         let zoomFactor = CGFloat(item.scaleFactor > 0 ? item.scaleFactor : 2.0)
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        
+        let center = CGPoint(x: circleRect.midX, y: circleRect.midY)
+
+        context.drawLayer { shadowCtx in
+            shadowCtx.addFilter(.shadow(color: .black.opacity(0.45), radius: 10, x: 0, y: 4))
+            shadowCtx.fill(circlePath, with: .color(.white))
+        }
+
         if let baseImage {
             var clipped = context
             clipped.clip(to: circlePath)
@@ -165,45 +197,37 @@ enum AnnotationCanvasDrawer {
         } else {
             context.fill(circlePath, with: .color(.white.opacity(0.18)))
         }
-        
-        context.stroke(circlePath, with: .color(.white), lineWidth: 3.5)
+
+        context.stroke(circlePath, with: .color(.white.opacity(0.95)), lineWidth: 4.0)
         context.stroke(Path(ellipseIn: circleRect.insetBy(dx: -1.5, dy: -1.5)), with: .color(.black.opacity(0.35)), lineWidth: 1.0)
-        
-        let label = Text(String(format: "%.1g×", zoomFactor))
+
+        let labelText = AnnotationFormatting.zoomLabel(Double(zoomFactor))
+        let label = Text(labelText)
             .font(.system(size: 11, weight: .bold, design: .monospaced))
             .foregroundColor(.white)
-        context.draw(label, at: CGPoint(x: rect.midX, y: circleRect.maxY - 14))
+        let pillRect = CGRect(x: center.x - 20, y: circleRect.maxY - 22, width: 40, height: 16)
+        context.fill(Path(roundedRect: pillRect, cornerRadius: 8), with: .color(Color.black.opacity(0.55)))
+        context.draw(label, at: CGPoint(x: center.x, y: circleRect.maxY - 14))
     }
-    
+
     private static func drawArrow(from start: CGPoint, to end: CGPoint, path: inout Path, headLength: CGFloat) {
         path.move(to: start)
         path.addLine(to: end)
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let spread: CGFloat = .pi / 6
+        let (tip1, tip2) = AnnotationGeometry.arrowHeadEndpoints(tip: end, from: start, headLength: headLength)
         path.move(to: end)
-        path.addLine(to: CGPoint(x: end.x - headLength * cos(angle - spread), y: end.y - headLength * sin(angle - spread)))
+        path.addLine(to: tip1)
         path.move(to: end)
-        path.addLine(to: CGPoint(x: end.x - headLength * cos(angle + spread), y: end.y - headLength * sin(angle + spread)))
+        path.addLine(to: tip2)
     }
-    
+
     private static func drawCurvedArrow(from start: CGPoint, to end: CGPoint, curveOffset: CGFloat, path: inout Path, headLength: CGFloat) {
-        let dx = end.x - start.x
-        let dy = end.y - start.y
-        let len = hypot(dx, dy)
-        guard len > 1 else { return }
-        
-        let normal = CGPoint(x: -dy / len, y: dx / len)
-        let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2)
-        let control = CGPoint(x: mid.x + normal.x * curveOffset, y: mid.y + normal.y * curveOffset)
-        
+        guard let control = AnnotationGeometry.curvedControlPoint(start: start, end: end, curveOffset: curveOffset) else { return }
         path.move(to: start)
         path.addQuadCurve(to: end, control: control)
-        
-        let tangentAngle = atan2(end.y - control.y, end.x - control.x)
-        let spread: CGFloat = .pi / 6
+        let (tip1, tip2) = AnnotationGeometry.arrowHeadEndpoints(tip: end, from: control, headLength: headLength)
         path.move(to: end)
-        path.addLine(to: CGPoint(x: end.x - headLength * cos(tangentAngle - spread), y: end.y - headLength * sin(tangentAngle - spread)))
+        path.addLine(to: tip1)
         path.move(to: end)
-        path.addLine(to: CGPoint(x: end.x - headLength * cos(tangentAngle + spread), y: end.y - headLength * sin(tangentAngle + spread)))
+        path.addLine(to: tip2)
     }
 }

@@ -15,7 +15,7 @@ public struct AnnotationItem: Identifiable, Sendable {
     public var rotationAngle: Double // в градусах (для не-линейных элементов)
     public var scaleFactor: Double
     public var curveOffset: CGFloat // смещение контрольной точки для изогнутых стрелок
-    
+
     public init(
         id: UUID = UUID(),
         tool: AnnotationTool,
@@ -43,13 +43,18 @@ public struct AnnotationItem: Identifiable, Sendable {
         self.scaleFactor = scaleFactor
         self.curveOffset = curveOffset
     }
-    
+
+    @MainActor
+    public var effectiveText: String {
+        text.isEmpty ? L("editor.default_text") : text
+    }
+
     /// Линейные элементы (стрелка, маркер) поворачиваются изменением концов отрезка
     public var isLineLike: Bool { tool == .arrow || tool == .curvedArrow || tool == .highlighter }
     /// Элементы, у которых можно тянуть углы
     public var isRectLike: Bool { tool == .rectangle || tool == .roundedRect || tool == .blur || tool == .spotlight || tool == .ellipse || tool == .magnifier }
     public var supportsRotation: Bool { tool != .counter && tool != .select && tool != .blur && tool != .spotlight && tool != .magnifier }
-    
+
     /// Точка вершины дуги изогнутой стрелки (t = 0.5)
     public var curveApex: CGPoint {
         let dx = endPoint.x - startPoint.x
@@ -60,14 +65,14 @@ public struct AnnotationItem: Identifiable, Sendable {
         let mid = CGPoint(x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2)
         return CGPoint(x: mid.x + normal.x * curveOffset * 0.5, y: mid.y + normal.y * curveOffset * 0.5)
     }
-    
+
     /// Измеренный размер текстового блока (совпадает с рендером)
     public var textSize: CGSize {
         let str = (text.isEmpty ? "Aa" : text) as NSString
         let s = str.size(withAttributes: [.font: NSFont.boldSystemFont(ofSize: fontSize)])
         return CGSize(width: ceil(s.width), height: ceil(s.height))
     }
-    
+
     public var center: CGPoint {
         switch tool {
         case .counter:
@@ -83,7 +88,7 @@ public struct AnnotationItem: Identifiable, Sendable {
             return CGPoint(x: (startPoint.x + endPoint.x) / 2, y: (startPoint.y + endPoint.y) / 2)
         }
     }
-    
+
     /// Рамка выделения для не-линейных элементов (в системе элемента, без поворота)
     public var boundingBox: CGRect {
         switch tool {
@@ -111,12 +116,12 @@ public struct AnnotationItem: Identifiable, Sendable {
             return CGRect(x: minX - 3, y: minY - 3, width: w + 6, height: h + 6)
         }
     }
-    
+
     /// Половина толщины зоны вокруг линии, считающаяся самим элементом
     public var lineHalfThickness: CGFloat {
         tool == .highlighter ? lineWidth * 2 : max(lineWidth / 2, 2)
     }
-    
+
     /// Угол для отображения в интерфейсе (-180...180)
     public var displayAngle: Double {
         if isLineLike {
@@ -124,14 +129,14 @@ public struct AnnotationItem: Identifiable, Sendable {
         }
         return AnnotationItem.normalize(rotationAngle)
     }
-    
+
     public static func normalize(_ deg: Double) -> Double {
         var d = deg.truncatingRemainder(dividingBy: 360)
         if d > 180 { d -= 360 }
         if d <= -180 { d += 360 }
         return d
     }
-    
+
     /// Установка абсолютного угла поворота
     public mutating func setAngle(_ target: Double) {
         if isLineLike {
@@ -140,7 +145,7 @@ public struct AnnotationItem: Identifiable, Sendable {
             rotationAngle = AnnotationItem.normalize(target)
         }
     }
-    
+
     /// Относительный поворот: линии вращают концы, остальные — угол
     public mutating func rotate(by delta: Double) {
         if isLineLike {
@@ -157,7 +162,16 @@ public struct AnnotationItem: Identifiable, Sendable {
             rotationAngle = AnnotationItem.normalize(rotationAngle + delta)
         }
     }
-    
+
+    /// Перевод точки из локальной (неповернутой) системы элемента в мировую
+    public func rotated(_ point: CGPoint) -> CGPoint {
+        guard rotationAngle != 0, !isLineLike else { return point }
+        let rad = rotationAngle * .pi / 180
+        let c = center
+        let dx = point.x - c.x, dy = point.y - c.y
+        return CGPoint(x: c.x + dx * cos(rad) - dy * sin(rad), y: c.y + dx * sin(rad) + dy * cos(rad))
+    }
+
     /// Перевод точки в локальную (неповернутую) систему элемента
     public func unrotated(_ point: CGPoint) -> CGPoint {
         guard rotationAngle != 0, !isLineLike else { return point }
@@ -166,15 +180,49 @@ public struct AnnotationItem: Identifiable, Sendable {
         let dx = point.x - c.x, dy = point.y - c.y
         return CGPoint(x: c.x + dx * cos(rad) - dy * sin(rad), y: c.y + dx * sin(rad) + dy * cos(rad))
     }
-    
-    /// Точный хит-тест: расстояние до отрезка для линий, поворот учтён для остальных
+
+    /// Точный хит-тест: по контуру для незаполненных рамок/овалов, расстоянию до кривой для линий, площади для остальных
     public func contains(point: CGPoint, tolerance: CGFloat = 6) -> Bool {
         if isLineLike {
             return distanceToSegment(point) <= lineHalfThickness + tolerance
         }
-        return boundingBox.insetBy(dx: -tolerance, dy: -tolerance).contains(unrotated(point))
+
+        let local = unrotated(point)
+        let rect = CGRect(
+            x: min(startPoint.x, endPoint.x),
+            y: min(startPoint.y, endPoint.y),
+            width: abs(startPoint.x - endPoint.x),
+            height: abs(startPoint.y - endPoint.y)
+        )
+        let band = max(lineWidth / 2, 2) + tolerance
+
+        switch tool {
+        case .rectangle, .roundedRect:
+            guard rect.insetBy(dx: -band, dy: -band).contains(local) else { return false }
+            let inner = rect.insetBy(dx: band, dy: band)
+            if inner.width > 0 && inner.height > 0 {
+                return !inner.contains(local)
+            }
+            return true
+
+        case .ellipse:
+            let rx = max(rect.width / 2, 1)
+            let ry = max(rect.height / 2, 1)
+            let dx = local.x - rect.midX
+            let dy = local.y - rect.midY
+            let outerNorm = pow(dx / (rx + band), 2) + pow(dy / (ry + band), 2)
+            guard outerNorm <= 1.0 else { return false }
+            if rx > band && ry > band {
+                let innerNorm = pow(dx / (rx - band), 2) + pow(dy / (ry - band), 2)
+                return innerNorm >= 1.0
+            }
+            return true
+
+        default:
+            return boundingBox.insetBy(dx: -tolerance, dy: -tolerance).contains(local)
+        }
     }
-    
+
     private func distanceToSegment(_ p: CGPoint) -> CGFloat {
         if tool == .curvedArrow && curveOffset != 0 {
             let apex = curveApex
@@ -184,7 +232,7 @@ public struct AnnotationItem: Identifiable, Sendable {
         }
         return distToLine(p: p, a: startPoint, b: endPoint)
     }
-    
+
     private func distToLine(p: CGPoint, a: CGPoint, b: CGPoint) -> CGFloat {
         let dx = b.x - a.x, dy = b.y - a.y
         let len2 = dx * dx + dy * dy

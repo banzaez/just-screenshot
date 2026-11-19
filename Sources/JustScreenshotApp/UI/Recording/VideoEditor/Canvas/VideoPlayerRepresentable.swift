@@ -22,4 +22,8 @@ public struct VideoPlayerRepresentable: NSViewRepresentable {
             nsView.player = player
         }
     }
+
+    public static func dismantleNSView(_ nsView: AVPlayerView, coordinator: ()) {
+        nsView.player = nil
+    }
 }

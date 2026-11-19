@@ -23,6 +23,7 @@ struct EditorKeyboardShortcutsModifier: ViewModifier {
                 .opacity(0)
                 .frame(width: 0, height: 0)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
             )
     }
 }

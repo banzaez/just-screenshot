@@ -12,9 +12,13 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
     case spanish = "es"
     case simplifiedChinese = "zh-Hans"
     case japanese = "ja"
-    
+
     public var id: String { rawValue }
-    
+
+    public var locale: Locale {
+        Locale(identifier: rawValue)
+    }
+
     /// Отображаемое название языка в селекторе (название на самом языке)
     public var localizedName: String {
         switch self {
@@ -28,8 +32,8 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .japanese: return "日本語"
         }
     }
-    
-    /// Флаг-символ или код для компактного бейджа
+
+    /// Флаг-символ для компактного бейджа
     public var flagIcon: String {
         switch self {
         case .english: return "🇺🇸"
@@ -42,20 +46,26 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
         case .japanese: return "🇯🇵"
         }
     }
-    
-    /// Автоматическое определение языка из настроек локали/системы macOS
-    public static func detectSystemLanguage() -> AppLanguage {
-        let preferred = Locale.preferredLanguages
-        for lang in preferred {
-            let lower = lang.lowercased()
-            if lower.starts(with: "uk") { return .ukrainian }
-            if lower.starts(with: "ru") { return .russian }
-            if lower.starts(with: "zh") { return .simplifiedChinese }
-            if lower.starts(with: "ja") { return .japanese }
-            if lower.starts(with: "de") { return .german }
-            if lower.starts(with: "fr") { return .french }
-            if lower.starts(with: "es") { return .spanish }
-            if lower.starts(with: "en") { return .english }
+
+    /// Точное определение языка ОС по первому ISO 639-1 субтегу (без ложных совпадений вроде `est` → `es`)
+    public static func detectSystemLanguage(preferredLanguages: [String] = Locale.preferredLanguages) -> AppLanguage {
+        for lang in preferredLanguages {
+            let primary = lang
+                .lowercased()
+                .split(whereSeparator: { $0 == "-" || $0 == "_" })
+                .first
+                .map(String.init) ?? ""
+            switch primary {
+            case "uk": return .ukrainian
+            case "ru": return .russian
+            case "zh": return .simplifiedChinese
+            case "ja": return .japanese
+            case "de": return .german
+            case "fr": return .french
+            case "es": return .spanish
+            case "en": return .english
+            default: continue
+            }
         }
         return .english
     }
@@ -66,27 +76,28 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 @MainActor
 public final class LocalizationManager {
     public static let shared = LocalizationManager()
-    
+
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let languageKey = "settings_appLanguage"
-    
+
     public private(set) var currentLanguage: AppLanguage {
         didSet {
-            UserDefaults.standard.set(currentLanguage.rawValue, forKey: languageKey)
+            defaults.set(currentLanguage.rawValue, forKey: languageKey)
         }
     }
-    
-    private init() {
-        if let saved = UserDefaults.standard.string(forKey: languageKey),
+
+    internal init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let saved = defaults.string(forKey: languageKey),
            let lang = AppLanguage(rawValue: saved) {
             self.currentLanguage = lang
         } else {
-            // Первый запуск: автоопределение языка ОС пользователя
             let detected = AppLanguage.detectSystemLanguage()
             self.currentLanguage = detected
-            UserDefaults.standard.set(detected.rawValue, forKey: languageKey)
+            defaults.set(detected.rawValue, forKey: languageKey)
         }
     }
-    
+
     public func setLanguage(_ language: AppLanguage) {
         guard currentLanguage != language else { return }
         currentLanguage = language
@@ -99,9 +110,10 @@ public func L(_ key: String) -> String {
     LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
 }
 
-/// Глобальная функция с форматированием аргументов
+/// Глобальная функция с форматированием аргументов с учётом активной локали
 @MainActor
 public func L(_ key: String, _ args: CVarArg...) -> String {
-    let format = LocalizationCatalog.translate(key, for: LocalizationManager.shared.currentLanguage)
-    return String(format: format, arguments: args)
+    let lang = LocalizationManager.shared.currentLanguage
+    let format = LocalizationCatalog.translate(key, for: lang)
+    return String(format: format, locale: lang.locale, arguments: args)
 }

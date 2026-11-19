@@ -18,9 +18,7 @@ struct PermissionsStatusCard: View {
                     summaryBadge
                 }
 
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 1)
+                GlassDivider()
 
                 permissionRow(
                     icon: "display",
@@ -38,9 +36,7 @@ struct PermissionsStatusCard: View {
                     relaunchBanner
                 }
 
-                Rectangle()
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: 1)
+                GlassDivider()
 
                 permissionRow(
                     icon: "keyboard",
@@ -58,9 +54,9 @@ struct PermissionsStatusCard: View {
         .onAppear {
             permissions.refresh()
         }
-        .task(id: permissions.allGranted) {
-            guard !permissions.allGranted else { return }
-            while !Task.isCancelled && !permissions.allGranted {
+        .task(id: permissions.screenRecordingGranted) {
+            guard !permissions.screenRecordingGranted else { return }
+            while !Task.isCancelled && !permissions.screenRecordingGranted {
                 try? await Task.sleep(nanoseconds: 1_500_000_000)
                 permissions.refresh()
             }

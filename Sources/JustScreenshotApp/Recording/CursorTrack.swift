@@ -91,6 +91,88 @@ public struct CursorTrack: Codable, Sendable {
         return list[best]
     }
     
+    private static func smoothstep(_ t: CGFloat) -> CGFloat {
+        let c = min(1.0, max(0.0, t))
+        return c * c * (3.0 - 2.0 * c)
+    }
+
+    /// Непрерывная интерполированная позиция курсора в момент `time`
+    private func continuousPoint(at time: Double) -> CGPoint {
+        guard !keyframes.isEmpty else { return CGPoint(x: 0.5, y: 0.5) }
+        if time <= keyframes[0].timestamp {
+            return keyframes[0].point
+        }
+        if let last = keyframes.last, time >= last.timestamp {
+            return last.point
+        }
+
+        var low = 0
+        var high = keyframes.count - 1
+        while low <= high {
+            let mid = (low + high) / 2
+            if keyframes[mid].timestamp < time {
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        let idx1 = min(max(0, low), keyframes.count - 1)
+        let idx0 = max(0, idx1 - 1)
+        let k0 = keyframes[idx0]
+        let k1 = keyframes[idx1]
+        let dt = k1.timestamp - k0.timestamp
+        let factor = dt > 0.0001 ? CGFloat((time - k0.timestamp) / dt) : 0
+        let smooth = Self.smoothstep(factor)
+        let px = k0.point.x + (k1.point.x - k0.point.x) * smooth
+        let py = k0.point.y + (k1.point.y - k0.point.y) * smooth
+        return CGPoint(x: min(1.0, max(0.0, px)), y: min(1.0, max(0.0, py)))
+    }
+
+    /// Проверяет непрерывность удержания курсора рядом с `currentPoint` и плавно возвращает масштаб для `continuous`
+    private func continuousIdleAdjustedZoom(
+        at time: Double,
+        currentPoint: CGPoint,
+        restingZoom: CGFloat,
+        autoZoomOutOnIdle: Bool
+    ) -> CGFloat {
+        guard autoZoomOutOnIdle, !keyframes.isEmpty else { return restingZoom }
+
+        // Бинарный поиск последнего ключевого кадра <= time
+        guard keyframes[0].timestamp <= time else { return restingZoom }
+        var low = 0
+        var high = keyframes.count - 1
+        var lastIdx = 0
+        while low <= high {
+            let mid = (low + high) / 2
+            if keyframes[mid].timestamp <= time {
+                lastIdx = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        // Сканируем назад, пока все кадры лежат в радиусе < 0.02 от текущей позиции
+        var stationaryStartIdx = lastIdx
+        while stationaryStartIdx > 0 {
+            let prev = keyframes[stationaryStartIdx - 1]
+            let dist = hypot(currentPoint.x - prev.point.x, currentPoint.y - prev.point.y)
+            if dist >= 0.02 {
+                break
+            }
+            stationaryStartIdx -= 1
+        }
+
+        let currentDist = hypot(currentPoint.x - keyframes[lastIdx].point.x, currentPoint.y - keyframes[lastIdx].point.y)
+        guard currentDist < 0.02 else { return restingZoom }
+
+        let stationaryDuration = time - keyframes[stationaryStartIdx].timestamp
+        guard stationaryDuration >= 2.0 else { return restingZoom }
+
+        let fadeProgress = Self.smoothstep(CGFloat((stationaryDuration - 2.0) / 0.4))
+        return restingZoom - (restingZoom - 1.0) * fadeProgress
+    }
+
     /// Состояние камеры (точка фокуса 0...1 и масштаб) в момент времени `time` (в секундах)
     public func cameraState(
         at time: Double,
@@ -105,70 +187,45 @@ public struct CursorTrack: Codable, Sendable {
             return (CGPoint(x: 0.5, y: 0.5), mode == .onClicks ? 1.0 : restingZoom)
         }
         
-        // 1. Проверяем клик в диапазоне [0 ... +1.6s] через O(log N) бинарный поиск без аллокаций
+        // 1. Базовая траектория вне активного клика
+        let baseFocus: CGPoint
+        let baseZoom: CGFloat
+        if mode == .onClicks {
+            baseFocus = CGPoint(x: 0.5, y: 0.5)
+            baseZoom = 1.0
+        } else {
+            let point = continuousPoint(at: time)
+            baseFocus = point
+            baseZoom = continuousIdleAdjustedZoom(
+                at: time,
+                currentPoint: point,
+                restingZoom: restingZoom,
+                autoZoomOutOnIdle: autoZoomOutOnIdle
+            )
+        }
+        
+        // 2. Плавный вход/выход клика без резких скачков фокуса (0...1.6с)
         if let recentClick = Self.lastKeyframe(in: clickKeyframes, atOrBefore: time),
            (time - recentClick.timestamp) < 1.6 {
             let elapsed = time - recentClick.timestamp
-            let startZoom: CGFloat = mode == .onClicks ? 1.0 : restingZoom
-            let zoom: CGFloat
             if elapsed < 0.25 {
-                zoom = startZoom + (maxZoom - startZoom) * CGFloat(elapsed / 0.25)
+                let w = Self.smoothstep(CGFloat(elapsed / 0.25))
+                let fx = baseFocus.x + (recentClick.point.x - baseFocus.x) * w
+                let fy = baseFocus.y + (recentClick.point.y - baseFocus.y) * w
+                let zoom = baseZoom + (maxZoom - baseZoom) * w
+                return (CGPoint(x: fx, y: fy), zoom)
             } else if elapsed > 1.2 {
-                zoom = maxZoom - (maxZoom - startZoom) * CGFloat((elapsed - 1.2) / 0.4)
+                let w = Self.smoothstep(CGFloat((elapsed - 1.2) / 0.4))
+                let fx = recentClick.point.x + (baseFocus.x - recentClick.point.x) * w
+                let fy = recentClick.point.y + (baseFocus.y - recentClick.point.y) * w
+                let zoom = maxZoom + (baseZoom - maxZoom) * w
+                return (CGPoint(x: fx, y: fy), zoom)
             } else {
-                zoom = maxZoom
-            }
-            return (recentClick.point, zoom)
-        }
-        
-        // 2. Если режим - только по кликам, вне клика держим общий план 1.0x
-        if mode == .onClicks {
-            return (CGPoint(x: 0.5, y: 0.5), 1.0)
-        }
-        
-        // 3. Режим постоянного слежения (continuous)
-        let interpolatedPoint: CGPoint
-        if time <= keyframes[0].timestamp {
-            interpolatedPoint = keyframes[0].point
-        } else if let last = keyframes.last, time >= last.timestamp {
-            interpolatedPoint = last.point
-        } else {
-            var low = 0
-            var high = keyframes.count - 1
-            while low <= high {
-                let mid = (low + high) / 2
-                if keyframes[mid].timestamp < time {
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-            let idx1 = min(max(0, low), keyframes.count - 1)
-            let idx0 = max(0, idx1 - 1)
-            let k0 = keyframes[idx0]
-            let k1 = keyframes[idx1]
-            let dt = k1.timestamp - k0.timestamp
-            let factor = dt > 0.0001 ? CGFloat((time - k0.timestamp) / dt) : 0
-            let clamped = min(1.0, max(0.0, factor))
-            let smooth = clamped * clamped * (3 - 2 * clamped)
-            let px = k0.point.x + (k1.point.x - k0.point.x) * smooth
-            let py = k0.point.y + (k1.point.y - k0.point.y) * smooth
-            interpolatedPoint = CGPoint(x: min(1.0, max(0.0, px)), y: min(1.0, max(0.0, py)))
-        }
-        
-        // Проверка на бездействие за O(log N): если курсор неподвижен > 2.0с, отъезжаем к 1.0x
-        var zoom = restingZoom
-        if autoZoomOutOnIdle {
-            let recentTime = max(0, time - 2.0)
-            if let recentPastKf = Self.lastKeyframe(in: keyframes, atOrBefore: recentTime) {
-                let dist = hypot(interpolatedPoint.x - recentPastKf.point.x, interpolatedPoint.y - recentPastKf.point.y)
-                if dist < 0.02 {
-                    zoom = 1.0
-                }
+                return (recentClick.point, maxZoom)
             }
         }
         
-        return (interpolatedPoint, zoom)
+        return (baseFocus, baseZoom)
     }
 }
 
@@ -178,8 +235,8 @@ public final class CursorTrackRecorder {
     public static let shared = CursorTrackRecorder()
     
     private var recordingRect: CGRect = .zero
-    private var startTime: Date?
-    private var pauseStartTime: Date?
+    private var startUptime: TimeInterval?
+    private var pauseStartUptime: TimeInterval?
     private var totalPausedDuration: TimeInterval = 0
     private var keyframes: [CursorKeyframe] = []
     private var sampleTimer: Timer?
@@ -193,8 +250,8 @@ public final class CursorTrackRecorder {
     public func start(recordingRect: CGRect) {
         _ = stop()
         self.recordingRect = recordingRect
-        self.startTime = Date()
-        self.pauseStartTime = nil
+        self.startUptime = ProcessInfo.processInfo.systemUptime
+        self.pauseStartUptime = nil
         self.totalPausedDuration = 0
         self.keyframes = []
         self.isRecording = true
@@ -222,15 +279,15 @@ public final class CursorTrackRecorder {
     public func pause() {
         guard isRecording, !isPaused else { return }
         isPaused = true
-        pauseStartTime = Date()
+        pauseStartUptime = ProcessInfo.processInfo.systemUptime
     }
     
     /// Возобновление записи трека курсора
     public func resume() {
         guard isRecording, isPaused else { return }
-        if let pauseStart = pauseStartTime {
-            totalPausedDuration += Date().timeIntervalSince(pauseStart)
-            pauseStartTime = nil
+        if let pauseStart = pauseStartUptime {
+            totalPausedDuration += max(0, ProcessInfo.processInfo.systemUptime - pauseStart)
+            pauseStartUptime = nil
         }
         isPaused = false
     }
@@ -246,20 +303,26 @@ public final class CursorTrackRecorder {
         }
         isRecording = false
         isPaused = false
-        pauseStartTime = nil
+        pauseStartUptime = nil
         totalPausedDuration = 0
         let track = CursorTrack(keyframes: keyframes)
         keyframes = []
-        startTime = nil
+        startUptime = nil
         return track
     }
     
     private func recordPoint(isClick: Bool) {
-        guard isRecording, !isPaused, let startTime else { return }
+        guard isRecording, !isPaused, let startUptime else { return }
         guard recordingRect.width > 0, recordingRect.height > 0 else { return }
         
-        let elapsed = max(0, Date().timeIntervalSince(startTime) - totalPausedDuration)
         let mouseLoc = NSEvent.mouseLocation
+        // Внешние клики за пределами области записи игнорируются, чтобы не сбивать Smart Zoom
+        if isClick, !recordingRect.contains(mouseLoc) {
+            return
+        }
+        
+        let rawElapsed = max(0, ProcessInfo.processInfo.systemUptime - startUptime - totalPausedDuration)
+        let elapsed = max(keyframes.last?.timestamp ?? 0, rawElapsed)
         
         // В AppKit y=0 находится снизу экрана, в видеокоординатах y=0 сверху
         let normX = (mouseLoc.x - recordingRect.origin.x) / recordingRect.width
@@ -300,7 +363,7 @@ public final class CursorTrackRecorder {
             let data = try JSONEncoder().encode(track)
             try data.write(to: trackURL, options: .atomic)
         } catch {
-            print("Failed to save cursor track: \(error.localizedDescription)")
+            AppLogger.recording.error("Failed to save cursor track: \(error.localizedDescription, privacy: .public)")
         }
     }
     
@@ -316,7 +379,7 @@ public final class CursorTrackRecorder {
         }
     }
     
-    private static func companionTrackURL(for videoURL: URL) -> URL {
+    public static func companionTrackURL(for videoURL: URL) -> URL {
         videoURL.deletingPathExtension().appendingPathExtension("track.json")
     }
 }

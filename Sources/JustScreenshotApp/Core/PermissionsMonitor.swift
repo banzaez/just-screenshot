@@ -4,7 +4,6 @@ import Foundation
 import Observation
 
 /// Наблюдатель за системными разрешениями macOS (Запись экрана и Универсальный доступ).
-/// Автоматически обновляет статусы при возврате в приложение из «Системных настроек».
 @MainActor
 @Observable
 public final class PermissionsMonitor {
@@ -12,7 +11,6 @@ public final class PermissionsMonitor {
 
     public private(set) var screenRecordingGranted: Bool
     public private(set) var accessibilityGranted: Bool
-    public private(set) var didOpenScreenRecordingSettings = false
 
     public var allGranted: Bool {
         screenRecordingGranted && accessibilityGranted
@@ -34,7 +32,7 @@ public final class PermissionsMonitor {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
+            MainActor.assumeIsolated {
                 self?.refresh()
             }
         }
@@ -46,42 +44,49 @@ public final class PermissionsMonitor {
         }
     }
 
-    /// Обновляет текущие статусы разрешений из системы.
+    /// Обновляет статусы разрешений из системы только при реальном изменении (без лишних redraw)
     public func refresh() {
-        screenRecordingGranted = CGPreflightScreenCaptureAccess()
-        accessibilityGranted = AXIsProcessTrusted()
-        if accessibilityGranted {
-            GlobalHotKeyManager.shared.ensureEventTapIfTrusted()
+        let newScreen = CGPreflightScreenCaptureAccess()
+        if newScreen != screenRecordingGranted {
+            screenRecordingGranted = newScreen
         }
-        if screenRecordingGranted {
-            didOpenScreenRecordingSettings = false
+
+        let newAccessibility = AXIsProcessTrusted()
+        if newAccessibility != accessibilityGranted {
+            accessibilityGranted = newAccessibility
+            GlobalHotKeyManager.shared.handleAccessibilityStatusChanged(trusted: newAccessibility)
+        } else if newAccessibility && !GlobalHotKeyManager.shared.isEventTapActive {
+            GlobalHotKeyManager.shared.ensureEventTapIfTrusted()
         }
     }
 
-    /// Запрашивает разрешение на запись экрана и открывает соответствующий раздел Системных настроек.
+    /// Запрашивает разрешение на запись экрана и открывает соответствующий раздел Системных настроек
     public func requestScreenRecording() {
-        didOpenScreenRecordingSettings = true
-        if #available(macOS 14.4, *) {
-            _ = CGRequestScreenCaptureAccess()
-        }
+        _ = CGRequestScreenCaptureAccess()
         ScreenCaptureService.shared.openSystemSettings()
         refresh()
     }
 
-    /// Запрашивает разрешение «Универсальный доступ» и при необходимости открывает Системные настройки.
+    /// Запрашивает разрешение «Универсальный доступ» и открывает Системные настройки при необходимости
     public func requestAccessibility() {
-        _ = AccessibilityPermissionHelper.requestAccess()
+        _ = AccessibilityPermissionHelper.requestAccess(openSettings: true)
         refresh()
     }
 
-    /// Перезапускает приложение (macOS часто требует перезапуск после выдачи прав на запись экрана).
+    /// Безопасный перезапуск приложения: завершает текущий экземпляр только при успешном запуске нового
     public func relaunchApp() {
         let bundleURL = Bundle.main.bundleURL
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, _ in
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { app, error in
             Task { @MainActor in
-                NSApp.terminate(nil)
+                if let error {
+                    AppLogger.general.error("Failed to relaunch app: \(error.localizedDescription, privacy: .public)")
+                    return
+                }
+                if app != nil {
+                    NSApp.terminate(nil)
+                }
             }
         }
     }

@@ -19,6 +19,7 @@ public struct EditorBottomBarView: View {
     public let onSave: () -> Void
     
     @State private var justSavedToHistory: Bool = false
+    @State private var justSavedTask: Task<Void, Never>?
     @State private var showAdjustPopover: Bool = false
     
     public init(
@@ -101,7 +102,8 @@ public struct EditorBottomBarView: View {
                                 )
                         }
                         .buttonStyle(.plain)
-                        .help(preset.rawValue)
+        .help(preset.localizedTitle)
+        .accessibilityLabel(preset.localizedTitle)
                     }
                 }
                 
@@ -226,11 +228,16 @@ public struct EditorBottomBarView: View {
                 tooltip: L("editor.save_history_help")
             ) {
                 onSaveToHistory()
+                justSavedTask?.cancel()
                 withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = true }
-                Task { @MainActor in
+                justSavedTask = Task { @MainActor in
                     try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    guard !Task.isCancelled else { return }
                     withAnimation(.easeInOut(duration: 0.2)) { justSavedToHistory = false }
                 }
+            }
+            .onDisappear {
+                justSavedTask?.cancel()
             }
             .keyboardShortcut("s", modifiers: [.command])
             

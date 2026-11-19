@@ -4,6 +4,7 @@ import AppKit
 /// Плавающий оверлей Quick Access в углу экрана
 public struct QuickAccessOverlayView: View {
     public let item: CapturedItem
+    public let thumbnail: NSImage?
     public let onAnnotate: () -> Void
     public let onSave: () -> Void
     public let onCopy: () -> Void
@@ -12,15 +13,17 @@ public struct QuickAccessOverlayView: View {
     public let onDelete: () -> Void
     public let onClose: () -> Void
     public let onHover: (Bool) -> Void
-    
+
     @State private var feedback: String?
     @State private var feedbackTask: Task<Void, Never>?
+    @State private var justCopiedTask: Task<Void, Never>?
     @State private var isThumbnailHovered = false
     @State private var justCopied = false
     @State private var detectedQR: String?
-    
+
     public init(
         item: CapturedItem,
+        thumbnail: NSImage? = nil,
         onAnnotate: @escaping () -> Void,
         onSave: @escaping () -> Void,
         onCopy: @escaping () -> Void,
@@ -31,6 +34,7 @@ public struct QuickAccessOverlayView: View {
         onHover: @escaping (Bool) -> Void
     ) {
         self.item = item
+        self.thumbnail = thumbnail
         self.onAnnotate = onAnnotate
         self.onSave = onSave
         self.onCopy = onCopy
@@ -40,7 +44,18 @@ public struct QuickAccessOverlayView: View {
         self.onClose = onClose
         self.onHover = onHover
     }
-    
+
+    private var previewImage: NSImage {
+        thumbnail ?? item.image
+    }
+
+    private var pixelDimensionsText: String {
+        if let cg = ImageExporter.cgImage(from: item.image) {
+            return "\(cg.width) × \(cg.height) px"
+        }
+        return "\(Int(item.image.size.width)) × \(Int(item.image.size.height)) px"
+    }
+
     private func flash(_ text: String) {
         feedbackTask?.cancel()
         feedback = text
@@ -51,12 +66,12 @@ public struct QuickAccessOverlayView: View {
             }
         }
     }
-    
+
     public var body: some View {
         HStack(spacing: 12) {
             // Превью скриншота (клик открывает редактор, перетаскивание — Drag & Drop файла)
             ZStack {
-                Image(nsImage: item.image)
+                Image(nsImage: previewImage)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 132, height: 98)
@@ -70,7 +85,7 @@ public struct QuickAccessOverlayView: View {
                             )
                     )
                     .shadow(color: .black.opacity(0.28), radius: 5, x: 0, y: 2)
-                
+
                 if isThumbnailHovered && feedback == nil {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.black.opacity(0.38))
@@ -83,7 +98,7 @@ public struct QuickAccessOverlayView: View {
                         )
                         .transition(.opacity)
                 }
-                
+
                 if detectedQR != nil {
                     VStack {
                         HStack {
@@ -100,7 +115,7 @@ public struct QuickAccessOverlayView: View {
                     }
                     .transition(.opacity)
                 }
-                
+
                 if let feedback {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.black.opacity(0.82))
@@ -127,15 +142,11 @@ public struct QuickAccessOverlayView: View {
             .onTapGesture(perform: onAnnotate)
             .help(L("hud.editor"))
             .onDrag {
-                if let tempURL = ImageExporter.saveTemporaryPNG(item.image) {
-                    return NSItemProvider(object: tempURL as NSURL)
-                }
-                return NSItemProvider(object: item.image)
+                ImageExporter.makeDragItemProvider(for: item.image)
             }
-            
-            // Правая часть: заголовок + управление и нижний ряд действий (ровно под ширину 5 кнопок: 5*34 + 4*6 = 194pt)
+
+            // Правая часть: заголовок + управление и нижний ряд действий
             VStack(alignment: .leading, spacing: 8) {
-                // Верхняя строка: название + разрешение слева, Удалить и Закрыть справа
                 HStack(alignment: .top, spacing: 6) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L("hud.screenshot"))
@@ -160,15 +171,17 @@ public struct QuickAccessOverlayView: View {
                             .buttonStyle(.plain)
                             .help(qr)
                         } else {
-                            Text("\(Int(item.image.size.width)) × \(Int(item.image.size.height)) px")
+                            Text(pixelDimensionsText)
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
                     }
-                    
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onAnnotate)
+
                     Spacer(minLength: 4)
-                    
+
                     HStack(spacing: 5) {
                         HUDHeaderCircleButton(
                             icon: "trash",
@@ -176,7 +189,7 @@ public struct QuickAccessOverlayView: View {
                             isDestructive: true,
                             action: onDelete
                         )
-                        
+
                         HUDHeaderCircleButton(
                             icon: "xmark",
                             tooltip: L("editor.close"),
@@ -185,22 +198,17 @@ public struct QuickAccessOverlayView: View {
                         )
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onAnnotate)
-                
+
                 Spacer(minLength: 0)
-                
-                // Нижняя строка: 5 иконочных кнопок (5 * 34 + 4 * 6 = 194pt)
+
                 HStack(spacing: 6) {
-                    // 1. Открыть редактор
                     HUDActionIconButton(
                         icon: "pencil.and.outline",
                         style: .primary,
                         tooltip: L("hud.editor"),
                         action: onAnnotate
                     )
-                    
-                    // 2. Скопировать в буфер
+
                     HUDActionIconButton(
                         icon: justCopied ? "checkmark" : "doc.on.doc",
                         style: justCopied ? .success : .secondary,
@@ -209,29 +217,28 @@ public struct QuickAccessOverlayView: View {
                         onCopy()
                         flash(L("hud.copied"))
                         withAnimation(.easeInOut(duration: 0.15)) { justCopied = true }
-                        Task { @MainActor in
+                        justCopiedTask?.cancel()
+                        justCopiedTask = Task { @MainActor in
                             try? await Task.sleep(for: .seconds(1.4))
+                            guard !Task.isCancelled else { return }
                             withAnimation(.easeInOut(duration: 0.15)) { justCopied = false }
                         }
                     }
-                    
-                    // 3. Сохранить как (Скачать файл)
+
                     HUDActionIconButton(
                         icon: "arrow.down.to.line",
                         style: .secondary,
                         tooltip: L("hud.save_as"),
                         action: onSave
                     )
-                    
-                    // 4. Закрепить поверх окон
+
                     HUDActionIconButton(
                         icon: "pin",
                         style: .secondary,
                         tooltip: L("hud.pin_top"),
                         action: onPin
                     )
-                    
-                    // 5. Распознать текст (OCR)
+
                     HUDActionIconButton(
                         icon: "text.viewfinder",
                         style: .secondary,
@@ -247,7 +254,7 @@ public struct QuickAccessOverlayView: View {
             .frame(width: 194)
         }
         .padding(12)
-        .frame(width: 362, height: 122)
+        .frame(width: HUDStackManager.width, height: HUDStackManager.height)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(.ultraThinMaterial)
@@ -267,22 +274,27 @@ public struct QuickAccessOverlayView: View {
                         )
                 )
         )
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onTapGesture(perform: onAnnotate)
         .onHover(perform: onHover)
+        .onDisappear {
+            feedbackTask?.cancel()
+            feedbackTask = nil
+            justCopiedTask?.cancel()
+            justCopiedTask = nil
+        }
         .task {
             let found = await TextRecognizer.detectQRCodes(in: item.image)
+            guard !Task.isCancelled else { return }
             withAnimation(.easeOut(duration: 0.2)) {
                 detectedQR = found.first
             }
         }
     }
-    
+
     private func isURL(_ str: String) -> Bool {
         guard let url = URL(string: str), let scheme = url.scheme?.lowercased() else { return false }
         return scheme == "http" || scheme == "https"
     }
-    
+
     private func handleQRAction(_ qr: String) {
         ImageExporter.copyText(qr)
         if isURL(qr), let url = URL(string: qr) {
@@ -301,9 +313,9 @@ private struct HUDHeaderCircleButton: View {
     let tooltip: String
     let isDestructive: Bool
     let action: () -> Void
-    
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
@@ -321,14 +333,14 @@ private struct HUDHeaderCircleButton: View {
         .help(tooltip)
         .accessibilityLabel(tooltip)
     }
-    
+
     private var foregroundColor: Color {
         if isDestructive {
             return isHovered ? .white : .red
         }
         return isHovered ? .primary : .secondary
     }
-    
+
     private var backgroundColor: Color {
         if isDestructive {
             return isHovered ? Color.red.opacity(0.85) : Color.red.opacity(0.14)
@@ -343,14 +355,14 @@ private struct HUDActionIconButton: View {
         case secondary
         case success
     }
-    
+
     let icon: String
     let style: Style
     let tooltip: String
     let action: () -> Void
-    
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
@@ -372,7 +384,7 @@ private struct HUDActionIconButton: View {
         .help(tooltip)
         .accessibilityLabel(tooltip)
     }
-    
+
     private var foregroundColor: Color {
         switch style {
         case .primary, .success:
@@ -381,7 +393,7 @@ private struct HUDActionIconButton: View {
             return .primary
         }
     }
-    
+
     private var backgroundColor: Color {
         switch style {
         case .primary:
@@ -392,7 +404,7 @@ private struct HUDActionIconButton: View {
             return isHovered ? Color.primary.opacity(0.16) : Color.primary.opacity(0.08)
         }
     }
-    
+
     private var borderColor: Color {
         switch style {
         case .primary, .success:

@@ -21,7 +21,7 @@ public struct ColorDropdown: View {
                 Text(title.isEmpty ? L("editor.color") : title).font(.callout)
                 Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 8)
             .frame(height: 30)
             .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
             .contentShape(Rectangle())
@@ -41,7 +41,7 @@ public struct ColorDropdown: View {
                             .overlay(Circle().stroke(Color.primary.opacity(0.3), lineWidth: 1))
                             .overlay(
                                 Circle().stroke(Color.accentColor, lineWidth: 3).padding(-3)
-                                    .opacity(selection == color ? 1 : 0)
+                                    .opacity(EditorPalette.colorsMatch(selection, color) ? 1 : 0)
                             )
                             .frame(width: 30, height: 30)
                             .contentShape(Rectangle())

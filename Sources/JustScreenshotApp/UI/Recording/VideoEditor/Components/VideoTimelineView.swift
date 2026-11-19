@@ -4,19 +4,20 @@ import SwiftUI
 public struct VideoTimelineView: View {
     var model: VideoEditorModel
     @State private var isDraggingPlayhead = false
-    
+
     public init(model: VideoEditorModel) {
         self.model = model
     }
-    
+
     private func formatTime(_ time: Double) -> String {
-        let totalSec = max(0, Int(time))
-        let min = totalSec / 60
-        let sec = totalSec % 60
-        let ms = Int((time.truncatingRemainder(dividingBy: 1)) * 100)
-        return String(format: "%02d:%02d.%02d", min, sec, ms)
+        let safe = (time.isFinite && !time.isNaN) ? max(0, time) : 0
+        let totalCentiseconds = Int((safe * 100).rounded())
+        let min = totalCentiseconds / 6000
+        let sec = (totalCentiseconds / 100) % 60
+        let cs = totalCentiseconds % 100
+        return String(format: "%02d:%02d.%02d", min, sec, cs)
     }
-    
+
     public var body: some View {
         VStack(spacing: 6) {
             // Метки времени: Trim Start, Playhead Current, Trim End
@@ -28,15 +29,15 @@ public struct VideoTimelineView: View {
                         .font(.system(size: 11, design: .monospaced))
                 }
                 .foregroundColor(.yellow)
-                
+
                 Spacer()
-                
+
                 Text(formatTime(model.currentTime))
                     .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
-                
+
                 Spacer()
-                
+
                 HStack(spacing: 4) {
                     Text(L("video_editor.trim_out", formatTime(model.trimEnd)))
                         .font(.system(size: 11, design: .monospaced))
@@ -46,17 +47,17 @@ public struct VideoTimelineView: View {
                 .foregroundColor(.yellow)
             }
             .padding(.horizontal, 4)
-            
-            // Сама дорожка таймлайна с кадрами и маркерами
+
+            // Дорожка таймлайна с кадрами и маркерами
             GeometryReader { geo in
-                let width = geo.size.width
-                let height = geo.size.height
+                let width = max(1, geo.size.width)
+                let height = max(1, geo.size.height)
                 let totalDuration = max(0.1, model.duration)
-                
-                let startX = CGFloat(model.trimStart / totalDuration) * width
-                let endX = CGFloat(model.trimEnd / totalDuration) * width
-                let currentX = CGFloat(model.currentTime / totalDuration) * width
-                
+
+                let startX = min(width, max(0, CGFloat(model.trimStart / totalDuration) * width))
+                let endX = min(width, max(startX, CGFloat(model.trimEnd / totalDuration) * width))
+                let currentX = min(width, max(0, CGFloat(model.currentTime / totalDuration) * width))
+
                 ZStack(alignment: .leading) {
                     // Фоновая лента кадров (Filmstrip)
                     HStack(spacing: 0) {
@@ -78,78 +79,88 @@ public struct VideoTimelineView: View {
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(Color.white.opacity(0.15), lineWidth: 1)
                     )
-                    
-                    // Затемнение неактивных областей за пределами Trim
-                    // До Trim In
+
+                    // Затемнение до Trim In
                     if startX > 0 {
                         Rectangle()
                             .fill(Color.black.opacity(0.65))
-                            .frame(width: max(0, startX), height: height)
+                            .frame(width: startX, height: height)
                             .cornerRadius(6)
                     }
-                    // После Trim Out
+
+                    // Затемнение после Trim Out (cornerRadius ДО offset)
                     if endX < width {
                         Rectangle()
                             .fill(Color.black.opacity(0.65))
                             .frame(width: max(0, width - endX), height: height)
-                            .offset(x: endX)
                             .cornerRadius(6)
+                            .offset(x: endX)
                     }
-                    
+
                     // Подсветка активного диапазона (Trim In ... Trim Out)
                     Rectangle()
                         .stroke(Color.yellow, lineWidth: 2)
                         .frame(width: max(0, endX - startX), height: height)
                         .offset(x: startX)
-                    
-                    // Ручка Trim Start (желтая)
+
+                    // Ручка Trim Start
                     TrimHandleView(isStart: true)
                         .offset(x: max(0, startX - 8))
                         .gesture(
                             DragGesture()
                                 .onChanged { val in
                                     let newSec = Double(val.location.x / width) * totalDuration
+                                    model.hasUserEditedTrim = true
                                     model.trimStart = max(0, min(newSec, model.trimEnd - 0.2))
                                     if model.currentTime < model.trimStart {
-                                        model.seek(to: model.trimStart)
+                                        model.seek(to: model.trimStart, exact: false)
                                     }
                                 }
+                                .onEnded { _ in
+                                    model.seek(to: max(model.currentTime, model.trimStart), exact: true)
+                                }
                         )
-                    
-                    // Ручка Trim End (желтая)
+
+                    // Ручка Trim End
                     TrimHandleView(isStart: false)
-                        .offset(x: min(width - 8, endX - 8))
+                        .offset(x: max(0, min(width - 16, endX - 8)))
                         .gesture(
                             DragGesture()
                                 .onChanged { val in
                                     let newSec = Double(val.location.x / width) * totalDuration
+                                    model.hasUserEditedTrim = true
                                     model.trimEnd = min(totalDuration, max(newSec, model.trimStart + 0.2))
                                     if model.currentTime > model.trimEnd {
-                                        model.seek(to: model.trimEnd)
+                                        model.seek(to: model.trimEnd, exact: false)
                                     }
                                 }
+                                .onEnded { _ in
+                                    model.seek(to: min(model.currentTime, model.trimEnd), exact: true)
+                                }
                         )
-                    
-                    // Бегунок воспроизведения (Playhead - белая вертикальная линия с шапкой)
+
+                    // Бегунок воспроизведения (Playhead)
                     VStack(spacing: 0) {
                         Circle()
                             .fill(Color.white)
-                            .frame(width: 12, height: 12)
+                            .frame(width: 10, height: 10)
                             .shadow(color: .black.opacity(0.5), radius: 2)
                         Rectangle()
                             .fill(Color.white)
-                            .frame(width: 2, height: height)
+                            .frame(width: 2, height: max(1, height - 10))
                     }
-                    .offset(x: max(0, min(width - 12, currentX - 6)))
+                    .offset(x: max(0, min(width - 10, currentX - 5)))
                     .gesture(
                         DragGesture()
                             .onChanged { val in
                                 isDraggingPlayhead = true
                                 let newSec = Double(val.location.x / width) * totalDuration
-                                model.seek(to: newSec)
+                                model.seek(to: newSec, exact: false)
                             }
-                            .onEnded { _ in
+                            .onEnded { val in
                                 isDraggingPlayhead = false
+                                let newSec = Double(val.location.x / width) * totalDuration
+                                model.seek(to: newSec, exact: true)
                             }
                     )
                 }
@@ -158,7 +169,7 @@ public struct VideoTimelineView: View {
                     SpatialTapGesture()
                         .onEnded { val in
                             let newSec = Double(val.location.x / width) * totalDuration
-                            model.seek(to: newSec)
+                            model.seek(to: newSec, exact: true)
                         }
                 )
             }
@@ -172,15 +183,15 @@ public struct VideoTimelineView: View {
 
 private struct TrimHandleView: View {
     let isStart: Bool
-    
+
     @State private var isHovering = false
-    
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 3)
                 .fill(Color.yellow)
                 .frame(width: 16, height: 52)
-            
+
             Image(systemName: isStart ? "chevron.right" : "chevron.left")
                 .font(.system(size: 9, weight: .bold))
                 .foregroundColor(.black)

@@ -11,18 +11,18 @@ final class AreaSelectionNSView: NSView {
     private var onCompleteWindow: (SCWindow) -> Void
     private var onCancel: () -> Void
     private var onNeedBackgroundSample: (() -> Void)?
-    
+
     private var isDragging = false
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
     private var hoveredWindow: SCWindow?
     private var trackingArea: NSTrackingArea?
-    
+
     private var sampler: ScreenPixelSampler
     private var hasSampler = false
-    
+
     private let layers = AreaSelectionLayerHost()
-    
+
     init(
         frame: NSRect,
         screen: NSScreen,
@@ -36,7 +36,7 @@ final class AreaSelectionNSView: NSView {
     ) {
         self.screen = screen
         self.mode = mode
-        self.visibleWindows = Self.sortedFrontToBack(visibleWindows)
+        self.visibleWindows = visibleWindows.isEmpty ? [] : Self.sortedFrontToBack(visibleWindows)
         self.sampler = ScreenPixelSampler(image: backgroundImage)
         self.hasSampler = backgroundImage != nil
         self.onCompleteRect = onCompleteRect
@@ -44,13 +44,13 @@ final class AreaSelectionNSView: NSView {
         self.onCancel = onCancel
         self.onNeedBackgroundSample = onNeedBackgroundSample
         super.init(frame: frame)
-        
+
         wantsLayer = true
         layerContentsRedrawPolicy = .onSetNeedsDisplay
         if let root = layer {
             layers.install(in: root)
         }
-        
+
         let mouseLoc = NSEvent.mouseLocation
         if NSMouseInRect(mouseLoc, screen.frame, false) {
             currentPoint = NSPoint(
@@ -60,11 +60,11 @@ final class AreaSelectionNSView: NSView {
         }
         syncLayers()
     }
-    
+
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-    
+
     func reconfigure(
         screen: NSScreen,
         mode: OverlayMode,
@@ -77,7 +77,7 @@ final class AreaSelectionNSView: NSView {
     ) {
         self.screen = screen
         self.mode = mode
-        self.visibleWindows = Self.sortedFrontToBack(visibleWindows)
+        self.visibleWindows = visibleWindows.isEmpty ? [] : Self.sortedFrontToBack(visibleWindows)
         self.sampler = ScreenPixelSampler(image: backgroundImage)
         self.hasSampler = backgroundImage != nil
         self.onCompleteRect = onCompleteRect
@@ -87,47 +87,48 @@ final class AreaSelectionNSView: NSView {
         isDragging = false
         startPoint = nil
         hoveredWindow = nil
-        
+
         let mouseLoc = NSEvent.mouseLocation
         if NSMouseInRect(mouseLoc, screen.frame, false) {
             currentPoint = NSPoint(
                 x: mouseLoc.x - screen.frame.origin.x,
                 y: mouseLoc.y - screen.frame.origin.y
             )
-            if mode == .windowOnly {
-                hoveredWindow = windowUnderCursor(at: currentPoint!)
+            if mode == .windowOnly, let loc = currentPoint {
+                hoveredWindow = windowUnderCursor(at: loc)
             }
         } else {
             currentPoint = nil
         }
-        
+
         syncLayers()
         updateTrackingAreas()
         requestSamplerIfNeeded()
     }
-    
+
     func updateSampler(_ sampler: ScreenPixelSampler) {
         self.sampler = sampler
         hasSampler = true
         guard mode != .windowOnly, !isDragging else { return }
         syncLayers()
     }
-    
-    func updateVisibleWindows(_ windows: [SCWindow]) {
-        visibleWindows = Self.sortedFrontToBack(windows)
+
+    func updateVisibleWindows(_ windows: [SCWindow], alreadySorted: Bool = false) {
+        visibleWindows = (windows.isEmpty || alreadySorted) ? windows : Self.sortedFrontToBack(windows)
         guard mode == .windowOnly else { return }
         if let loc = currentPoint {
             hoveredWindow = windowUnderCursor(at: loc)
         }
         syncLayers()
     }
-    
+
     func resetOverlayState() {
         isHidden = false
         isDragging = false
         startPoint = nil
         currentPoint = nil
         hoveredWindow = nil
+        visibleWindows = []
         sampler = ScreenPixelSampler(image: nil)
         hasSampler = false
         onNeedBackgroundSample = nil
@@ -136,19 +137,19 @@ final class AreaSelectionNSView: NSView {
         onCancel = {}
         syncLayers()
     }
-    
+
     override func layout() {
         super.layout()
         syncLayers()
     }
-    
+
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
         syncLayers()
     }
-    
+
     // MARK: - Tracking
-    
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea {
@@ -163,25 +164,25 @@ final class AreaSelectionNSView: NSView {
         trackingArea = area
         addTrackingArea(area)
     }
-    
+
     override func resetCursorRects() {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .crosshair)
     }
-    
+
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         window?.makeFirstResponder(self)
         requestSamplerIfNeeded()
     }
-    
+
     override func cancelOperation(_ sender: Any?) {
         onCancel()
     }
-    
+
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 {
             onCancel()
@@ -189,28 +190,28 @@ final class AreaSelectionNSView: NSView {
             super.keyDown(with: event)
         }
     }
-    
+
     override func mouseDown(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-        
-        if event.modifierFlags.contains(.option), mode != .windowOnly {
+        let loc = clampedPoint(convert(event.locationInWindow, from: nil))
+
+        if event.modifierFlags.contains(.option), mode == .areaOnly, hasSampler {
             let screenPoint = CGPoint(x: loc.x, y: bounds.height - loc.y)
             if let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
                 ImageExporter.copyText(hex)
-                NSSound(named: "Tink")?.play()
+                SoundEffects.playTick()
                 onCancel()
                 return
             }
         }
-        
+
         startPoint = loc
         currentPoint = loc
         isDragging = false
         syncLayers()
     }
-    
+
     override func mouseDragged(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
+        let loc = clampedPoint(convert(event.locationInWindow, from: nil))
         if mode == .windowOnly {
             moveCursor(to: loc)
             return
@@ -222,10 +223,10 @@ final class AreaSelectionNSView: NSView {
         }
         syncLayers()
     }
-    
+
     override func mouseUp(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-        
+        let loc = clampedPoint(convert(event.locationInWindow, from: nil))
+
         if mode == .windowOnly {
             if let hovered = hoveredWindow {
                 startPoint = nil
@@ -236,13 +237,13 @@ final class AreaSelectionNSView: NSView {
             onCancel()
             return
         }
-        
+
         if isDragging, let start = startPoint {
             let rect = selectionRect(from: start, to: loc)
             startPoint = nil
             currentPoint = nil
             isDragging = false
-            
+
             if rect.width > 5 && rect.height > 5 {
                 let scRect = ScreenCoordinateSpace.quartzRect(fromScreenLocal: rect, screenFrame: screen.frame)
                 isHidden = true
@@ -252,19 +253,19 @@ final class AreaSelectionNSView: NSView {
                 return
             }
         }
-        
+
         startPoint = nil
         currentPoint = nil
         isDragging = false
         onCancel()
     }
-    
+
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
         requestSamplerIfNeeded()
-        moveCursor(to: convert(event.locationInWindow, from: nil))
+        moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
     }
-    
+
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         guard !isDragging else { return }
@@ -272,14 +273,14 @@ final class AreaSelectionNSView: NSView {
         hoveredWindow = nil
         syncLayers()
     }
-    
+
     override func mouseMoved(with event: NSEvent) {
-        moveCursor(to: convert(event.locationInWindow, from: nil))
+        moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
     }
-    
+
     private func moveCursor(to loc: CGPoint) {
         requestSamplerIfNeeded()
-        
+
         if mode == .windowOnly {
             let next = windowUnderCursor(at: loc)
             let same = next?.windowID == hoveredWindow?.windowID
@@ -289,23 +290,31 @@ final class AreaSelectionNSView: NSView {
             syncLayers()
             return
         }
-        
+
         if let currentPoint, abs(currentPoint.x - loc.x) < 0.5, abs(currentPoint.y - loc.y) < 0.5 {
             return
         }
         currentPoint = loc
         syncLayers()
     }
-    
+
     private func requestSamplerIfNeeded() {
         guard mode == .areaOnly, !hasSampler else { return }
         onNeedBackgroundSample?()
     }
-    
+
+    private func clampedPoint(_ point: CGPoint) -> CGPoint {
+        CGPoint(
+            x: min(max(0, point.x), bounds.width),
+            y: min(max(0, point.y), bounds.height)
+        )
+    }
+
     // MARK: - Geometry
-    
+
     /// SCShareableContent не гарантирует z-order; Window Server — front→back.
-    private static func sortedFrontToBack(_ windows: [SCWindow]) -> [SCWindow] {
+    static func sortedFrontToBack(_ windows: [SCWindow]) -> [SCWindow] {
+        guard !windows.isEmpty else { return [] }
         let order = frontToBackWindowOrder()
         return windows.sorted { lhs, rhs in
             let lhsRank = order[CGWindowID(lhs.windowID)] ?? .max
@@ -316,7 +325,7 @@ final class AreaSelectionNSView: NSView {
             return lhs.windowLayer > rhs.windowLayer
         }
     }
-    
+
     private static func frontToBackWindowOrder() -> [CGWindowID: Int] {
         guard let info = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
@@ -332,23 +341,23 @@ final class AreaSelectionNSView: NSView {
         }
         return order
     }
-    
+
     private func windowUnderCursor(at loc: CGPoint) -> SCWindow? {
         let mouse = ScreenCoordinateSpace.quartzPoint(fromScreenLocal: loc, screenFrame: screen.frame)
         return visibleWindows.first { $0.frame.contains(mouse) }
     }
-    
+
     private func selectionRect(from start: CGPoint, to current: CGPoint) -> CGRect {
         CGRect(
             x: min(start.x, current.x),
             y: min(start.y, current.y),
             width: abs(start.x - current.x),
             height: abs(start.y - current.y)
-        )
+        ).intersection(bounds)
     }
-    
+
     // MARK: - Layer sync
-    
+
     private func tipText() -> String {
         switch mode {
         case .windowOnly: return L("overlay.window_tip")
@@ -356,7 +365,7 @@ final class AreaSelectionNSView: NSView {
         case .recordingArea: return L("overlay.record_tip")
         }
     }
-    
+
     private func syncLayers() {
         var hole: CGRect?
         var borderRect: CGRect?
@@ -366,7 +375,7 @@ final class AreaSelectionNSView: NSView {
         var crosshairPoint: CGPoint?
         var borderColor = CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
         var borderWidth: CGFloat = 2
-        
+
         if mode == .windowOnly, let hovered = hoveredWindow {
             let rect = ScreenCoordinateSpace.screenLocalRect(
                 fromQuartzFrame: hovered.frame,
@@ -394,12 +403,18 @@ final class AreaSelectionNSView: NSView {
         } else if mode != .windowOnly, let point = currentPoint {
             crosshairPoint = point
             let screenPoint = CGPoint(x: point.x, y: bounds.height - point.y)
-            let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) ?? "#------"
-            badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  \(hex)"
+            if mode == .areaOnly, hasSampler, let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
+                badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  \(hex)"
+            } else {
+                badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))"
+            }
             badgeNear = CGRect(x: point.x, y: point.y, width: 1, height: 1)
             badgeOffset = CGPoint(x: 14, y: 14)
         }
-        
+
+        let topSafeInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
+        let scale = window?.backingScaleFactor ?? screen.backingScaleFactor
+
         layers.apply(
             snapshot: AreaSelectionLayerHost.Snapshot(
                 bounds: bounds,
@@ -413,7 +428,8 @@ final class AreaSelectionNSView: NSView {
                 badgeOffset: badgeOffset,
                 crosshairPoint: crosshairPoint,
                 tipText: tipText(),
-                scale: screen.backingScaleFactor
+                scale: scale,
+                topSafeInset: topSafeInset
             )
         )
     }

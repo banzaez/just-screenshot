@@ -1,33 +1,34 @@
 import Foundation
 
-/// Оптимизированный каталог локализации (Архитектура 2026).
-/// Словари строк вынесены по отдельным языковым файлам.
-/// Поиск перевода происходит за O(1) в плоской таблице активного языка.
+/// Каталог локализации: плоские словари по языкам с O(1) поиском и фолбэком на английский
 public enum LocalizationCatalog {
-    
-    /// Быстрый доступ к строке по ключу и языку за один поиск O(1)
+
+    /// Сырой перевод без фолбэка на английский (для строгих тестов паритета ключей)
+    public static func rawTranslation(_ key: String, for language: AppLanguage) -> String? {
+        strings(for: language)[key]
+    }
+
+    /// Быстрый доступ к строке по ключу и языку с фолбэком на английский
     public static func translate(_ key: String, for language: AppLanguage) -> String {
-        let dict: [String: String]
-        switch language {
-        case .english: dict = englishStrings
-        case .russian: dict = russianStrings
-        case .ukrainian: dict = ukrainianStrings
-        case .german: dict = germanStrings
-        case .french: dict = frenchStrings
-        case .spanish: dict = spanishStrings
-        case .simplifiedChinese: dict = simplifiedChineseStrings
-        case .japanese: dict = japaneseStrings
-        }
-        
-        if let translation = dict[key] {
+        if let translation = strings(for: language)[key] {
             return translation
         }
-        
-        // Фоллбэк на английский язык, если для выбранного языка ключ отсутствует
         if language != .english, let englishFallback = englishStrings[key] {
             return englishFallback
         }
-        
         return key
+    }
+
+    private static func strings(for language: AppLanguage) -> [String: String] {
+        switch language {
+        case .english: return englishStrings
+        case .russian: return russianStrings
+        case .ukrainian: return ukrainianStrings
+        case .german: return germanStrings
+        case .french: return frenchStrings
+        case .spanish: return spanishStrings
+        case .simplifiedChinese: return simplifiedChineseStrings
+        case .japanese: return japaneseStrings
+        }
     }
 }

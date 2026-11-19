@@ -3,7 +3,7 @@ import SwiftUI
 
 extension AppWindowManager {
     // MARK: - История
-    
+
     func makeGlassWindow<Content: View>(
         contentRect: NSRect,
         title: String,
@@ -29,8 +29,8 @@ extension AppWindowManager {
     }
 
     public func showHistory() {
-        history.pruneMissingFiles()
         if let existing = historyWindow {
+            history.pruneMissingFiles()
             existing.bringToFront()
             return
         }
@@ -47,16 +47,16 @@ extension AppWindowManager {
         let window = makeGlassWindow(
             contentRect: NSRect(x: 0, y: 0, width: 880, height: 620),
             title: L("history.title"),
-            minSize: NSSize(width: 600, height: 440),
+            minSize: NSSize(width: 620, height: 460),
             rootView: view
         )
         window.center()
-        
+
         let managed = ManagedWindow(window: window) { [weak self] _ in self?.historyWindow = nil }
         historyWindow = managed
         managed.bringToFront()
     }
-    
+
     public func editHistoryEntry(_ entry: HistoryEntry) {
         switch entry.kind {
         case .image:
@@ -74,9 +74,9 @@ extension AppWindowManager {
             openVideoEditor(videoURL: url)
         }
     }
-    
+
     // MARK: - Настройки
-    
+
     public func showSettings() {
         if let existing = settingsWindow {
             existing.bringToFront()
@@ -86,33 +86,36 @@ extension AppWindowManager {
         let window = makeGlassWindow(
             contentRect: NSRect(x: 0, y: 0, width: 660, height: 720),
             title: L("settings.title"),
-            minSize: NSSize(width: 600, height: 600),
+            minSize: NSSize(width: 620, height: 620),
             rootView: view
         )
         window.center()
-        
+
         let managed = ManagedWindow(window: window) { [weak self] _ in self?.settingsWindow = nil }
         settingsWindow = managed
         managed.bringToFront()
-        NSApp.activate(ignoringOtherApps: true)
     }
-    
+
     // MARK: - Открыть изображение / из буфера
-    
+
     public func openImageFromDisk() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = true
-        NSApp.activate(ignoringOtherApps: true)
+        NSApp.activate()
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
-            guard let image = NSImage(contentsOf: url) else { continue }
+            guard let image = NSImage(contentsOf: url),
+                  image.size.width > 0,
+                  image.size.height > 0 else { continue }
             openAnnotationEditor(item: CapturedItem(image: image, rect: .zero))
         }
     }
-    
+
     public func openImageFromClipboard() {
-        guard let image = NSImage(pasteboard: .general) else {
+        guard let image = NSImage(pasteboard: .general),
+              image.size.width > 0,
+              image.size.height > 0 else {
             NSSound.beep()
             return
         }

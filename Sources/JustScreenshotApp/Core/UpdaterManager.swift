@@ -8,14 +8,35 @@ import Observation
 @MainActor
 public final class UpdaterManager: NSObject, SPUUpdaterDelegate {
     public static let shared = UpdaterManager()
-    
+
+    public enum UpdateStatus: Equatable, Sendable {
+        case upToDate
+        case error(String)
+    }
+
     public var canCheckForUpdates: Bool = false
     public var isChecking: Bool = false
-    public var lastStatus: String? = nil
-    
+    public var status: UpdateStatus? = nil
+
+    public var isLastStatusError: Bool {
+        if case .error = status { return true }
+        return false
+    }
+
+    public var lastStatus: String? {
+        switch status {
+        case .none:
+            return nil
+        case .upToDate:
+            return L("menu.up_to_date")
+        case .error(let message):
+            return message
+        }
+    }
+
     @ObservationIgnored public private(set) var updaterController: SPUStandardUpdaterController!
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
-    
+
     override private init() {
         super.init()
         self.updaterController = SPUStandardUpdaterController(
@@ -23,7 +44,7 @@ public final class UpdaterManager: NSObject, SPUUpdaterDelegate {
             updaterDelegate: self,
             userDriverDelegate: nil
         )
-        
+
         updaterController.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] value in
@@ -31,80 +52,79 @@ public final class UpdaterManager: NSObject, SPUUpdaterDelegate {
             }
             .store(in: &cancellables)
     }
-    
+
     public func checkForUpdates() {
-        guard canCheckForUpdates else { return }
+        guard canCheckForUpdates, !isChecking else { return }
         isChecking = true
-        lastStatus = nil
-        // Запускаем проверку обновлений в фоне:
-        // не показывает промежуточное окно поиска, но отображает диалог обновления, если оно найдено
+        status = nil
         updaterController.updater.checkForUpdatesInBackground()
     }
-    
+
     // MARK: - SPUUpdaterDelegate
-    
-    nonisolated public func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
-        Task { @MainActor in
-            self.isChecking = false
-            self.lastStatus = nil
-        }
+
+    public func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        isChecking = false
+        status = nil
     }
-    
-    nonisolated public func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
-        Task { @MainActor in
-            self.handleCheckResult(upToDate: true)
-        }
+
+    public func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        handleCheckResult(upToDate: true)
     }
-    
-    nonisolated public func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        Task { @MainActor in
-            let nsError = error as NSError
-            // Sparkle возвращает SUNoUpdateError (код 1001), когда версия приложения является актуальной
+
+    public func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let nsError = error as NSError
+        if nsError.domain == SUSparkleErrorDomain {
+            // 1001 = SUNoUpdateError, 4002 = SUInstallationCanceledError
             if nsError.code == 1001 {
-                self.handleCheckResult(upToDate: true)
-            } else if nsError.code == 4002 {
-                // SUInstallationCanceledError — пользователь отменил действие
-                self.handleCheckResult(upToDate: false, error: nil)
-            } else {
-                self.handleCheckResult(upToDate: false, error: error)
+                handleCheckResult(upToDate: true)
+                return
+            }
+            if nsError.code == 4002 {
+                handleCheckResult(upToDate: false, error: nil)
+                return
             }
         }
+        AppLogger.updater.error("Sparkle aborted update check: \(error.localizedDescription, privacy: .public)")
+        handleCheckResult(upToDate: false, error: error)
     }
-    
-    @MainActor
+
+    public func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
+        if isChecking {
+            isChecking = false
+        }
+    }
+
     private func handleCheckResult(upToDate: Bool, error: Error? = nil) {
         guard isChecking else { return }
         isChecking = false
-        
+
         if upToDate {
-            lastStatus = L("menu.up_to_date")
+            status = .upToDate
             presentUpToDateAlert()
         } else if let error {
-            lastStatus = error.localizedDescription
+            status = .error(error.localizedDescription)
             presentErrorAlert(error.localizedDescription)
         }
     }
-    
-    @MainActor
+
     private func presentUpToDateAlert() {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0"
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let alert = NSAlert()
         alert.alertStyle = .informational
         alert.messageText = L("update.up_to_date_title")
         alert.informativeText = L("update.up_to_date_desc", version)
-        alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
+        alert.addButton(withTitle: L("alert.ok"))
+        NSApp.activate()
         alert.runModal()
     }
-    
-    @MainActor
+
     private func presentErrorAlert(_ message: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = L("update.failed_title")
         alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
+        alert.addButton(withTitle: L("alert.ok"))
+        NSApp.activate()
         alert.runModal()
     }
 }

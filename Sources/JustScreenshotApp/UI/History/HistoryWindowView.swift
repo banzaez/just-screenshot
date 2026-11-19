@@ -1,14 +1,15 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// Фильтр элементов истории
 public enum HistoryFilter: String, CaseIterable, Identifiable {
     case all
     case photos
     case videos
-    
+
     public var id: String { rawValue }
-    
+
     @MainActor
     var title: String {
         switch self {
@@ -17,7 +18,7 @@ public enum HistoryFilter: String, CaseIterable, Identifiable {
         case .videos: return L("history.filter.videos")
         }
     }
-    
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"
@@ -29,16 +30,18 @@ public enum HistoryFilter: String, CaseIterable, Identifiable {
 
 /// Окно истории снимков и видеозаписей в стиле Liquid Glass
 public struct HistoryWindowView: View {
+    private static let gridColumns = [GridItem(.adaptive(minimum: 250, maximum: 320), spacing: 14)]
+
     private var store = HistoryStore.shared
-    
+
     public let onEdit: (HistoryEntry) -> Void
     public let onPin: (HistoryEntry) -> Void
     public let onCopy: (HistoryEntry) -> Void
-    
+
     @State private var selectedFilter: HistoryFilter = .all
     @State private var confirmClear = false
     @Namespace private var filterNamespace
-    
+
     public init(
         onEdit: @escaping (HistoryEntry) -> Void,
         onPin: @escaping (HistoryEntry) -> Void,
@@ -48,94 +51,44 @@ public struct HistoryWindowView: View {
         self.onPin = onPin
         self.onCopy = onCopy
     }
-    
-    private var filteredEntries: [HistoryEntry] {
-        switch selectedFilter {
-        case .all:
-            return store.entries
-        case .photos:
-            return store.entries.filter { $0.kind == .image }
-        case .videos:
-            return store.entries.filter { $0.kind == .video }
-        }
-    }
-    
-    private var entryCounts: (all: Int, photos: Int, videos: Int) {
+
+    private func entriesSummary() -> (all: Int, photos: Int, videos: Int, visible: [HistoryEntry]) {
         var photos = 0
         var videos = 0
+        var visible: [HistoryEntry] = []
+        if selectedFilter == .all {
+            visible = store.entries
+        }
         for entry in store.entries {
             switch entry.kind {
-            case .image: photos += 1
-            case .video: videos += 1
+            case .image:
+                photos += 1
+                if selectedFilter == .photos { visible.append(entry) }
+            case .video:
+                videos += 1
+                if selectedFilter == .videos { visible.append(entry) }
             }
         }
-        return (store.entries.count, photos, videos)
+        return (store.entries.count, photos, videos, visible)
     }
-    
+
     public var body: some View {
+        let summary = entriesSummary()
+
         ZStack {
-            // Размытый полупрозрачный фон окна (Frosted Glass / Vibrancy)
-            VisualEffectView(material: .sidebar, blendingMode: .behindWindow, state: .active)
-                .ignoresSafeArea()
-            
-            // Верхний световой блик стекла
-            LinearGradient(
-                colors: [
-                    Color.white.opacity(0.12),
-                    Color.white.opacity(0.02),
-                    Color.clear
-                ],
-                startPoint: .top,
-                endPoint: .center
-            )
-            .ignoresSafeArea()
-            .allowsHitTesting(false)
-            
+            GlassWindowBackground(showSpecularRim: false)
+
             VStack(spacing: 0) {
-                // Интегрированный стеклянный тулбар
-                headerBar
-                
-                // Тонкая линия разделения со стеклянным бликом
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: Color.white.opacity(0.02), location: 0.0),
-                                .init(color: Color.white.opacity(0.18), location: 0.5),
-                                .init(color: Color.white.opacity(0.02), location: 1.0)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(height: 1)
-                
-                if filteredEntries.isEmpty {
-                    VStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Color.accentColor.opacity(0.12))
-                                .frame(width: 64, height: 64)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                        .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
-                                )
-                            Image(systemName: selectedFilter == .videos ? "video.slash" : "photo.on.rectangle.angled")
-                                .font(.system(size: 28, weight: .semibold))
-                                .foregroundStyle(Color.accentColor)
-                        }
-                        
-                        Text(L("history.empty_title"))
-                            .font(.title3.weight(.semibold))
-                        Text(L("history.empty_subtitle"))
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                headerBar(allCount: summary.all, photosCount: summary.photos, videosCount: summary.videos)
+
+                GlassDivider(isHeaderSeparator: true)
+
+                if summary.visible.isEmpty {
+                    emptyStateView
                 } else {
                     ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 250, maximum: 320), spacing: 14)], spacing: 14) {
-                            ForEach(filteredEntries) { entry in
+                        LazyVGrid(columns: Self.gridColumns, spacing: 14) {
+                            ForEach(summary.visible) { entry in
                                 HistoryCard(
                                     entry: entry,
                                     onEdit: { onEdit(entry) },
@@ -153,20 +106,61 @@ public struct HistoryWindowView: View {
         .onAppear {
             store.pruneMissingFiles()
         }
-        .confirmationDialog(L("history.clear_confirm_title"), isPresented: $confirmClear) {
+        .confirmationDialog(
+            L("history.clear_confirm_title"),
+            isPresented: $confirmClear,
+            titleVisibility: .visible
+        ) {
             Button(L("history.clear_all"), role: .destructive) { store.clear() }
             Button(L("alert.cancel"), role: .cancel) {}
+        } message: {
+            Text(L("history.clear_confirm_message"))
         }
     }
-    
+
+    private var emptyStateView: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.12))
+                    .frame(width: 64, height: 64)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(Color.accentColor.opacity(0.3), lineWidth: 1)
+                    )
+                Image(systemName: selectedFilter == .videos ? "video.slash" : "photo.on.rectangle.angled")
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text(selectedFilter == .videos ? L("history.empty_videos_title") : L("history.empty_title"))
+                .font(.title3.weight(.semibold))
+            Text(selectedFilter == .videos ? L("history.empty_videos_subtitle") : L("history.empty_subtitle"))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     // MARK: - Header Bar
-    
-    private var headerBar: some View {
-        ZStack {
-            // Плавающий селектор фильтра строго по центру
+
+    private func headerBar(allCount: Int, photosCount: Int, videosCount: Int) -> some View {
+        HStack(spacing: 8) {
+            Spacer()
+                .frame(width: 72)
+
+            Spacer(minLength: 8)
+
             HStack(spacing: 4) {
                 ForEach(HistoryFilter.allCases) { filter in
                     let isSelected = selectedFilter == filter
+                    let filterCount: Int = switch filter {
+                    case .all: allCount
+                    case .photos: photosCount
+                    case .videos: videosCount
+                    }
                     Button {
                         withAnimation(.spring(response: 0.32, dampingFraction: 0.76)) {
                             selectedFilter = filter
@@ -177,13 +171,8 @@ public struct HistoryWindowView: View {
                                 .font(.system(size: 11, weight: .semibold))
                             Text(filter.title)
                                 .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
-                            
-                            let counts = entryCounts
-                            let filterCount: Int = switch filter {
-                            case .all: counts.all
-                            case .photos: counts.photos
-                            case .videos: counts.videos
-                            }
+                                .lineLimit(1)
+
                             Text("\(filterCount)")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .padding(.horizontal, 6)
@@ -253,23 +242,19 @@ public struct HistoryWindowView: View {
                     )
             )
             .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
+            .fixedSize()
 
-            // Боковые элементы (светофор слева, кнопка очистки справа)
-            HStack {
-                Spacer()
-                    .frame(width: 76)
-                
-                Spacer()
-                
-                GlassButton(
-                    title: L("history.clear_all"),
-                    icon: "trash",
-                    role: .destructive
-                ) {
-                    confirmClear = true
-                }
-                .disabled(store.entries.isEmpty)
+            Spacer(minLength: 8)
+
+            GlassButton(
+                title: L("history.clear_all"),
+                icon: "trash",
+                role: .destructive
+            ) {
+                confirmClear = true
             }
+            .disabled(store.entries.isEmpty)
+            .fixedSize()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -284,12 +269,15 @@ private struct HistoryCard: View {
     let onEdit: () -> Void
     let onPin: () -> Void
     let onCopy: () -> Void
-    
+
     private var store = HistoryStore.shared
+    private var localization = LocalizationManager.shared
     @State private var thumbnail: NSImage?
+    @State private var thumbnailLoadFailed = false
     @State private var hovering = false
     @State private var copiedFeedback = false
-    
+    @State private var copiedFeedbackTask: Task<Void, Never>?
+
     init(
         entry: HistoryEntry,
         onEdit: @escaping () -> Void,
@@ -302,23 +290,27 @@ private struct HistoryCard: View {
         self.onCopy = onCopy
         _thumbnail = State(initialValue: HistoryStore.shared.cachedThumbnail(for: entry))
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Color.black.opacity(0.2))
-                
+
                 if let thumb = thumbnail {
                     Image(nsImage: thumb)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .padding(6)
+                } else if thumbnailLoadFailed {
+                    Image(systemName: entry.kind == .video ? "video.slash" : "photo")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.secondary)
                 } else {
                     ProgressView()
                         .scaleEffect(0.6)
                 }
-                
+
                 // Бейдж видео с длительностью в углу превью
                 if entry.kind == .video {
                     VStack {
@@ -347,43 +339,34 @@ private struct HistoryCard: View {
                     }
                     .padding(8)
                 }
-                
-                // Панель быстрых действий при наведении (Liquid Glass Toolbar)
+
+                // Панель быстрых действий при наведении
                 if hovering {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(Color.black.opacity(0.42))
-                    
+
                     HStack(spacing: 4) {
                         HistoryCardActionButton(
                             icon: entry.kind == .video ? "film" : "pencil.tip.crop.circle",
                             title: L("history.edit"),
                             action: onEdit
                         )
-                        
+
                         HistoryCardActionButton(
                             icon: copiedFeedback ? "checkmark" : "doc.on.doc",
                             title: L("editor.copy"),
                             isSuccess: copiedFeedback
                         ) {
-                            onCopy()
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                copiedFeedback = true
-                            }
-                            Task { @MainActor in
-                                try? await Task.sleep(for: .seconds(1.2))
-                                withAnimation(.easeInOut(duration: 0.15)) {
-                                    copiedFeedback = false
-                                }
-                            }
+                            triggerCopy()
                         }
-                        
+
                         HistoryCardActionButton(
                             icon: "arrow.down.to.line",
                             title: L("hud.save_as")
                         ) {
                             store.saveAs(entry)
                         }
-                        
+
                         if entry.kind == .image {
                             HistoryCardActionButton(
                                 icon: "pin",
@@ -391,14 +374,14 @@ private struct HistoryCard: View {
                                 action: onPin
                             )
                         }
-                        
+
                         HistoryCardActionButton(
                             icon: "folder",
                             title: L("history.reveal_finder")
                         ) {
                             store.revealInFinder(entry)
                         }
-                        
+
                         HistoryCardActionButton(
                             icon: "trash",
                             title: L("history.delete_button"),
@@ -426,23 +409,48 @@ private struct HistoryCard: View {
             .onHover { hovering = $0 }
             .onTapGesture(perform: onEdit)
             .onDrag {
-                let url = store.fileURL(for: entry)
-                if FileManager.default.fileExists(atPath: url.path) {
+                if let url = store.existingFileURL(for: entry) {
                     return NSItemProvider(object: url as NSURL)
                 }
-                return NSItemProvider()
+                let entryID = entry.id
+                let targetEntry = entry
+                let provider = NSItemProvider()
+                provider.registerFileRepresentation(
+                    forTypeIdentifier: UTType.fileURL.identifier,
+                    fileOptions: [.openInPlace],
+                    visibility: .all
+                ) { completion in
+                    Task { @MainActor in
+                        await HistoryStore.shared.waitForPendingWrite(id: entryID)
+                        completion(HistoryStore.shared.existingFileURL(for: targetEntry), false, nil)
+                    }
+                    return nil
+                }
+                return provider
             }
             .task(id: entry.id) {
                 if thumbnail == nil {
-                    thumbnail = await store.thumbnailAsync(for: entry)
+                    let loaded = await store.thumbnailAsync(for: entry)
+                    guard !Task.isCancelled else { return }
+                    if let loaded {
+                        thumbnail = loaded
+                        thumbnailLoadFailed = false
+                    } else {
+                        thumbnailLoadFailed = true
+                    }
                 }
             }
-            
+            .onDisappear {
+                copiedFeedbackTask?.cancel()
+                thumbnail = nil
+            }
+
             HStack(spacing: 6) {
                 Image(systemName: entry.kind == .video ? "video.fill" : "photo")
                     .font(.system(size: 10))
                     .foregroundStyle(entry.kind == .video ? Color.accentColor : Color.secondary)
                 Text(entry.date, format: .dateTime.day().month().hour().minute())
+                    .environment(\.locale, localization.currentLanguage.locale)
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -475,7 +483,7 @@ private struct HistoryCard: View {
         .animation(.easeOut(duration: 0.18), value: hovering)
         .contextMenu {
             Button(L("history.edit"), action: onEdit)
-            Button(L("editor.copy"), action: onCopy)
+            Button(L("editor.copy")) { triggerCopy() }
             Button(L("hud.save_as")) { store.saveAs(entry) }
             if entry.kind == .image {
                 Button(L("history.pin"), action: onPin)
@@ -485,11 +493,31 @@ private struct HistoryCard: View {
             Button(L("history.delete_button"), role: .destructive) { store.delete(entry) }
         }
     }
-    
+
+    private func triggerCopy() {
+        onCopy()
+        copiedFeedbackTask?.cancel()
+        withAnimation(.easeInOut(duration: 0.15)) {
+            copiedFeedback = true
+        }
+        copiedFeedbackTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeInOut(duration: 0.15)) {
+                copiedFeedback = false
+            }
+        }
+    }
+
     private static func formatDuration(_ seconds: Double) -> String {
-        let total = max(1, Int(seconds.rounded()))
-        let mins = total / 60
+        guard seconds.isFinite else { return "0:00" }
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3600
+        let mins = (total % 3600) / 60
         let secs = total % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, mins, secs)
+        }
         return String(format: "%d:%02d", mins, secs)
     }
 }
@@ -500,9 +528,9 @@ private struct HistoryCardActionButton: View {
     var isDestructive: Bool = false
     var isSuccess: Bool = false
     let action: () -> Void
-    
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: action) {
             Image(systemName: icon)
@@ -520,13 +548,13 @@ private struct HistoryCardActionButton: View {
         .help(title)
         .accessibilityLabel(title)
     }
-    
+
     private var foregroundColor: Color {
         if isSuccess { return .green }
         if isDestructive { return isHovered ? .white : .red }
         return .white
     }
-    
+
     private var backgroundColor: Color {
         if isSuccess { return Color.green.opacity(0.22) }
         if isDestructive { return isHovered ? Color.red.opacity(0.85) : Color.red.opacity(0.22) }
