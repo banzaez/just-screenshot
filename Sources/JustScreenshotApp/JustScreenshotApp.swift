@@ -9,13 +9,17 @@ struct JustScreenshotApp: App {
     private var updaterManager = UpdaterManager.shared
     private var permissions = PermissionsMonitor.shared
 
+    private var statusBarState: StatusBarIcon.State {
+        if windowManager.isRecording {
+            return .recording(paused: windowManager.isRecordingPaused)
+        } else if windowManager.isRecordingPreparing {
+            return .preparing
+        }
+        return .idle
+    }
+
     var body: some Scene {
-        MenuBarExtra(
-            "Just Screenshot",
-            systemImage: windowManager.isRecording
-                ? "record.circle.fill"
-                : (windowManager.isRecordingPreparing ? "viewfinder.circle.fill" : "camera.viewfinder")
-        ) {
+        MenuBarExtra {
             let _ = localization.currentLanguage
             VStack(alignment: .leading, spacing: 4) {
                 if windowManager.isRecording {
@@ -176,6 +180,9 @@ struct JustScreenshotApp: App {
                 }
                 .keyboardShortcut("q", modifiers: [.command])
             }
+        } label: {
+            Image(nsImage: StatusBarIcon.image(for: statusBarState))
+                .accessibilityLabel("Just Screenshot")
         }
     }
 }
