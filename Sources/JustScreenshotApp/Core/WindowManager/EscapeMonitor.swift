@@ -8,8 +8,7 @@ final class EscapeMonitor {
 
     private let hotKeyID: UInt32
     private var localMonitor: Any?
-    private var globalMonitor: Any?
-    private var usesHotKeyFallback = false
+    private var usesGlobalHotKey = false
 
     init() {
         Self.nextHotKeyID &+= 1
@@ -36,21 +35,10 @@ final class EscapeMonitor {
             return nil
         }
 
-        if includeGlobal {
-            globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-                guard event.keyCode == escCode else { return }
-                DispatchQueue.main.async {
-                    MainActor.assumeIsolated {
-                        guard shouldHandle() else { return }
-                        onEscape()
-                    }
-                }
-            }
-        }
-
-        // Регистрируем Carbon-фолбэк только когда неактивен globalMonitor (например, нет Accessibility)
-        if useHotKeyFallback && globalMonitor == nil {
-            usesHotKeyFallback = true
+        // Используем GlobalHotKeyManager (CGEventTap с фолбэком на Carbon RegisterEventHotKey),
+        // чтобы перехватывать и поглощать Escape глобально, не передавая его в активное стороннее окно.
+        if includeGlobal || useHotKeyFallback {
+            usesGlobalHotKey = true
             GlobalHotKeyManager.shared.register(
                 id: hotKeyID,
                 keyCode: UInt32(kVK_Escape),
@@ -67,12 +55,8 @@ final class EscapeMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
         }
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
-        }
-        if usesHotKeyFallback {
-            usesHotKeyFallback = false
+        if usesGlobalHotKey {
+            usesGlobalHotKey = false
             GlobalHotKeyManager.shared.unregister(id: hotKeyID)
         }
     }
