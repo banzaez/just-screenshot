@@ -3,6 +3,15 @@
     <channel>
         <title>Just Screenshot</title>
         <item>
+            <title>1.4.7</title>
+            <pubDate>Fri, 20 Nov 2026 22:09:37 +0200</pubDate>
+            <sparkle:version>20</sparkle:version>
+            <sparkle:shortVersionString>1.4.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.7/JustScreenshot-v1.4.7.zip" length="4943209" type="application/octet-stream" sparkle:edSignature="CUI04iHUa+VtAb92FJx8xPX3OuSyEF81oQfI5VeTO7p9lLTk7HavjkWn09HGPfy2XRcixRab+wnO3qRV+JBlAw=="/>
+        </item>
+        <item>
             <title>1.4.6</title>
             <pubDate>Fri, 20 Nov 2026 22:00:37 +0200</pubDate>
             <sparkle:version>19</sparkle:version>
