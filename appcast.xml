@@ -3,6 +3,15 @@
     <channel>
         <title>Just Screenshot</title>
         <item>
+            <title>1.5.0</title>
+            <pubDate>Mon, 23 Nov 2026 12:12:55 +0200</pubDate>
+            <sparkle:version>23</sparkle:version>
+            <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.5.0/JustScreenshot-v1.5.0.zip" length="5029187" type="application/octet-stream" sparkle:edSignature="rJ2BMz5CP5ZzqUwa0qSY34hJJPAC9B6s9DKI5LewIrRCL8wOhcQeqhvwG+gMztlxrYyWZmvM+tKCp9HGyJjxAg=="/>
+        </item>
+        <item>
             <title>1.4.9</title>
             <pubDate>Mon, 23 Nov 2026 11:54:22 +0200</pubDate>
             <sparkle:version>22</sparkle:version>
@@ -19,15 +28,6 @@
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
             <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.8/JustScreenshot-v1.4.8.zip" length="4943159" type="application/octet-stream" sparkle:edSignature="gFKCmA7wAiUkUHRgszvr7dPreP8SotDmsZfDBYLq38yoQs4n5y1gH5Y3gwwzU1xKNFCskKXE30Y9BoG/01reAA=="/>
-        </item>
-        <item>
-            <title>1.4.7</title>
-            <pubDate>Fri, 20 Nov 2026 22:09:37 +0200</pubDate>
-            <sparkle:version>20</sparkle:version>
-            <sparkle:shortVersionString>1.4.7</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://github.com/banzaez/just-screenshot/releases/download/v1.4.7/JustScreenshot-v1.4.7.zip" length="4943209" type="application/octet-stream" sparkle:edSignature="CUI04iHUa+VtAb92FJx8xPX3OuSyEF81oQfI5VeTO7p9lLTk7HavjkWn09HGPfy2XRcixRab+wnO3qRV+JBlAw=="/>
         </item>
         <item>
             <title>1.4.4</title>
