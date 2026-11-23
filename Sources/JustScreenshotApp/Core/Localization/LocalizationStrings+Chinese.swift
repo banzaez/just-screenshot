@@ -244,6 +244,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "按键显示",
         "video_editor.keystrokes_help": "在视频上显示按下的按键和快捷键",
         "video_editor.keystrokes_enable": "显示按键",
+        "video_editor.keystrokes_typing_highlight": "红色高亮文本输入",
         "video_editor.keystrokes_filter_header": "显示内容",
         "video_editor.keystrokes_filter_all": "所有按键与快捷键",
         "video_editor.keystrokes_filter_shortcuts": "仅快捷键",

@@ -243,13 +243,14 @@ public struct VideoEditorToolbarView: View {
                     .padding(.leading, 9)
                     .padding(.trailing, 4)
                     .frame(height: 30)
-                    .foregroundStyle(model.isKeystrokesEnabled ? Color.white : Color.primary)
+                    .foregroundStyle((model.isKeystrokesEnabled || model.isTypingHighlightEnabled) ? Color.white : Color.primary)
                 }
                 .buttonStyle(.plain)
                 .fixedSize()
 
                 Menu {
                     Toggle(L("video_editor.keystrokes_enable"), isOn: $model.isKeystrokesEnabled)
+                    Toggle(L("video_editor.keystrokes_typing_highlight"), isOn: $model.isTypingHighlightEnabled)
 
                     Divider()
 
@@ -313,7 +314,7 @@ public struct VideoEditorToolbarView: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(model.isKeystrokesEnabled ? Color.white.opacity(0.85) : Color.secondary)
+                        .foregroundStyle((model.isKeystrokesEnabled || model.isTypingHighlightEnabled) ? Color.white.opacity(0.85) : Color.secondary)
                         .padding(.horizontal, 6)
                         .frame(height: 30)
                 }
@@ -322,7 +323,7 @@ public struct VideoEditorToolbarView: View {
             }
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(model.isKeystrokesEnabled ? Color.teal.opacity(0.85) : Color.white.opacity(0.08))
+                    .fill((model.isKeystrokesEnabled || model.isTypingHighlightEnabled) ? Color.teal.opacity(0.85) : Color.white.opacity(0.08))
             )
             .fixedSize()
             .help(L("video_editor.keystrokes_help"))

@@ -395,11 +395,13 @@ struct SmartZoomTests {
         // В режиме .shortcutsOnly одиночная клавиша "A" игнорируется, остается "⌘ C"
         #expect(track.activeKeystroke(at: 1.4, filter: .shortcutsOnly)?.text == "⌘ C")
 
-        // Когда Smart Zoom сфокусирован у нижнего края, нижняя плашка переносится наверх
-        #expect(KeystrokePosition.bottomCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.85), cameraZoom: 1.35) == .topCenter)
-        #expect(KeystrokePosition.topCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.15), cameraZoom: 1.35) == .bottomCenter)
+        // Когда Smart Zoom сфокусирован прямо на области плашки у края, она переносится на противоположный край
+        #expect(KeystrokePosition.bottomCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.88), cameraZoom: 1.35) == .topCenter)
+        #expect(KeystrokePosition.topCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.12), cameraZoom: 1.35) == .bottomCenter)
+        // Если фокус сбоку, угловая/боковая плашка не смещается
+        #expect(KeystrokePosition.bottomLeft.resolved(cameraFocus: CGPoint(x: 0.8, y: 0.88), cameraZoom: 1.35) == .bottomLeft)
         // Без активного зума позиция сохраняется
-        #expect(KeystrokePosition.bottomLeft.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.9), cameraZoom: 1.0) == .bottomLeft)
+        #expect(KeystrokePosition.bottomLeft.resolved(cameraFocus: CGPoint(x: 0.2, y: 0.9), cameraZoom: 1.0) == .bottomLeft)
     }
 
     @Test func testCursorTrackActiveClickRipples() {
@@ -422,6 +424,61 @@ struct SmartZoomTests {
         #expect(onlySecond[0].isRightClick)
 
         #expect(track.activeClickRipples(at: 2.0).isEmpty)
+    }
+
+    @Test func testKeystrokeTypingEffectsAtCursor() {
+        let cursorTrack = CursorTrack(keyframes: [
+            CursorKeyframe(timestamp: 1.0, point: CGPoint(x: 0.3, y: 0.4), isClick: false),
+            CursorKeyframe(timestamp: 2.0, point: CGPoint(x: 0.6, y: 0.4), isClick: false)
+        ])
+        let keyTrack = KeystrokeTrack(events: [
+            KeystrokeEvent(timestamp: 1.0, text: "A"),
+            KeystrokeEvent(timestamp: 1.2, text: "⌘ C")
+        ])
+
+        // Шорткат "⌘ C" не вызывает эффект ввода текста, только обычный символ "A"
+        let effects = keyTrack.activeTypingEffects(at: 1.25, cursorTrack: cursorTrack)
+        #expect(effects.count == 1)
+        #expect(abs(effects[0].point.x - 0.3) < 0.001)
+        #expect(effects[0].progress > 0.5 && effects[0].progress < 0.6)
+        #expect(keyTrack.activeTypingEffects(at: 2.0, cursorTrack: cursorTrack).isEmpty)
+    }
+
+    @Test func testVideoEditorStatePersistenceRoundTrip() throws {
+        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent("VideoEdits-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let videoURL = tempDir.appendingPathComponent("clip.mp4")
+        let anno = SavedVideoAnnotation(
+            id: UUID(),
+            rect: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.25),
+            rotationAngle: 12
+        )
+        let state = VideoEditorState(
+            trimStart: 1.2,
+            trimEnd: 4.5,
+            hasUserEditedTrim: true,
+            playbackRate: 1.5,
+            cropRect: CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.9),
+            isSmartZoomEnabled: true,
+            smartZoomScale: .closeup,
+            smartZoomMode: .continuous,
+            autoZoomOutOnIdle: false,
+            blurStyle: .darkGlass,
+            blurIntensity: .heavy,
+            annotations: [anno],
+            isKeystrokesEnabled: true,
+            keystrokeFilter: .shortcutsOnly,
+            keystrokePosition: .bottomRight,
+            keystrokeSize: .large,
+            isTypingHighlightEnabled: true,
+            isClickHighlightsEnabled: true
+        )
+
+        VideoEditorStateStore.save(state, forVideoURL: videoURL)
+        let loaded = try #require(VideoEditorStateStore.load(forVideoURL: videoURL))
+        #expect(loaded == state)
     }
 }
 

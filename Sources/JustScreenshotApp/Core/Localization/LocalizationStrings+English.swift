@@ -245,6 +245,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "Keys",
         "video_editor.keystrokes_help": "Show pressed keys and shortcuts overlay on video",
         "video_editor.keystrokes_enable": "Show Keystrokes",
+        "video_editor.keystrokes_typing_highlight": "Highlight Text Input (Red)",
         "video_editor.keystrokes_filter_header": "Display",
         "video_editor.keystrokes_filter_all": "All Keys & Shortcuts",
         "video_editor.keystrokes_filter_shortcuts": "Shortcuts Only",

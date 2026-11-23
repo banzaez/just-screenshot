@@ -244,6 +244,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "Touches",
         "video_editor.keystrokes_help": "Afficher les touches et raccourcis pressés sur la vidéo",
         "video_editor.keystrokes_enable": "Afficher les touches",
+        "video_editor.keystrokes_typing_highlight": "Surligner la saisie (rouge)",
         "video_editor.keystrokes_filter_header": "Affichage",
         "video_editor.keystrokes_filter_all": "Toutes les touches",
         "video_editor.keystrokes_filter_shortcuts": "Raccourcis uniquement",

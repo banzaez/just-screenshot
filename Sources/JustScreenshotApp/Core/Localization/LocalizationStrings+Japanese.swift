@@ -244,6 +244,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "キー表示",
         "video_editor.keystrokes_help": "録画中に押されたキーとショートカットを動画に表示",
         "video_editor.keystrokes_enable": "キー表示を有効にする",
+        "video_editor.keystrokes_typing_highlight": "テキスト入力を赤くハイライト",
         "video_editor.keystrokes_filter_header": "表示対象",
         "video_editor.keystrokes_filter_all": "すべてのキーとショートカット",
         "video_editor.keystrokes_filter_shortcuts": "ショートカットのみ",

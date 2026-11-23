@@ -244,6 +244,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "Teclas",
         "video_editor.keystrokes_help": "Mostrar teclas y atajos pulsados sobre el video",
         "video_editor.keystrokes_enable": "Mostrar teclas",
+        "video_editor.keystrokes_typing_highlight": "Resaltar entrada de texto (rojo)",
         "video_editor.keystrokes_filter_header": "Visualización",
         "video_editor.keystrokes_filter_all": "Todas las teclas y atajos",
         "video_editor.keystrokes_filter_shortcuts": "Solo atajos",

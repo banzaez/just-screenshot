@@ -211,6 +211,16 @@ enum VideoAnnotationBurnIn {
             }
         }
 
+        // 1.6. Красный эффект ввода текста в позиции курсора до Smart Zoom
+        if options.showTypingHighlight,
+           let keystrokeTrack = options.keystrokeTrack,
+           let cursorTrack = options.cursorTrack {
+            let typing = keystrokeTrack.activeTypingEffects(at: max(0, sourceTime), cursorTrack: cursorTrack)
+            if !typing.isEmpty {
+                current = applyTypingEffects(to: current, effects: typing)
+            }
+        }
+
         // 2. Smart Zoom (координаты в CI с y=0 снизу: 1.0 - focus.y)
         if options.smartZoom {
             current = applySmartZoom(
@@ -589,6 +599,70 @@ enum VideoAnnotationBurnIn {
             ctx.setLineWidth(strokeWidth)
             ctx.fillEllipse(in: item.rect)
             ctx.strokeEllipse(in: item.rect)
+        }
+
+        guard let cgOverlay = ctx.makeImage() else { return image }
+        let overlayCI = CIImage(cgImage: cgOverlay)
+            .transformed(by: CGAffineTransform(translationX: clippedBox.origin.x, y: clippedBox.origin.y))
+        return overlayCI.composited(over: image).cropped(to: extent)
+    }
+
+    nonisolated private static func applyTypingEffects(
+        to image: CIImage,
+        effects: [ActiveTypingEffect]
+    ) -> CIImage {
+        let extent = image.extent
+        let width = extent.width
+        let height = extent.height
+        guard width > 16, height > 16 else { return image }
+
+        let uiScale = max(0.75, min(2.5, height / 720.0))
+        let strokeWidth = 2.0 * uiScale
+        let glowPad = 6.0 * uiScale
+        var unionRect = CGRect.null
+        var drawItems: [(rect: CGRect, alpha: CGFloat)] = []
+        drawItems.reserveCapacity(effects.count)
+
+        for effect in effects {
+            let alpha = max(0.0, 1.0 - effect.progress)
+            guard alpha > 0.001 else { continue }
+            let radius = (6.0 + effect.progress * 18.0) * uiScale
+            let cx = min(1.0, max(0.0, effect.point.x)) * width
+            let cy = (1.0 - min(1.0, max(0.0, effect.point.y))) * height
+            let rect = CGRect(x: cx - radius, y: cy - radius, width: radius * 2, height: radius * 2)
+            let padded = rect.insetBy(dx: -(strokeWidth + glowPad), dy: -(strokeWidth + glowPad))
+            unionRect = unionRect.union(padded)
+            drawItems.append((rect, alpha))
+        }
+
+        guard !drawItems.isEmpty, !unionRect.isNull else { return image }
+        let clippedBox = unionRect.intersection(extent).integral
+        let boxW = Int(clippedBox.width)
+        let boxH = Int(clippedBox.height)
+        guard boxW > 0, boxH > 0 else { return image }
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: boxW,
+            height: boxH,
+            bitsPerComponent: 8,
+            bytesPerRow: boxW * 4,
+            space: srgbColorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+
+        ctx.translateBy(x: -clippedBox.origin.x, y: -clippedBox.origin.y)
+        for item in drawItems {
+            ctx.saveGState()
+            ctx.setShadow(offset: .zero, blur: glowPad, color: CGColor(srgbRed: 1.0, green: 0.15, blue: 0.15, alpha: 0.55 * item.alpha))
+            ctx.setFillColor(CGColor(srgbRed: 1.0, green: 0.2, blue: 0.2, alpha: 0.26 * item.alpha))
+            ctx.setStrokeColor(CGColor(srgbRed: 1.0, green: 0.22, blue: 0.22, alpha: 0.9 * item.alpha))
+            ctx.setLineWidth(strokeWidth)
+            ctx.fillEllipse(in: item.rect)
+            ctx.strokeEllipse(in: item.rect)
+            ctx.restoreGState()
         }
 
         guard let cgOverlay = ctx.makeImage() else { return image }

@@ -19,6 +19,18 @@ enum EditorPreferences {
         static let showWindowFrame = "editor_pref_showWindowFrame"
 
         static let videoPlaybackRate = "editor_pref_video_playbackRate"
+        static let videoSmartZoomEnabled = "editor_pref_video_smartZoomEnabled"
+        static let videoSmartZoomScale = "editor_pref_video_smartZoomScale"
+        static let videoSmartZoomMode = "editor_pref_video_smartZoomMode"
+        static let videoAutoZoomOutOnIdle = "editor_pref_video_autoZoomOutOnIdle"
+        static let videoBlurStyle = "editor_pref_video_blurStyle"
+        static let videoBlurIntensity = "editor_pref_video_blurIntensity"
+        static let videoKeystrokesEnabled = "editor_pref_video_keystrokesEnabled"
+        static let videoKeystrokeFilter = "editor_pref_video_keystrokeFilter"
+        static let videoKeystrokePosition = "editor_pref_video_keystrokePosition"
+        static let videoKeystrokeSize = "editor_pref_video_keystrokeSize"
+        static let videoTypingHighlightEnabled = "editor_pref_video_typingHighlightEnabled"
+        static let videoClickHighlightsEnabled = "editor_pref_video_clickHighlightsEnabled"
     }
 
     static var tool: AnnotationTool {
@@ -103,6 +115,87 @@ enum EditorPreferences {
             return v ?? 1.0
         }
         set { UserDefaults.standard.set(newValue, forKey: Keys.videoPlaybackRate) }
+    }
+
+    static var videoSmartZoomEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.videoSmartZoomEnabled) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.videoSmartZoomEnabled) }
+    }
+
+    static var videoSmartZoomScale: SmartZoomScale {
+        get {
+            let raw = UserDefaults.standard.double(forKey: Keys.videoSmartZoomScale)
+            return SmartZoomScale(rawValue: raw) ?? .balanced
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoSmartZoomScale) }
+    }
+
+    static var videoSmartZoomMode: SmartZoomMode {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Keys.videoSmartZoomMode) ?? ""
+            return SmartZoomMode(rawValue: raw) ?? .onClicks
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoSmartZoomMode) }
+    }
+
+    static var videoAutoZoomOutOnIdle: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.videoAutoZoomOutOnIdle) as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.videoAutoZoomOutOnIdle) }
+    }
+
+    static var videoBlurStyle: VideoBlurStyle {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Keys.videoBlurStyle) ?? ""
+            return VideoBlurStyle(rawValue: raw) ?? .frostedGlass
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoBlurStyle) }
+    }
+
+    static var videoBlurIntensity: VideoBlurIntensity {
+        get {
+            let raw = UserDefaults.standard.double(forKey: Keys.videoBlurIntensity)
+            return VideoBlurIntensity(rawValue: raw) ?? .medium
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoBlurIntensity) }
+    }
+
+    static var videoKeystrokesEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.videoKeystrokesEnabled) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.videoKeystrokesEnabled) }
+    }
+
+    static var videoKeystrokeFilter: KeystrokeDisplayFilter {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Keys.videoKeystrokeFilter) ?? ""
+            return KeystrokeDisplayFilter(rawValue: raw) ?? .all
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoKeystrokeFilter) }
+    }
+
+    static var videoKeystrokePosition: KeystrokePosition {
+        get {
+            let raw = UserDefaults.standard.string(forKey: Keys.videoKeystrokePosition) ?? ""
+            return KeystrokePosition(rawValue: raw) ?? .bottomCenter
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoKeystrokePosition) }
+    }
+
+    static var videoKeystrokeSize: KeystrokeSize {
+        get {
+            let raw = UserDefaults.standard.double(forKey: Keys.videoKeystrokeSize)
+            return KeystrokeSize(rawValue: raw) ?? .standard
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: Keys.videoKeystrokeSize) }
+    }
+
+    static var videoTypingHighlightEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.videoTypingHighlightEnabled) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.videoTypingHighlightEnabled) }
+    }
+
+    static var videoClickHighlightsEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Keys.videoClickHighlightsEnabled) as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.videoClickHighlightsEnabled) }
     }
 
     private static func saveColor(_ color: Color, key: String) {

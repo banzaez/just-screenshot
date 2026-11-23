@@ -244,6 +244,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "Tasten",
         "video_editor.keystrokes_help": "Gedrückte Tasten und Shortcuts im Video einblenden",
         "video_editor.keystrokes_enable": "Tasten anzeigen",
+        "video_editor.keystrokes_typing_highlight": "Texteingabe rot hervorheben",
         "video_editor.keystrokes_filter_header": "Anzeige",
         "video_editor.keystrokes_filter_all": "Alle Tasten & Shortcuts",
         "video_editor.keystrokes_filter_shortcuts": "Nur Shortcuts",

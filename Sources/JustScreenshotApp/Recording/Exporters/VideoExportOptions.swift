@@ -22,6 +22,7 @@ public struct VideoExportOptions: Sendable {
     public var keystrokePosition: KeystrokePosition
     public var keystrokeSize: KeystrokeSize
     public var showClicks: Bool
+    public var showTypingHighlight: Bool
     
     public init(
         trimStart: Double = 0,
@@ -42,7 +43,8 @@ public struct VideoExportOptions: Sendable {
         keystrokeFilter: KeystrokeDisplayFilter = .all,
         keystrokePosition: KeystrokePosition = .bottomCenter,
         keystrokeSize: KeystrokeSize = .standard,
-        showClicks: Bool = false
+        showClicks: Bool = false,
+        showTypingHighlight: Bool = false
     ) {
         self.trimStart = trimStart
         self.trimEnd = trimEnd
@@ -63,6 +65,7 @@ public struct VideoExportOptions: Sendable {
         self.keystrokePosition = keystrokePosition
         self.keystrokeSize = keystrokeSize
         self.showClicks = showClicks
+        self.showTypingHighlight = showTypingHighlight
     }
 }
 

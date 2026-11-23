@@ -103,8 +103,8 @@ public struct VideoTimelineView: View {
                         .frame(width: max(0, endX - startX), height: height)
                         .offset(x: startX)
 
-                    // Маркеры кликов для Smart Zoom
-                    if model.isSmartZoomEnabled {
+                    // Маркеры кликов для Smart Zoom и подсветки кликов
+                    if model.isSmartZoomEnabled || model.isClickHighlightsEnabled {
                         ForEach(Array(model.cursorTrack.clickTimestamps.enumerated()), id: \.offset) { _, ts in
                             let markerX = min(width - 3, max(3, CGFloat(ts / totalDuration) * width))
                             Circle()
@@ -112,6 +112,19 @@ public struct VideoTimelineView: View {
                                 .frame(width: 5, height: 5)
                                 .shadow(color: .black.opacity(0.6), radius: 1)
                                 .offset(x: markerX - 2.5, y: height / 2 - 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
+
+                    // Красные маркеры нажатий клавиш на таймлайне
+                    if model.isKeystrokesEnabled {
+                        ForEach(Array(model.keystrokeTrack.timestamps(filter: model.keystrokeFilter).enumerated()), id: \.offset) { _, ts in
+                            let markerX = min(width - 3, max(3, CGFloat(ts / totalDuration) * width))
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 5, height: 5)
+                                .shadow(color: .black.opacity(0.6), radius: 1)
+                                .offset(x: markerX - 2.5, y: height / 2 - 11)
                                 .allowsHitTesting(false)
                         }
                     }

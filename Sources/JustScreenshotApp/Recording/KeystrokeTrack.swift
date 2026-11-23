@@ -19,14 +19,18 @@ public enum KeystrokePosition: String, CaseIterable, Identifiable, Codable, Send
 
     public var id: String { rawValue }
 
-    /// Автоматически сдвигает бейдж на противоположный край, если Smart Zoom сфокусирован на том же крае
+    /// Автоматически сдвигает бейдж на противоположный край, только если Smart Zoom сфокусирован прямо на области плашки
     nonisolated public func resolved(cameraFocus: CGPoint, cameraZoom: CGFloat) -> KeystrokePosition {
         guard cameraZoom > 1.05 else { return self }
         switch self {
-        case .bottomCenter, .bottomLeft, .bottomRight:
-            return cameraFocus.y > 0.72 ? .topCenter : self
+        case .bottomCenter:
+            return (cameraFocus.y > 0.82 && abs(cameraFocus.x - 0.5) < 0.25) ? .topCenter : self
+        case .bottomLeft:
+            return (cameraFocus.y > 0.82 && cameraFocus.x < 0.35) ? .topCenter : self
+        case .bottomRight:
+            return (cameraFocus.y > 0.82 && cameraFocus.x > 0.65) ? .topCenter : self
         case .topCenter:
-            return cameraFocus.y < 0.28 ? .bottomCenter : self
+            return (cameraFocus.y < 0.18 && abs(cameraFocus.x - 0.5) < 0.25) ? .bottomCenter : self
         }
     }
 }
@@ -38,6 +42,12 @@ public enum KeystrokeSize: Double, CaseIterable, Identifiable, Codable, Sendable
     case large = 1.25
 
     public var id: Double { rawValue }
+}
+
+/// Активный красный эффект ввода текста в позиции курсора
+public struct ActiveTypingEffect: Equatable, Sendable {
+    public let point: CGPoint
+    public let progress: CGFloat
 }
 
 /// Записанное событие нажатия клавиши/комбинации во время видеозаписи
@@ -87,6 +97,12 @@ public struct KeystrokeTrack: Codable, Sendable, Equatable {
         try container.encode(events, forKey: .events)
     }
 
+    /// Временные метки нажатых клавиш с учётом фильтра (для маркеров на таймлайне)
+    public func timestamps(filter: KeystrokeDisplayFilter = .all) -> [Double] {
+        let source = filter == .shortcutsOnly ? shortcutEvents : events
+        return source.map(\.timestamp)
+    }
+
     /// Активный бейдж клавиш и его прозрачность в момент времени `time` (в секундах)
     nonisolated public func activeKeystroke(
         at time: Double,
@@ -121,6 +137,44 @@ public struct KeystrokeTrack: Codable, Sendable, Equatable {
             alpha = CGFloat(max(0.0, 1.0 - progress))
         }
         return alpha > 0.001 ? (event.text, alpha) : nil
+    }
+
+    /// Активные красные индикаторы ввода текста в позиции курсора в момент времени `time`
+    nonisolated public func activeTypingEffects(
+        at time: Double,
+        cursorTrack: CursorTrack,
+        duration: Double = 0.45
+    ) -> [ActiveTypingEffect] {
+        guard !events.isEmpty, duration > 0, events[0].timestamp <= time else { return [] }
+        var low = 0
+        var high = events.count - 1
+        var best = 0
+        while low <= high {
+            let mid = (low + high) / 2
+            if events[mid].timestamp <= time {
+                best = mid
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+
+        var result: [ActiveTypingEffect] = []
+        var idx = best
+        while idx >= 0 {
+            let ev = events[idx]
+            let age = time - ev.timestamp
+            if age > duration {
+                break
+            }
+            if age >= 0, !ev.isShortcut {
+                let progress = CGFloat(min(1.0, max(0.0, age / duration)))
+                let point = cursorTrack.cursorPoint(at: ev.timestamp)
+                result.append(ActiveTypingEffect(point: point, progress: progress))
+            }
+            idx -= 1
+        }
+        return result
     }
 }
 

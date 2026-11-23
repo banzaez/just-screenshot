@@ -15,31 +15,63 @@ public final class VideoEditorModel {
     public var duration: Double = 1.0
 
     // Обрезка (Trim In / Trim Out)
-    public var trimStart: Double = 0.0
-    public var trimEnd: Double = 1.0
-    public var hasUserEditedTrim: Bool = false
+    public var trimStart: Double = 0.0 {
+        didSet { scheduleStateSave() }
+    }
+    public var trimEnd: Double = 1.0 {
+        didSet { scheduleStateSave() }
+    }
+    public var hasUserEditedTrim: Bool = false {
+        didSet { scheduleStateSave() }
+    }
 
     // Скорость воспроизведения (0.5x, 1x, 1.5x, 2x)
     public var playbackRate: Float = EditorPreferences.videoPlaybackRate {
-        didSet { EditorPreferences.videoPlaybackRate = playbackRate }
+        didSet {
+            guard !isRestoringState else { return }
+            EditorPreferences.videoPlaybackRate = playbackRate
+            scheduleStateSave()
+        }
     }
 
     // Кадрирование (Crop) и Умный Зум (Smart Zoom)
     public var isCropping: Bool = false
-    public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) // [0...1]
+    public var cropRect: CGRect = CGRect(x: 0, y: 0, width: 1, height: 1) { // [0...1]
+        didSet { scheduleStateSave() }
+    }
     public var isSmartZoomEnabled: Bool = false {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoSmartZoomEnabled = isSmartZoomEnabled
+            scheduleStateSave()
+        }
     }
 
     // Настройки умного зума (масштаб, режим слежения, отъезд при бездействии)
     public var smartZoomScale: SmartZoomScale = .balanced {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoSmartZoomScale = smartZoomScale
+            scheduleStateSave()
+        }
     }
     public var smartZoomMode: SmartZoomMode = .onClicks {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoSmartZoomMode = smartZoomMode
+            scheduleStateSave()
+        }
     }
     public var autoZoomOutOnIdle: Bool = true {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoAutoZoomOutOnIdle = autoZoomOutOnIdle
+            scheduleStateSave()
+        }
     }
 
     // Траектория курсора мыши и динамическая камера (Smart Zoom / Camera Follow)
@@ -49,28 +81,80 @@ public final class VideoEditorModel {
 
     // Постпроцессинг нажатий клавиш (Keystrokes HUD)
     public var isKeystrokesEnabled: Bool = false {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoKeystrokesEnabled = isKeystrokesEnabled
+            scheduleStateSave()
+        }
     }
     public var keystrokeFilter: KeystrokeDisplayFilter = .all {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoKeystrokeFilter = keystrokeFilter
+            scheduleStateSave()
+        }
     }
-    public var keystrokePosition: KeystrokePosition = .bottomCenter
-    public var keystrokeSize: KeystrokeSize = .standard
+    public var keystrokePosition: KeystrokePosition = .bottomCenter {
+        didSet {
+            guard !isRestoringState else { return }
+            EditorPreferences.videoKeystrokePosition = keystrokePosition
+            scheduleStateSave()
+        }
+    }
+    public var keystrokeSize: KeystrokeSize = .standard {
+        didSet {
+            guard !isRestoringState else { return }
+            EditorPreferences.videoKeystrokeSize = keystrokeSize
+            scheduleStateSave()
+        }
+    }
     public var keystrokeTrack: KeystrokeTrack
     public var currentKeystrokeText: String?
     public var currentKeystrokeAlpha: CGFloat = 0.0
 
     // Постпроцессинг подсветки кликов мыши (Click Ripples)
     public var isClickHighlightsEnabled: Bool = false {
-        didSet { updateCameraState() }
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoClickHighlightsEnabled = isClickHighlightsEnabled
+            scheduleStateSave()
+        }
     }
     public var activeClickRipples: [ActiveClickRipple] = []
 
+    // Постпроцессинг красного эффекта в месте ввода текста
+    public var isTypingHighlightEnabled: Bool = false {
+        didSet {
+            updateCameraState()
+            guard !isRestoringState else { return }
+            EditorPreferences.videoTypingHighlightEnabled = isTypingHighlightEnabled
+            scheduleStateSave()
+        }
+    }
+    public var activeTypingEffects: [ActiveTypingEffect] = []
+
     // Аннотации
-    public var annotations: [VideoAnnotationItem] = []
+    public var annotations: [VideoAnnotationItem] = [] {
+        didSet { scheduleStateSave() }
+    }
     public var selectedAnnotationID: UUID?
-    public var blurStyle: VideoBlurStyle = .frostedGlass
-    public var blurIntensity: VideoBlurIntensity = .medium
+    public var blurStyle: VideoBlurStyle = .frostedGlass {
+        didSet {
+            guard !isRestoringState else { return }
+            EditorPreferences.videoBlurStyle = blurStyle
+            scheduleStateSave()
+        }
+    }
+    public var blurIntensity: VideoBlurIntensity = .medium {
+        didSet {
+            guard !isRestoringState else { return }
+            EditorPreferences.videoBlurIntensity = blurIntensity
+            scheduleStateSave()
+        }
+    }
 
     // Экспорт
     public var isExporting: Bool = false
@@ -87,6 +171,8 @@ public final class VideoEditorModel {
     @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     @ObservationIgnored private nonisolated(unsafe) var metadataTask: Task<Void, Never>?
     @ObservationIgnored private nonisolated(unsafe) var exportTask: Task<Void, Never>?
+    @ObservationIgnored private nonisolated(unsafe) var saveStateTask: Task<Void, Never>?
+    @ObservationIgnored private var isRestoringState: Bool = false
 
     public var hasCustomCrop: Bool {
         abs(cropRect.origin.x) > 0.002 ||
@@ -102,7 +188,8 @@ public final class VideoEditorModel {
         !annotations.isEmpty ||
         isSmartZoomEnabled ||
         isKeystrokesEnabled ||
-        isClickHighlightsEnabled
+        isClickHighlightsEnabled ||
+        isTypingHighlightEnabled
     }
 
     public init(videoURL: URL, cursorTrack: CursorTrack? = nil, keystrokeTrack: KeystrokeTrack? = nil) {
@@ -113,6 +200,7 @@ public final class VideoEditorModel {
         let playerItem = AVPlayerItem(url: videoURL)
         self.player = AVPlayer(playerItem: playerItem)
 
+        loadPersistedStateOrDefaults()
         setupPlayerObserver()
         loadVideoMetadata()
         updateCameraState()
@@ -121,6 +209,86 @@ public final class VideoEditorModel {
     deinit {
         metadataTask?.cancel()
         exportTask?.cancel()
+        saveStateTask?.cancel()
+    }
+
+    private func loadPersistedStateOrDefaults() {
+        isRestoringState = true
+        defer { isRestoringState = false }
+
+        if let saved = VideoEditorStateStore.load(forVideoURL: videoURL) {
+            trimStart = saved.trimStart
+            trimEnd = saved.trimEnd
+            hasUserEditedTrim = saved.hasUserEditedTrim
+            playbackRate = saved.playbackRate
+            cropRect = saved.cropRect
+            isSmartZoomEnabled = saved.isSmartZoomEnabled
+            smartZoomScale = saved.smartZoomScale
+            smartZoomMode = saved.smartZoomMode
+            autoZoomOutOnIdle = saved.autoZoomOutOnIdle
+            blurStyle = saved.blurStyle
+            blurIntensity = saved.blurIntensity
+            annotations = saved.annotations.map { $0.toAnnotationItem() }
+            isKeystrokesEnabled = saved.isKeystrokesEnabled
+            keystrokeFilter = saved.keystrokeFilter
+            keystrokePosition = saved.keystrokePosition
+            keystrokeSize = saved.keystrokeSize
+            isTypingHighlightEnabled = saved.isTypingHighlightEnabled
+            isClickHighlightsEnabled = saved.isClickHighlightsEnabled
+        } else {
+            playbackRate = EditorPreferences.videoPlaybackRate
+            isSmartZoomEnabled = EditorPreferences.videoSmartZoomEnabled
+            smartZoomScale = EditorPreferences.videoSmartZoomScale
+            smartZoomMode = EditorPreferences.videoSmartZoomMode
+            autoZoomOutOnIdle = EditorPreferences.videoAutoZoomOutOnIdle
+            blurStyle = EditorPreferences.videoBlurStyle
+            blurIntensity = EditorPreferences.videoBlurIntensity
+            isKeystrokesEnabled = EditorPreferences.videoKeystrokesEnabled
+            keystrokeFilter = EditorPreferences.videoKeystrokeFilter
+            keystrokePosition = EditorPreferences.videoKeystrokePosition
+            keystrokeSize = EditorPreferences.videoKeystrokeSize
+            isTypingHighlightEnabled = EditorPreferences.videoTypingHighlightEnabled
+            isClickHighlightsEnabled = EditorPreferences.videoClickHighlightsEnabled
+        }
+    }
+
+    private func currentPersistedState() -> VideoEditorState {
+        VideoEditorState(
+            trimStart: trimStart,
+            trimEnd: trimEnd,
+            hasUserEditedTrim: hasUserEditedTrim,
+            playbackRate: playbackRate,
+            cropRect: cropRect,
+            isSmartZoomEnabled: isSmartZoomEnabled,
+            smartZoomScale: smartZoomScale,
+            smartZoomMode: smartZoomMode,
+            autoZoomOutOnIdle: autoZoomOutOnIdle,
+            blurStyle: blurStyle,
+            blurIntensity: blurIntensity,
+            annotations: annotations.map { SavedVideoAnnotation(from: $0) },
+            isKeystrokesEnabled: isKeystrokesEnabled,
+            keystrokeFilter: keystrokeFilter,
+            keystrokePosition: keystrokePosition,
+            keystrokeSize: keystrokeSize,
+            isTypingHighlightEnabled: isTypingHighlightEnabled,
+            isClickHighlightsEnabled: isClickHighlightsEnabled
+        )
+    }
+
+    private func scheduleStateSave() {
+        guard !isRestoringState else { return }
+        saveStateTask?.cancel()
+        saveStateTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            VideoEditorStateStore.save(self.currentPersistedState(), forVideoURL: self.videoURL)
+        }
+    }
+
+    private func flushStateSave() {
+        saveStateTask?.cancel()
+        saveStateTask = nil
+        VideoEditorStateStore.save(currentPersistedState(), forVideoURL: videoURL)
     }
 
     public func currentExportOptions(gifFPS: Int = 15) -> VideoExportOptions {
@@ -143,7 +311,8 @@ public final class VideoEditorModel {
             keystrokeFilter: keystrokeFilter,
             keystrokePosition: keystrokePosition,
             keystrokeSize: keystrokeSize,
-            showClicks: isClickHighlightsEnabled
+            showClicks: isClickHighlightsEnabled,
+            showTypingHighlight: isTypingHighlightEnabled
         )
     }
 
@@ -191,6 +360,13 @@ public final class VideoEditorModel {
         if activeClickRipples != newRipples {
             activeClickRipples = newRipples
         }
+
+        let newTyping = isTypingHighlightEnabled
+            ? keystrokeTrack.activeTypingEffects(at: currentTime, cursorTrack: cursorTrack)
+            : []
+        if activeTypingEffects != newTyping {
+            activeTypingEffects = newTyping
+        }
     }
 
     public func videoContentRect(in containerSize: CGSize) -> CGRect {
@@ -223,6 +399,7 @@ public final class VideoEditorModel {
     }
 
     public func cleanup() {
+        flushStateSave()
         metadataTask?.cancel()
         metadataTask = nil
         exportTask?.cancel()

@@ -245,6 +245,7 @@ extension LocalizationCatalog {
         "video_editor.keystrokes": "Клавиши",
         "video_editor.keystrokes_help": "Показывать нажатые клавиши и шорткаты поверх видео",
         "video_editor.keystrokes_enable": "Показывать клавиши",
+        "video_editor.keystrokes_typing_highlight": "Красная подсветка ввода текста",
         "video_editor.keystrokes_filter_header": "Отображение",
         "video_editor.keystrokes_filter_all": "Все клавиши и сочетания",
         "video_editor.keystrokes_filter_shortcuts": "Только сочетания",

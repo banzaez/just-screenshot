@@ -111,7 +111,12 @@ public struct CursorTrack: Codable, Sendable {
     }
 
     /// Непрерывная интерполированная позиция курсора в момент `time`
-    private func continuousPoint(at time: Double) -> CGPoint {
+    nonisolated public func cursorPoint(at time: Double) -> CGPoint {
+        continuousPoint(at: time)
+    }
+
+    /// Непрерывная интерполированная позиция курсора в момент `time`
+    nonisolated private func continuousPoint(at time: Double) -> CGPoint {
         guard !keyframes.isEmpty else { return CGPoint(x: 0.5, y: 0.5) }
         if time <= keyframes[0].timestamp {
             return keyframes[0].point

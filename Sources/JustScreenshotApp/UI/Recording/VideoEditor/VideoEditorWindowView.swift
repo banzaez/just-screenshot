@@ -77,6 +77,26 @@ public struct VideoEditorWindowView: View {
                                     }
                                     .allowsHitTesting(false)
                                 }
+
+                                // Постпроцессинг красного эффекта в месте ввода текста
+                                if model.isTypingHighlightEnabled && !model.activeTypingEffects.isEmpty {
+                                    ZStack {
+                                        ForEach(Array(model.activeTypingEffects.enumerated()), id: \.offset) { _, effect in
+                                            let radius = 6.0 + effect.progress * 18.0
+                                            let alpha = Double(max(0, 1.0 - effect.progress))
+                                            let px = videoRect.origin.x + effect.point.x * videoRect.width
+                                            let py = videoRect.origin.y + effect.point.y * videoRect.height
+
+                                            Circle()
+                                                .fill(Color.red.opacity(0.26 * alpha))
+                                                .overlay(Circle().stroke(Color.red.opacity(0.9 * alpha), lineWidth: 2.0))
+                                                .shadow(color: Color.red.opacity(0.5 * alpha), radius: 6)
+                                                .frame(width: radius * 2, height: radius * 2)
+                                                .position(x: px, y: py)
+                                        }
+                                    }
+                                    .allowsHitTesting(false)
+                                }
                             }
                             .scaleEffect(zoom, anchor: .center)
                             .offset(x: panX, y: panY)
@@ -112,30 +132,26 @@ public struct VideoEditorWindowView: View {
                                     }
                                 }()
 
-                                ZStack(alignment: alignment) {
-                                    Color.clear
-                                    Text(text)
-                                        .font(.system(size: 16 * sizeScale, weight: .bold))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 16 * sizeScale)
-                                        .padding(.vertical, 9 * sizeScale)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
-                                                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.92))
-                                                .overlay(
-                                                    RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
-                                                        .strokeBorder(Color.white.opacity(0.32), lineWidth: 1.2)
-                                                )
-                                        )
-                                        .shadow(color: .black.opacity(0.55), radius: 10, y: 3)
-                                        .padding(.horizontal, edgeInset)
-                                        .padding(.vertical, edgeInset)
-                                        .opacity(Double(model.currentKeystrokeAlpha))
-                                }
-                                .frame(width: videoRect.width, height: videoRect.height)
-                                .position(x: videoRect.midX, y: videoRect.midY)
-                                .animation(.easeInOut(duration: 0.2), value: resolvedPos)
-                                .allowsHitTesting(false)
+                                Text(text)
+                                    .font(.system(size: 16 * sizeScale, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 16 * sizeScale)
+                                    .padding(.vertical, 9 * sizeScale)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
+                                            .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.92))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
+                                                    .strokeBorder(Color.white.opacity(0.32), lineWidth: 1.2)
+                                            )
+                                    )
+                                    .shadow(color: .black.opacity(0.55), radius: 10, y: 3)
+                                    .padding(edgeInset)
+                                    .frame(width: videoRect.width, height: videoRect.height, alignment: alignment)
+                                    .position(x: videoRect.midX, y: videoRect.midY)
+                                    .opacity(Double(model.currentKeystrokeAlpha))
+                                    .animation(.easeInOut(duration: 0.2), value: resolvedPos)
+                                    .allowsHitTesting(false)
                             }
                         }
                     }

@@ -447,7 +447,8 @@ public final class HistoryStore {
         if matching.isEmpty {
             let trackURL = CursorTrackRecorder.companionTrackURL(for: videoURL)
             let keysURL = KeystrokeTrackRecorder.companionTrackURL(for: videoURL)
-            Self.trashURLsInBackground([videoURL, trackURL, keysURL])
+            let editsURL = VideoEditorStateStore.companionEditsURL(for: videoURL)
+            Self.trashURLsInBackground([videoURL, trackURL, keysURL, editsURL])
         } else {
             for item in matching {
                 delete(id: item.id)
@@ -481,7 +482,8 @@ public final class HistoryStore {
             return [
                 url,
                 CursorTrackRecorder.companionTrackURL(for: url),
-                KeystrokeTrackRecorder.companionTrackURL(for: url)
+                KeystrokeTrackRecorder.companionTrackURL(for: url),
+                VideoEditorStateStore.companionEditsURL(for: url)
             ]
         }
         return [url]
