@@ -56,6 +56,7 @@ public final class RecordingFrameWindow: NSWindow {
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.animationBehavior = .none
         self.acceptsMouseMovedEvents = true
+        self.isReleasedWhenClosed = false
 
         self.contentView = frameView
     }

@@ -41,6 +41,7 @@ public final class RecordingControlBarWindow: NSWindow {
         self.isMovableByWindowBackground = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.animationBehavior = .none
+        self.isReleasedWhenClosed = false
 
         let barView = RecordingControlBarView(
             windowManager: windowManager,

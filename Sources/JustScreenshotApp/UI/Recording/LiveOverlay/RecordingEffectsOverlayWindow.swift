@@ -25,6 +25,7 @@ public final class RecordingEffectsOverlayWindow: NSWindow {
         ignoresMouseEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         animationBehavior = .none
+        isReleasedWhenClosed = false
 
         contentView = effectsView
     }
