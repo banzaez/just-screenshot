@@ -124,6 +124,7 @@ swift test
 # Изолированная временная директория для упаковки и appcast
 APPCAST_WORK_DIR="$(mktemp -d)"
 ZIP_NAME="JustScreenshot-$TAG.zip"
+DMG_NAME="JustScreenshot-$TAG.dmg"
 cleanup() {
     rm -rf "$APPCAST_WORK_DIR"
 }
@@ -143,11 +144,15 @@ echo -e "${BLUE}2. Сборка приложения (.app)...${NC}"
 
 APP_BUNDLE="Just Screenshot.app"
 ZIP_PATH="$PROJECT_ROOT/$ZIP_NAME"
+DMG_PATH="$PROJECT_ROOT/$DMG_NAME"
 
-# 3. Упаковка в zip
+# 3. Упаковка в zip (для Sparkle) и dmg (установщик)
 echo -e "${BLUE}3. Упаковка в zip ($ZIP_NAME)...${NC}"
 rm -f "$ZIP_PATH"
 ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
+
+echo -e "${BLUE}3.1. Создание DMG-установщика ($DMG_NAME)...${NC}"
+"$SCRIPT_DIR/build_dmg.sh" --skip-build --version "$NEW_VERSION" --output "$DMG_PATH"
 
 # 4. Обновление и подпись appcast.xml в изолированной директории
 echo -e "${BLUE}4. Генерация и Ed25519-подпись appcast.xml...${NC}"
@@ -191,14 +196,14 @@ git push origin "$CURRENT_BRANCH" --tags
 echo -e "${BLUE}8. Публикация GitHub Release...${NC}"
 if command -v gh >/dev/null 2>&1; then
     if [ -n "$RELEASE_NOTES" ]; then
-        gh release create "$TAG" "$ZIP_PATH" appcast.xml --title "Just Screenshot $TAG" --notes "$RELEASE_NOTES"
+        gh release create "$TAG" "$DMG_PATH" "$ZIP_PATH" appcast.xml --title "Just Screenshot $TAG" --notes "$RELEASE_NOTES"
     else
-        gh release create "$TAG" "$ZIP_PATH" appcast.xml --title "Just Screenshot $TAG" --generate-notes
+        gh release create "$TAG" "$DMG_PATH" "$ZIP_PATH" appcast.xml --title "Just Screenshot $TAG" --generate-notes
     fi
     echo -e "  ${GREEN}GitHub Release $TAG успешно опубликован!${NC}"
 else
     echo -e "  ${YELLOW}gh CLI не найден. Тег отправлен в git, релиз на GitHub создайте вручную.${NC}"
 fi
 
-rm -f "$ZIP_PATH"
+rm -f "$ZIP_PATH" "$DMG_PATH"
 echo -e "\n${GREEN}${BOLD}🎉 Релиз $TAG успешно завершен!${NC}"

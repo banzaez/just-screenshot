@@ -1,4 +1,4 @@
-.PHONY: all menu build run release test clean status help
+.PHONY: all menu build run dmg release test clean status help
 
 all: build
 
@@ -10,6 +10,9 @@ build:
 
 run:
 	@./manage.sh run
+
+dmg:
+	@./manage.sh dmg
 
 release:
 	@./manage.sh release $(ARGS)

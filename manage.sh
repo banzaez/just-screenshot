@@ -50,6 +50,10 @@ cmd_run() {
     ./scripts/build.sh --run
 }
 
+cmd_dmg() {
+    ./scripts/build_dmg.sh "$@"
+}
+
 cmd_test() {
     echo -e "\n${BLUE}🧪 Запуск unit-тестов Swift...${NC}"
     swift test
@@ -58,7 +62,7 @@ cmd_test() {
 cmd_clean() {
     echo -e "\n${YELLOW}🧹 Очистка артефактов сборки...${NC}"
     rm -rf "Just Screenshot.app"
-    rm -f *.zip
+    rm -f *.zip *.dmg
     swift package clean
     echo -e "${GREEN}✅ Проект очищен!${NC}"
 }
@@ -138,9 +142,9 @@ release_wizard() {
     echo -e "\n${YELLOW}Внимание! Будут выполнены шаги:${NC}"
     echo -e "  1. Обновление версии до ${GREEN}v$TARGET_VER (Build $((CURRENT_BUILD + 1)))${NC}"
     echo -e "  2. Сборка и подпись Just Screenshot.app"
-    echo -e "  3. Создание архива и подпись Sparkle appcast.xml"
+    echo -e "  3. Создание .zip (Sparkle) + .dmg (установщик) и подпись appcast.xml"
     echo -e "  4. Коммит, git push и создание тега v$TARGET_VER"
-    echo -e "  5. Публикация GitHub Release с прикрепленным .zip и appcast"
+    echo -e "  5. Публикация GitHub Release с прикрепленными .dmg, .zip и appcast"
     
     read -p "Запустить процесс публикации? (y/N): " confirm_rel
     if [[ "$confirm_rel" =~ ^[yY]$ ]]; then
@@ -157,13 +161,14 @@ interactive_menu() {
         echo -e "${BOLD}Выберите действие:${NC}"
         echo -e "  ${BOLD}1)${NC} 🔨 Собрать .app ${DIM}(Release build)${NC}"
         echo -e "  ${BOLD}2)${NC} 🚀 Собрать и Запустить ${DIM}(Build & Run)${NC}"
-        echo -e "  ${BOLD}3)${NC} 📦 Опубликовать Релиз ${DIM}(Sparkle + GitHub Release Wizard)${NC}"
-        echo -e "  ${BOLD}4)${NC} 🧪 Запустить тесты ${DIM}(swift test)${NC}"
-        echo -e "  ${BOLD}5)${NC} 🧹 Очистить проект ${DIM}(Clean cache)${NC}"
-        echo -e "  ${BOLD}6)${NC} 🔍 Статус и окружение ${DIM}(Diagnostics)${NC}"
+        echo -e "  ${BOLD}3)${NC} 💿 Собрать DMG-установщик ${DIM}(JustScreenshot.dmg)${NC}"
+        echo -e "  ${BOLD}4)${NC} 📦 Опубликовать Релиз ${DIM}(Sparkle + GitHub Release Wizard)${NC}"
+        echo -e "  ${BOLD}5)${NC} 🧪 Запустить тесты ${DIM}(swift test)${NC}"
+        echo -e "  ${BOLD}6)${NC} 🧹 Очистить проект ${DIM}(Clean cache)${NC}"
+        echo -e "  ${BOLD}7)${NC} 🔍 Статус и окружение ${DIM}(Diagnostics)${NC}"
         echo -e "  ${BOLD}0)${NC} 🚪 Выход"
         echo ""
-        read -p "Введите номер [0-6]: " choice
+        read -p "Введите номер [0-7]: " choice
         
         case "$choice" in
             1)
@@ -175,18 +180,22 @@ interactive_menu() {
                 read -p "Нажмите Enter для возврата в меню..." _
                 ;;
             3)
-                release_wizard
+                cmd_dmg
                 read -p "Нажмите Enter для возврата в меню..." _
                 ;;
             4)
-                cmd_test
+                release_wizard
                 read -p "Нажмите Enter для возврата в меню..." _
                 ;;
             5)
-                cmd_clean
+                cmd_test
                 read -p "Нажмите Enter для возврата в меню..." _
                 ;;
             6)
+                cmd_clean
+                read -p "Нажмите Enter для возврата в меню..." _
+                ;;
+            7)
                 cmd_status
                 read -p "Нажмите Enter для возврата в меню..." _
                 ;;
@@ -211,6 +220,7 @@ else
     case "$COMMAND" in
         build)   cmd_build "$@" ;;
         run)     cmd_run "$@" ;;
+        dmg)     cmd_dmg "$@" ;;
         release) ./scripts/release.sh "$@" ;;
         test)    cmd_test "$@" ;;
         clean)   cmd_clean "$@" ;;
@@ -223,6 +233,7 @@ else
             echo "  (без аргументов)    Запуск интерактивного меню (TUI)"
             echo "  build               Сборка Just Screenshot.app"
             echo "  run                 Сборка и запуск приложения"
+            echo "  dmg                 Сборка DMG-установщика"
             echo "  release <версия>    Публикация релиза на GitHub и Sparkle"
             echo "  test                Запуск тестов"
             echo "  clean               Очистка артефактов"
