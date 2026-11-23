@@ -51,12 +51,14 @@ final class AppHotKeyCoordinator {
                 guard let wm else { return }
                 spec.handler(wm)
             }
-            hk.register(
-                id: spec.primaryID,
-                keyCode: pair.primary.keyCode,
-                modifiers: pair.primary.modifiers,
-                action: invoke
-            )
+            if let primary = pair.primary {
+                hk.register(
+                    id: spec.primaryID,
+                    keyCode: primary.keyCode,
+                    modifiers: primary.modifiers,
+                    action: invoke
+                )
+            }
             if let alt = pair.alternate {
                 hk.register(
                     id: spec.altID,

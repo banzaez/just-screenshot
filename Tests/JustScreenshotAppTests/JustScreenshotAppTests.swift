@@ -504,8 +504,21 @@ struct CaptureAndGeometryTests {
 
         let cgImage = try #require(ctx.makeImage())
         let sampler = ScreenPixelSampler(image: cgImage)
-        let hex = sampler.getPixelHex(at: CGPoint(x: 2, y: 2), viewBounds: CGRect(x: 0, y: 0, width: 4, height: 4))
+        let bounds = CGRect(x: 0, y: 0, width: 4, height: 4)
+        let hex = sampler.getPixelHex(at: CGPoint(x: 2, y: 2), viewBounds: bounds)
         #expect(hex == "#FF0000")
+
+        let sample = try #require(sampler.getPixelSample(at: CGPoint(x: 2, y: 2), viewBounds: bounds))
+        #expect(sample.hex == "#FF0000")
+        #expect(sample.r == 255 && sample.g == 0 && sample.b == 0)
+        #expect(sample.cgColor.components?.prefix(3) == [1.0, 0.0, 0.0])
+
+        let loupe = try #require(sampler.makeLoupeImage(at: CGPoint(x: 2, y: 2), viewBounds: bounds, gridRadius: 7))
+        #expect(loupe.width == 15)
+        #expect(loupe.height == 15)
+        let loupeSampler = ScreenPixelSampler(image: loupe)
+        #expect(loupeSampler.getPixelHex(at: CGPoint(x: 7.5, y: 7.5), viewBounds: CGRect(x: 0, y: 0, width: 15, height: 15)) == "#FF0000")
+        #expect(loupeSampler.getPixelHex(at: CGPoint(x: 0.5, y: 0.5), viewBounds: CGRect(x: 0, y: 0, width: 15, height: 15)) == "#181818")
     }
 
     @Test func testScreenPixelSampler24BitStrideAndEdgeClamping() throws {
@@ -588,6 +601,8 @@ struct CaptureAndGeometryTests {
         defer { UserDefaults.standard.removePersistentDomain(forName: suiteName) }
 
         let settings = AppSettings(defaults: defaults)
+        #expect(settings.shortcutHistory == nil)
+
         // Дефолтный window = Cmd+Shift+4
         let conflictWithWindow = settings.shortcutWindow
         #expect(settings.hasConflict(conflictWithWindow, excludingTargetID: "primary:area"))
@@ -597,6 +612,11 @@ struct CaptureAndGeometryTests {
         let dupAlt = ShortcutKey(keyCode: UInt32(kVK_ANSI_9), keyChar: "9", modifiers: UInt32(cmdKey | optionKey))
         #expect(settings.hasConflict(dupAlt, excludingTargetID: "primary:history"))
         #expect(!settings.hasConflict(dupAlt, excludingTargetID: "alt:area"))
+
+        settings.shortcutHistory = ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: UInt32(cmdKey | optionKey))
+        #expect(settings.shortcutHistory != nil)
+        settings.resetHotkeysToDefaults()
+        #expect(settings.shortcutHistory == nil)
     }
 
     @Test @MainActor func testZoomLabelAndPaletteColorsMatch() {

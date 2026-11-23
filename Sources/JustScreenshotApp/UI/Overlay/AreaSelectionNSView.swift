@@ -14,6 +14,7 @@ final class AreaSelectionNSView: NSView {
 
     private var isDragging = false
     private var isShiftPressed = false
+    private var isOptionPressed = false
     private var isWindowPickClick = false
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
@@ -24,6 +25,10 @@ final class AreaSelectionNSView: NSView {
 
     private var isWindowSelectionActive: Bool {
         mode == .windowOnly || (isShiftPressed && !isDragging)
+    }
+
+    private var isColorLoupeActive: Bool {
+        isOptionPressed && !isShiftPressed && !isDragging && mode == .areaOnly && hasSampler
     }
 
     private var sampler: ScreenPixelSampler
@@ -142,6 +147,7 @@ final class AreaSelectionNSView: NSView {
         isHidden = false
         isDragging = false
         isShiftPressed = false
+        isOptionPressed = false
         isWindowPickClick = false
         startPoint = nil
         currentPoint = nil
@@ -211,12 +217,13 @@ final class AreaSelectionNSView: NSView {
 
     override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
-        updateShiftState(event.modifierFlags.contains(.shift))
+        updateModifierStates(from: event.modifierFlags)
     }
 
     override func mouseDown(with event: NSEvent) {
         let loc = clampedPoint(convert(event.locationInWindow, from: nil))
         isShiftPressed = event.modifierFlags.contains(.shift)
+        isOptionPressed = event.modifierFlags.contains(.option)
 
         if event.modifierFlags.contains(.option), !isShiftPressed, mode == .areaOnly, hasSampler {
             let screenPoint = CGPoint(x: loc.x, y: bounds.height - loc.y)
@@ -303,6 +310,7 @@ final class AreaSelectionNSView: NSView {
         }
         window?.makeFirstResponder(self)
         isShiftPressed = event.modifierFlags.contains(.shift)
+        isOptionPressed = event.modifierFlags.contains(.option)
         requestSamplerIfNeeded()
         moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
     }
@@ -316,7 +324,7 @@ final class AreaSelectionNSView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        updateShiftState(event.modifierFlags.contains(.shift))
+        updateModifierStates(from: event.modifierFlags)
         moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
     }
 
@@ -354,17 +362,26 @@ final class AreaSelectionNSView: NSView {
                 y: mouseLoc.y - screen.frame.origin.y
             )
         }
-        updateShiftState(event.modifierFlags.contains(.shift))
+        updateModifierStates(from: event.modifierFlags)
     }
 
-    private func updateShiftState(_ pressed: Bool) {
-        guard pressed != isShiftPressed else { return }
-        isShiftPressed = pressed
+    private func updateModifierStates(from flags: NSEvent.ModifierFlags) {
+        let shiftPressed = flags.contains(.shift)
+        let optionPressed = flags.contains(.option)
+        let shiftChanged = shiftPressed != isShiftPressed
+        let optionChanged = optionPressed != isOptionPressed
+        guard shiftChanged || optionChanged else { return }
+
+        isShiftPressed = shiftPressed
+        isOptionPressed = optionPressed
+
         guard mode != .windowOnly, !isDragging else { return }
-        if pressed, let loc = currentPoint {
-            hoveredWindow = windowUnderCursor(at: loc)
-        } else {
-            hoveredWindow = nil
+        if shiftChanged {
+            if shiftPressed, let loc = currentPoint {
+                hoveredWindow = windowUnderCursor(at: loc)
+            } else {
+                hoveredWindow = nil
+            }
         }
         syncLayers()
     }
@@ -461,9 +478,12 @@ final class AreaSelectionNSView: NSView {
         var hole: CGRect?
         var borderRect: CGRect?
         var badge: String?
+        var badgeColor: CGColor?
         var badgeNear: CGRect?
         var badgeOffset: CGPoint?
         var crosshairPoint: CGPoint?
+        var loupePoint: CGPoint?
+        var loupeImage: CGImage?
         var borderColor = CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
         var borderWidth: CGFloat = 2
 
@@ -497,15 +517,26 @@ final class AreaSelectionNSView: NSView {
                 badge = L("overlay.area_badge", Int(rect.width), Int(rect.height))
             }
         } else if !isWindowSelectionActive, let point = currentPoint {
-            crosshairPoint = point
             let screenPoint = CGPoint(x: point.x, y: bounds.height - point.y)
-            if mode == .areaOnly, hasSampler, let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
-                badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  \(hex)"
+            let sample = (mode == .areaOnly && hasSampler) ? sampler.getPixelSample(at: screenPoint, viewBounds: bounds) : nil
+            if let sample {
+                badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))  \(sample.hex)"
+                badgeColor = sample.cgColor
             } else {
                 badge = "X: \(Int(point.x))  Y: \(Int(screenPoint.y))"
             }
-            badgeNear = CGRect(x: point.x, y: point.y, width: 1, height: 1)
-            badgeOffset = CGPoint(x: 14, y: 14)
+
+            if isColorLoupeActive,
+               let capturedLoupe = sampler.makeLoupeImage(at: screenPoint, viewBounds: bounds, gridRadius: 7) {
+                loupePoint = point
+                loupeImage = capturedLoupe
+                badgeNear = CGRect(x: point.x - 60, y: point.y - 60, width: 120, height: 120)
+                badgeOffset = nil
+            } else {
+                crosshairPoint = point
+                badgeNear = CGRect(x: point.x, y: point.y, width: 1, height: 1)
+                badgeOffset = CGPoint(x: 14, y: 14)
+            }
         }
 
         let topSafeInset = max(0, screen.frame.maxY - screen.visibleFrame.maxY)
@@ -521,9 +552,12 @@ final class AreaSelectionNSView: NSView {
                 borderColor: borderColor,
                 borderWidth: borderWidth,
                 badge: badge,
+                badgeColor: badgeColor,
                 badgeNear: badgeNear,
                 badgeOffset: badgeOffset,
                 crosshairPoint: crosshairPoint,
+                loupePoint: loupePoint,
+                loupeImage: loupeImage,
                 tipText: tipText(),
                 scale: scale,
                 topSafeInset: topSafeInset

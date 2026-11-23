@@ -111,9 +111,24 @@ public final class ScreenPixelSampler: @unchecked Sendable {
         self.bIndex = bIdx
     }
 
-    /// Возвращает HEX строку цвета пикселя (#RRGGBB) в координатах viewBounds
-    public func getPixelHex(at screenPoint: CGPoint, viewBounds: CGRect) -> String? {
-        guard let data = pixelDataPtr,
+    public struct PixelSample: Sendable {
+        public let hex: String
+        public let r: UInt8
+        public let g: UInt8
+        public let b: UInt8
+
+        public var cgColor: CGColor {
+            CGColor(
+                srgbRed: CGFloat(r) / 255.0,
+                green: CGFloat(g) / 255.0,
+                blue: CGFloat(b) / 255.0,
+                alpha: 1.0
+            )
+        }
+    }
+
+    private func pixelCoordinates(at screenPoint: CGPoint, viewBounds: CGRect) -> (x: Int, y: Int)? {
+        guard pixelDataPtr != nil,
               pixelWidth > 0,
               pixelHeight > 0,
               viewBounds.width > 0,
@@ -132,14 +147,79 @@ public final class ScreenPixelSampler: @unchecked Sendable {
 
         let px = min(pixelWidth - 1, max(0, Int(relX * scaleX)))
         let py = min(pixelHeight - 1, max(0, Int(relY * scaleY)))
+        return (px, py)
+    }
 
+    private func rgbComponents(atX px: Int, y py: Int) -> (r: UInt8, g: UInt8, b: UInt8)? {
+        guard let data = pixelDataPtr,
+              px >= 0, px < pixelWidth,
+              py >= 0, py < pixelHeight else {
+            return nil
+        }
         let offset = py * pixelBytesPerRow + px * pixelBytesPerPixel
         let maxIdx = max(rIndex, max(gIndex, bIndex))
         guard offset >= 0, offset + maxIdx < pixelDataLength else { return nil }
+        return (data[offset + rIndex], data[offset + gIndex], data[offset + bIndex])
+    }
 
-        let r = data[offset + rIndex]
-        let g = data[offset + gIndex]
-        let b = data[offset + bIndex]
-        return String(format: "#%02X%02X%02X", r, g, b)
+    /// Возвращает HEX строку и компоненты цвета пикселя в координатах viewBounds
+    public func getPixelSample(at screenPoint: CGPoint, viewBounds: CGRect) -> PixelSample? {
+        guard let coords = pixelCoordinates(at: screenPoint, viewBounds: viewBounds),
+              let rgb = rgbComponents(atX: coords.x, y: coords.y) else {
+            return nil
+        }
+        let hex = String(format: "#%02X%02X%02X", rgb.r, rgb.g, rgb.b)
+        return PixelSample(hex: hex, r: rgb.r, g: rgb.g, b: rgb.b)
+    }
+
+    /// Возвращает HEX строку цвета пикселя (#RRGGBB) в координатах viewBounds
+    public func getPixelHex(at screenPoint: CGPoint, viewBounds: CGRect) -> String? {
+        getPixelSample(at: screenPoint, viewBounds: viewBounds)?.hex
+    }
+
+    /// Формирует квадратное изображение (2*gridRadius + 1)x(2*gridRadius + 1) вокруг пикселя для лупы
+    public func makeLoupeImage(at screenPoint: CGPoint, viewBounds: CGRect, gridRadius: Int = 7) -> CGImage? {
+        guard gridRadius >= 1,
+              let center = pixelCoordinates(at: screenPoint, viewBounds: viewBounds) else {
+            return nil
+        }
+
+        let side = gridRadius * 2 + 1
+        let bytesPerRow = side * 4
+        var rgba = [UInt8](repeating: 255, count: side * bytesPerRow)
+
+        for dy in -gridRadius...gridRadius {
+            let py = center.y + dy
+            let rowOffset = (dy + gridRadius) * bytesPerRow
+            for dx in -gridRadius...gridRadius {
+                let px = center.x + dx
+                let dstIdx = rowOffset + (dx + gridRadius) * 4
+                if let rgb = rgbComponents(atX: px, y: py) {
+                    rgba[dstIdx] = rgb.r
+                    rgba[dstIdx + 1] = rgb.g
+                    rgba[dstIdx + 2] = rgb.b
+                } else {
+                    rgba[dstIdx] = 24
+                    rgba[dstIdx + 1] = 24
+                    rgba[dstIdx + 2] = 24
+                }
+            }
+        }
+
+        let cfData = Data(rgba) as CFData
+        guard let provider = CGDataProvider(data: cfData) else { return nil }
+        return CGImage(
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 }

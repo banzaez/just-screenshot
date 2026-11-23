@@ -91,6 +91,11 @@ struct HotkeysSettingsTab: View {
                         onRecordAlternate: { newKey in
                             assignShortcut(newKey, to: .alternate(desc.action))
                         },
+                        onClearPrimary: desc.action == .history ? {
+                            clearConflictWarning()
+                            settings.shortcutHistory = nil
+                            AppWindowManager.shared.reloadGlobalHotkeys()
+                        } : nil,
                         onClearAlternate: {
                             clearConflictWarning()
                             setAlternateShortcut(nil, for: desc.action)

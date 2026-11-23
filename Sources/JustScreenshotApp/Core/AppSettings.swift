@@ -33,14 +33,14 @@ public final class AppSettings {
             primaryKey + "_alt"
         }
 
-        var defaultPrimary: ShortcutKey {
+        var defaultPrimary: ShortcutKey? {
             switch self {
             case .area: return DefaultShortcuts.area
             case .window: return DefaultShortcuts.window
             case .recording: return DefaultShortcuts.recording
             case .repeatCapture: return DefaultShortcuts.repeatCapture
             case .ocr: return DefaultShortcuts.ocr
-            case .history: return DefaultShortcuts.history
+            case .history: return nil
             }
         }
     }
@@ -130,8 +130,8 @@ public final class AppSettings {
         didSet { saveOptionalShortcut(shortcutRepeatAlt, key: ShortcutAction.repeatCapture.altKey) }
     }
 
-    public var shortcutHistory: ShortcutKey {
-        didSet { saveShortcut(shortcutHistory, key: ShortcutAction.history.primaryKey) }
+    public var shortcutHistory: ShortcutKey? {
+        didSet { saveOptionalShortcut(shortcutHistory, key: ShortcutAction.history.primaryKey) }
     }
     public var shortcutHistoryAlt: ShortcutKey? {
         didSet { saveOptionalShortcut(shortcutHistoryAlt, key: ShortcutAction.history.altKey) }
@@ -152,7 +152,6 @@ public final class AppSettings {
         public static let window = ShortcutKey(keyCode: UInt32(kVK_ANSI_4), keyChar: "4", modifiers: defaultMod)
         public static let recording = ShortcutKey(keyCode: UInt32(kVK_ANSI_3), keyChar: "3", modifiers: defaultMod)
         public static let repeatCapture = ShortcutKey(keyCode: UInt32(kVK_ANSI_5), keyChar: "5", modifiers: repeatMod)
-        public static let history = ShortcutKey(keyCode: UInt32(kVK_ANSI_H), keyChar: "H", modifiers: defaultMod)
         public static let ocr = ShortcutKey(keyCode: UInt32(kVK_ANSI_6), keyChar: "6", modifiers: repeatMod)
     }
 
@@ -180,14 +179,14 @@ public final class AppSettings {
         self.shortcutRepeat = Self.loadShortcut(key: ShortcutAction.repeatCapture.primaryKey, defaults: defaults) ?? DefaultShortcuts.repeatCapture
         self.shortcutRepeatAlt = Self.loadShortcut(key: ShortcutAction.repeatCapture.altKey, defaults: defaults)
 
-        self.shortcutHistory = Self.loadShortcut(key: ShortcutAction.history.primaryKey, defaults: defaults) ?? DefaultShortcuts.history
+        self.shortcutHistory = Self.loadShortcut(key: ShortcutAction.history.primaryKey, defaults: defaults)
         self.shortcutHistoryAlt = Self.loadShortcut(key: ShortcutAction.history.altKey, defaults: defaults)
 
         self.shortcutOCR = Self.loadShortcut(key: ShortcutAction.ocr.primaryKey, defaults: defaults) ?? DefaultShortcuts.ocr
         self.shortcutOCRAlt = Self.loadShortcut(key: ShortcutAction.ocr.altKey, defaults: defaults)
     }
 
-    public func shortcutPair(for action: ShortcutAction) -> (primary: ShortcutKey, alternate: ShortcutKey?) {
+    public func shortcutPair(for action: ShortcutAction) -> (primary: ShortcutKey?, alternate: ShortcutKey?) {
         switch action {
         case .area: return (shortcutArea, shortcutAreaAlt)
         case .window: return (shortcutWindow, shortcutWindowAlt)
@@ -202,7 +201,7 @@ public final class AppSettings {
     public func hasConflict(_ candidate: ShortcutKey, excludingTargetID: String) -> Bool {
         for action in ShortcutAction.allCases {
             let pair = shortcutPair(for: action)
-            if "primary:\(action.rawValue)" != excludingTargetID && pair.primary == candidate {
+            if "primary:\(action.rawValue)" != excludingTargetID, let primary = pair.primary, primary == candidate {
                 return true
             }
             if "alt:\(action.rawValue)" != excludingTargetID, let alt = pair.alternate, alt == candidate {
@@ -268,7 +267,7 @@ public final class AppSettings {
         shortcutRecordingAlt = nil
         shortcutRepeat = DefaultShortcuts.repeatCapture
         shortcutRepeatAlt = nil
-        shortcutHistory = DefaultShortcuts.history
+        shortcutHistory = nil
         shortcutHistoryAlt = nil
         shortcutOCR = DefaultShortcuts.ocr
         shortcutOCRAlt = nil

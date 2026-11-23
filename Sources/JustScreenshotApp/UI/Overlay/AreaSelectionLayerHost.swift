@@ -10,11 +10,18 @@ final class AreaSelectionLayerHost {
     private let crosshairLayer = CAShapeLayer()
     private let badgeBackgroundLayer = CAShapeLayer()
     private let badgeTextLayer = CATextLayer()
+    private let badgeColorLayer = CAShapeLayer()
+    private let loupeContainerLayer = CALayer()
+    private let loupeImageLayer = CALayer()
+    private let loupeReticleOuterLayer = CAShapeLayer()
+    private let loupeReticleInnerLayer = CAShapeLayer()
     private let tipBackgroundLayer = CAShapeLayer()
     private let tipTextLayer = CATextLayer()
 
     private let crosshairArmLength: CGFloat = 48
     private let crosshairGap: CGFloat = 6
+    private let loupeDiameter: CGFloat = 120
+    private let loupeGridSide: CGFloat = 15
 
     private static let badgeFont = NSFont.monospacedSystemFont(ofSize: 11, weight: .bold)
     private static let tipFont = NSFont.systemFont(ofSize: 13, weight: .medium)
@@ -28,9 +35,12 @@ final class AreaSelectionLayerHost {
         var borderColor: CGColor
         var borderWidth: CGFloat
         var badge: String?
+        var badgeColor: CGColor?
         var badgeNear: CGRect?
         var badgeOffset: CGPoint?
         var crosshairPoint: CGPoint?
+        var loupePoint: CGPoint?
+        var loupeImage: CGImage?
         var tipText: String
         var scale: CGFloat
         var topSafeInset: CGFloat = 0
@@ -56,10 +66,48 @@ final class AreaSelectionLayerHost {
         crosshairLayer.lineDashPattern = [4, 4]
         root.addSublayer(crosshairLayer)
 
+        loupeContainerLayer.bounds = CGRect(x: 0, y: 0, width: loupeDiameter, height: loupeDiameter)
+        loupeContainerLayer.cornerRadius = loupeDiameter / 2
+        loupeContainerLayer.masksToBounds = true
+        loupeContainerLayer.borderWidth = 2.5
+        loupeContainerLayer.borderColor = CGColor(gray: 1, alpha: 0.92)
+        loupeContainerLayer.backgroundColor = CGColor(gray: 0.1, alpha: 1)
+        loupeContainerLayer.isHidden = true
+
+        loupeImageLayer.frame = loupeContainerLayer.bounds
+        loupeImageLayer.magnificationFilter = .nearest
+        loupeImageLayer.minificationFilter = .nearest
+        loupeImageLayer.contentsGravity = .resize
+        loupeContainerLayer.addSublayer(loupeImageLayer)
+
+        let cellSize = loupeDiameter / loupeGridSide
+        let centerCell = CGRect(
+            x: (loupeDiameter - cellSize) / 2,
+            y: (loupeDiameter - cellSize) / 2,
+            width: cellSize,
+            height: cellSize
+        )
+        loupeReticleOuterLayer.fillColor = nil
+        loupeReticleOuterLayer.strokeColor = CGColor(gray: 0, alpha: 0.85)
+        loupeReticleOuterLayer.lineWidth = 1.5
+        loupeReticleOuterLayer.path = CGPath(rect: centerCell.insetBy(dx: -0.75, dy: -0.75), transform: nil)
+        loupeContainerLayer.addSublayer(loupeReticleOuterLayer)
+
+        loupeReticleInnerLayer.fillColor = nil
+        loupeReticleInnerLayer.strokeColor = CGColor(gray: 1, alpha: 0.95)
+        loupeReticleInnerLayer.lineWidth = 1.0
+        loupeReticleInnerLayer.path = CGPath(rect: centerCell, transform: nil)
+        loupeContainerLayer.addSublayer(loupeReticleInnerLayer)
+        root.addSublayer(loupeContainerLayer)
+
         badgeBackgroundLayer.fillColor = CGColor(gray: 0.08, alpha: 0.92)
         root.addSublayer(badgeBackgroundLayer)
         configureTextLayer(badgeTextLayer, font: Self.badgeFont, size: 11, scale: 2)
         root.addSublayer(badgeTextLayer)
+        badgeColorLayer.strokeColor = CGColor(gray: 1, alpha: 0.55)
+        badgeColorLayer.lineWidth = 1
+        badgeColorLayer.isHidden = true
+        root.addSublayer(badgeColorLayer)
 
         tipBackgroundLayer.fillColor = CGColor(gray: 0.1, alpha: 0.88)
         root.addSublayer(tipBackgroundLayer)
@@ -80,12 +128,20 @@ final class AreaSelectionLayerHost {
         borderLayer.lineWidth = snapshot.borderWidth
         updateBorder(rect: snapshot.borderRect, rounded: snapshot.isRoundedBorder)
         updateCrosshair(at: snapshot.crosshairPoint)
+        updateLoupe(at: snapshot.loupePoint, image: snapshot.loupeImage)
 
         if let badge = snapshot.badge, let near = snapshot.badgeNear {
-            showBadge(text: badge, near: near, offset: snapshot.badgeOffset, bounds: snapshot.bounds)
+            showBadge(
+                text: badge,
+                color: snapshot.badgeColor,
+                near: near,
+                offset: snapshot.badgeOffset,
+                bounds: snapshot.bounds
+            )
         } else {
             badgeBackgroundLayer.isHidden = true
             badgeTextLayer.isHidden = true
+            badgeColorLayer.isHidden = true
         }
 
         refreshTip(text: snapshot.tipText, bounds: snapshot.bounds, topSafeInset: snapshot.topSafeInset)
@@ -119,10 +175,28 @@ final class AreaSelectionLayerHost {
         let validScale = max(1, scale)
         guard validScale != appliedScale else { return }
         appliedScale = validScale
-        for layer in [dimLayer, maskLayer, borderLayer, crosshairLayer, badgeBackgroundLayer, tipBackgroundLayer] {
+        for layer in [
+            dimLayer,
+            maskLayer,
+            borderLayer,
+            crosshairLayer,
+            badgeBackgroundLayer,
+            badgeColorLayer,
+            loupeContainerLayer,
+            loupeImageLayer,
+            loupeReticleOuterLayer,
+            loupeReticleInnerLayer,
+            tipBackgroundLayer
+        ] {
             layer.contentsScale = validScale
             layer.actions = disabledLayerActions
         }
+        loupeImageLayer.actions = [
+            "contents": NSNull(),
+            "bounds": NSNull(),
+            "position": NSNull(),
+            "hidden": NSNull()
+        ]
         badgeTextLayer.contentsScale = validScale
         tipTextLayer.contentsScale = validScale
     }
@@ -214,13 +288,27 @@ final class AreaSelectionLayerHost {
         crosshairLayer.path = path
     }
 
-    private func showBadge(text: String, near rect: CGRect, offset: CGPoint?, bounds: CGRect) {
+    private func updateLoupe(at point: CGPoint?, image: CGImage?) {
+        guard let point, let image else {
+            loupeContainerLayer.isHidden = true
+            loupeImageLayer.contents = nil
+            return
+        }
+        loupeContainerLayer.isHidden = false
+        loupeContainerLayer.position = point
+        loupeImageLayer.contents = image
+    }
+
+    private func showBadge(text: String, color: CGColor?, near rect: CGRect, offset: CGPoint?, bounds: CGRect) {
         let attrs: [NSAttributedString.Key: Any] = [.font: Self.badgeFont]
         let size = (text as NSString).size(withAttributes: attrs)
         let padX: CGFloat = offset == nil ? 10 : 8
         let padY: CGFloat = offset == nil ? 4 : 3
-        let badgeW = size.width + padX * 2
-        let badgeH = size.height + padY * 2
+        let swatchSize: CGFloat = 12
+        let swatchGap: CGFloat = 6
+        let extraColorWidth = color != nil ? (swatchGap + swatchSize) : 0
+        let badgeW = size.width + extraColorWidth + padX * 2
+        let badgeH = max(size.height, color != nil ? swatchSize : 0) + padY * 2
 
         let rawX: CGFloat
         let rawY: CGFloat
@@ -247,9 +335,23 @@ final class AreaSelectionLayerHost {
         badgeTextLayer.string = text
         badgeTextLayer.frame = CGRect(
             x: badgeRect.origin.x + padX,
-            y: badgeRect.origin.y + padY,
+            y: badgeRect.origin.y + (badgeH - size.height) / 2,
             width: size.width,
             height: size.height
         )
+
+        if let color {
+            let swatchRect = CGRect(
+                x: badgeTextLayer.frame.maxX + swatchGap,
+                y: badgeRect.origin.y + (badgeH - swatchSize) / 2,
+                width: swatchSize,
+                height: swatchSize
+            )
+            badgeColorLayer.isHidden = false
+            badgeColorLayer.fillColor = color
+            badgeColorLayer.path = safeRoundedRectPath(swatchRect, radius: 3)
+        } else {
+            badgeColorLayer.isHidden = true
+        }
     }
 }

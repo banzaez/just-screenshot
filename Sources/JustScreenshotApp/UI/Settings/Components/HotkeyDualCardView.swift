@@ -6,11 +6,12 @@ struct HotkeyDualCardView: View {
     let iconColor: Color
     let title: String
     let subtitle: String
-    let primaryShortcut: ShortcutKey
+    let primaryShortcut: ShortcutKey?
     let altShortcut: ShortcutKey?
     @Binding var recordingTarget: HotkeyTarget?
     let onRecordPrimary: (ShortcutKey) -> Void
     let onRecordAlternate: (ShortcutKey) -> Void
+    let onClearPrimary: (() -> Void)?
     let onClearAlternate: () -> Void
 
     var body: some View {
@@ -46,7 +47,7 @@ struct HotkeyDualCardView: View {
                         shortcut: primaryShortcut,
                         recordingTarget: $recordingTarget,
                         onRecord: onRecordPrimary,
-                        onClear: nil
+                        onClear: primaryShortcut != nil ? onClearPrimary : nil
                     )
                 }
                 .frame(minWidth: 136, alignment: .trailing)
