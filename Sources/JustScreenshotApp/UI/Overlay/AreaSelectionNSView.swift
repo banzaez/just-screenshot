@@ -19,6 +19,8 @@ final class AreaSelectionNSView: NSView {
     private var currentPoint: CGPoint?
     private var hoveredWindow: SCWindow?
     private var trackingArea: NSTrackingArea?
+    private var localFlagsMonitor: Any?
+    private var globalFlagsMonitor: Any?
 
     private var isWindowSelectionActive: Bool {
         mode == .windowOnly || (isShiftPressed && !isDragging)
@@ -71,6 +73,10 @@ final class AreaSelectionNSView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    isolated deinit {
+        stopFlagsMonitoring()
+    }
+
     func reconfigure(
         screen: NSScreen,
         mode: OverlayMode,
@@ -112,6 +118,7 @@ final class AreaSelectionNSView: NSView {
         syncLayers()
         updateTrackingAreas()
         requestSamplerIfNeeded()
+        startFlagsMonitoring()
     }
 
     func updateSampler(_ sampler: ScreenPixelSampler) {
@@ -131,6 +138,7 @@ final class AreaSelectionNSView: NSView {
     }
 
     func resetOverlayState() {
+        stopFlagsMonitoring()
         isHidden = false
         isDragging = false
         isShiftPressed = false
@@ -310,6 +318,43 @@ final class AreaSelectionNSView: NSView {
     override func mouseMoved(with event: NSEvent) {
         updateShiftState(event.modifierFlags.contains(.shift))
         moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
+    }
+
+    private func startFlagsMonitoring() {
+        stopFlagsMonitoring()
+        guard mode != .windowOnly else { return }
+        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            self?.handleFlagsChanged(event)
+            return event
+        }
+        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleFlagsChanged(event)
+            }
+        }
+    }
+
+    private func stopFlagsMonitoring() {
+        if let localFlagsMonitor {
+            NSEvent.removeMonitor(localFlagsMonitor)
+            self.localFlagsMonitor = nil
+        }
+        if let globalFlagsMonitor {
+            NSEvent.removeMonitor(globalFlagsMonitor)
+            self.globalFlagsMonitor = nil
+        }
+    }
+
+    private func handleFlagsChanged(_ event: NSEvent) {
+        guard !isHidden, (window?.alphaValue ?? 0) > 0 else { return }
+        let mouseLoc = NSEvent.mouseLocation
+        if NSMouseInRect(mouseLoc, screen.frame, false) {
+            currentPoint = NSPoint(
+                x: mouseLoc.x - screen.frame.origin.x,
+                y: mouseLoc.y - screen.frame.origin.y
+            )
+        }
+        updateShiftState(event.modifierFlags.contains(.shift))
     }
 
     private func updateShiftState(_ pressed: Bool) {
