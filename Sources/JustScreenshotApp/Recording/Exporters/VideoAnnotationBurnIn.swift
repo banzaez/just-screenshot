@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import CoreImage
 import CoreImage.CIFilterBuiltins
+import CoreText
 import AVFoundation
 
 /// Плоский снимок аннотации для экспорта (без SwiftUI Color)
@@ -191,9 +192,23 @@ enum VideoAnnotationBurnIn {
         let frameExtent = current.extent
         guard frameExtent.width > 0, frameExtent.height > 0 else { return current }
 
-        // 1. Защитное размытие (CIGaussianBlur + маска)
+        // 1. Защитное размытие (CIGaussianBlur / CIPixellate + маска)
         if let blurMask {
-            current = applyBlurAnnotations(to: current, maskImage: blurMask, frameExtent: frameExtent)
+            current = applyBlurAnnotations(
+                to: current,
+                maskImage: blurMask,
+                frameExtent: frameExtent,
+                style: options.blurStyle,
+                intensity: options.blurIntensity
+            )
+        }
+
+        // 1.5. Подсветка кликов мыши (Click Ripples) в исходных координатах кадра до Smart Zoom
+        if options.showClicks, let cursorTrack = options.cursorTrack {
+            let ripples = cursorTrack.activeClickRipples(at: max(0, sourceTime))
+            if !ripples.isEmpty {
+                current = applyClickRipples(to: current, ripples: ripples)
+            }
         }
 
         // 2. Smart Zoom (координаты в CI с y=0 снизу: 1.0 - focus.y)
@@ -213,7 +228,35 @@ enum VideoAnnotationBurnIn {
             current = applyCrop(to: current, frameExtent: frameExtent, cropRect: crop, targetSize: cropTargetSize)
         }
 
-        // 4. Опциональный даунскейл для GIF / WebP
+        // 4. Постпроцессинг нажатых клавиш (Keystrokes HUD) с учётом Smart Zoom
+        if options.showKeystrokes,
+           let track = options.keystrokeTrack,
+           let active = track.activeKeystroke(at: max(0, sourceTime), filter: options.keystrokeFilter) {
+            let cameraState: (focus: CGPoint, zoom: CGFloat)
+            if options.smartZoom, let cursorTrack = options.cursorTrack, !cursorTrack.keyframes.isEmpty {
+                cameraState = cursorTrack.cameraState(
+                    at: max(0, sourceTime),
+                    scale: options.smartZoomScale,
+                    mode: options.smartZoomMode,
+                    autoZoomOutOnIdle: options.autoZoomOutOnIdle
+                )
+            } else {
+                cameraState = (CGPoint(x: 0.5, y: 0.5), options.smartZoom ? CGFloat(options.smartZoomScale.rawValue) : 1.0)
+            }
+            let resolvedPos = options.keystrokePosition.resolved(
+                cameraFocus: cameraState.focus,
+                cameraZoom: cameraState.zoom
+            )
+            current = applyKeystrokeOverlay(
+                to: current,
+                text: active.text,
+                alpha: active.alpha,
+                position: resolvedPos,
+                size: options.keystrokeSize
+            )
+        }
+
+        // 5. Опциональный даунскейл для GIF / WebP
         if let maxDimension, maxDimension > 0 {
             let maxSide = max(current.extent.width, current.extent.height)
             if maxSide > maxDimension {
@@ -249,25 +292,54 @@ enum VideoAnnotationBurnIn {
     nonisolated private static func applyBlurAnnotations(
         to image: CIImage,
         maskImage: CIImage,
-        frameExtent: CGRect
+        frameExtent: CGRect,
+        style: VideoBlurStyle,
+        intensity: VideoBlurIntensity
     ) -> CIImage {
-        let sigma = max(14.0, min(32.0, max(frameExtent.width, frameExtent.height) * 0.017))
-        var frosted = image
-            .clampedToExtent()
-            .applyingGaussianBlur(sigma: sigma)
-            .cropped(to: frameExtent)
+        let baseSigma = max(14.0, min(32.0, max(frameExtent.width, frameExtent.height) * 0.017))
+        let sigma = baseSigma * CGFloat(intensity.rawValue)
 
-        // Лёгкий эффект матового стекла (frosted glass) поверх размытия
-        let colorControls = CIFilter.colorControls()
-        colorControls.inputImage = frosted
-        colorControls.saturation = 0.85
-        colorControls.brightness = 0.03
-        if let adjusted = colorControls.outputImage?.cropped(to: frameExtent) {
-            frosted = adjusted
+        let stylized: CIImage
+        switch style {
+        case .frostedGlass:
+            let blurred = image
+                .clampedToExtent()
+                .applyingGaussianBlur(sigma: sigma)
+                .cropped(to: frameExtent)
+            let colorControls = CIFilter.colorControls()
+            colorControls.inputImage = blurred
+            colorControls.saturation = 0.85
+            colorControls.brightness = 0.03
+            stylized = colorControls.outputImage?.cropped(to: frameExtent) ?? blurred
+
+        case .darkGlass:
+            let blurred = image
+                .clampedToExtent()
+                .applyingGaussianBlur(sigma: sigma)
+                .cropped(to: frameExtent)
+            let colorControls = CIFilter.colorControls()
+            colorControls.inputImage = blurred
+            colorControls.saturation = 0.75
+            colorControls.brightness = -0.08
+            stylized = colorControls.outputImage?.cropped(to: frameExtent) ?? blurred
+
+        case .gaussian:
+            stylized = image
+                .clampedToExtent()
+                .applyingGaussianBlur(sigma: sigma)
+                .cropped(to: frameExtent)
+
+        case .pixelate:
+            let baseBlock = max(8.0, min(42.0, max(frameExtent.width, frameExtent.height) * 0.015))
+            let pixellate = CIFilter.pixellate()
+            pixellate.inputImage = image.clampedToExtent()
+            pixellate.scale = Float(baseBlock * CGFloat(intensity.rawValue))
+            pixellate.center = CGPoint(x: frameExtent.midX, y: frameExtent.midY)
+            stylized = pixellate.outputImage?.cropped(to: frameExtent) ?? image
         }
 
         let blend = CIFilter.blendWithMask()
-        blend.inputImage = frosted
+        blend.inputImage = stylized
         blend.backgroundImage = image
         blend.maskImage = maskImage
         return blend.outputImage?.cropped(to: frameExtent) ?? image
@@ -359,5 +431,169 @@ enum VideoAnnotationBurnIn {
             .cropped(to: cropBounds)
             .transformed(by: CGAffineTransform(translationX: -cropX, y: -cropY))
             .cropped(to: CGRect(origin: .zero, size: CGSize(width: cropW, height: cropH)))
+    }
+
+    nonisolated private static func applyKeystrokeOverlay(
+        to image: CIImage,
+        text: String,
+        alpha: CGFloat,
+        position: KeystrokePosition,
+        size: KeystrokeSize
+    ) -> CIImage {
+        let extent = image.extent
+        let width = extent.width
+        let height = extent.height
+        guard width > 24, height > 24 else { return image }
+
+        let clampedAlpha = min(1.0, max(0.0, alpha))
+        guard clampedAlpha > 0.001 else { return image }
+
+        let uiScale = max(0.75, min(2.5, height / 720.0)) * CGFloat(size.rawValue)
+        let fontSize = 18.0 * uiScale
+        let font = CTFontCreateWithName("HelveticaNeue-Bold" as CFString, fontSize, nil)
+        let textColor = CGColor(srgbRed: 1, green: 1, blue: 1, alpha: clampedAlpha)
+        let attrs: [CFString: Any] = [
+            kCTFontAttributeName: font,
+            kCTForegroundColorAttributeName: textColor
+        ]
+        guard let attrString = CFAttributedStringCreate(nil, text as CFString, attrs as CFDictionary) else {
+            return image
+        }
+        let line = CTLineCreateWithAttributedString(attrString)
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+        let textHeight = ascent + descent
+
+        let hPad = 20.0 * uiScale
+        let vPad = 12.0 * uiScale
+        let edgeMargin = max(12.0, 24.0 * max(0.75, min(2.5, height / 720.0)))
+        let badgeWidth = min(max(24.0, width - 16.0), textWidth + hPad * 2)
+        let badgeHeight = min(max(20.0, height - 16.0), textHeight + vPad * 2)
+
+        let badgeX: CGFloat
+        let badgeY: CGFloat
+        switch position {
+        case .bottomCenter:
+            badgeX = max(8.0, (width - badgeWidth) / 2.0)
+            badgeY = min(height - badgeHeight - 8.0, edgeMargin + 12.0)
+        case .bottomLeft:
+            badgeX = min(max(8.0, edgeMargin), max(8.0, width - badgeWidth - 8.0))
+            badgeY = min(height - badgeHeight - 8.0, edgeMargin + 12.0)
+        case .bottomRight:
+            badgeX = max(8.0, width - badgeWidth - edgeMargin)
+            badgeY = min(height - badgeHeight - 8.0, edgeMargin + 12.0)
+        case .topCenter:
+            badgeX = max(8.0, (width - badgeWidth) / 2.0)
+            badgeY = max(8.0, height - badgeHeight - edgeMargin - 12.0)
+        }
+
+        // Выделяем CGContext только под сам бейдж + тень вместо полного кадра
+        let shadowPad = ceil(18.0 * uiScale)
+        let overlayW = max(1, Int((badgeWidth + shadowPad * 2).rounded(.up)))
+        let overlayH = max(1, Int((badgeHeight + shadowPad * 2).rounded(.up)))
+        guard let ctx = CGContext(
+            data: nil,
+            width: overlayW,
+            height: overlayH,
+            bitsPerComponent: 8,
+            bytesPerRow: overlayW * 4,
+            space: srgbColorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+
+        let localBadgeRect = CGRect(x: shadowPad, y: shadowPad, width: badgeWidth, height: badgeHeight)
+        let cornerRadius = min(10.0 * uiScale, min(badgeWidth, badgeHeight) / 2.0)
+        let path = CGPath(roundedRect: localBadgeRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+        ctx.saveGState()
+        ctx.setShadow(offset: CGSize(width: 0, height: -3 * uiScale), blur: 12 * uiScale, color: CGColor(gray: 0, alpha: 0.65 * clampedAlpha))
+        ctx.setFillColor(CGColor(srgbRed: 0.07, green: 0.07, blue: 0.09, alpha: 0.94 * clampedAlpha))
+        ctx.addPath(path)
+        ctx.fillPath()
+
+        ctx.setStrokeColor(CGColor(gray: 1.0, alpha: 0.35 * clampedAlpha))
+        ctx.setLineWidth(1.5 * uiScale)
+        ctx.addPath(path)
+        ctx.strokePath()
+        ctx.restoreGState()
+
+        let textX = localBadgeRect.origin.x + max(4.0, (badgeWidth - textWidth) / 2.0)
+        let textY = localBadgeRect.origin.y + (badgeHeight - textHeight) / 2.0 + descent
+        ctx.textPosition = CGPoint(x: textX, y: textY)
+        CTLineDraw(line, ctx)
+
+        guard let cgOverlay = ctx.makeImage() else { return image }
+        let overlayCI = CIImage(cgImage: cgOverlay)
+            .transformed(by: CGAffineTransform(translationX: badgeX - shadowPad, y: badgeY - shadowPad))
+        return overlayCI.composited(over: image).cropped(to: extent)
+    }
+
+    nonisolated private static func applyClickRipples(
+        to image: CIImage,
+        ripples: [ActiveClickRipple]
+    ) -> CIImage {
+        let extent = image.extent
+        let width = extent.width
+        let height = extent.height
+        guard width > 16, height > 16 else { return image }
+
+        let uiScale = max(0.75, min(2.5, height / 720.0))
+        let strokeWidth = 2.2 * uiScale
+        var unionRect = CGRect.null
+        var drawItems: [(rect: CGRect, alpha: CGFloat, isRightClick: Bool)] = []
+        drawItems.reserveCapacity(ripples.count)
+
+        for ripple in ripples {
+            let alpha = max(0.0, 1.0 - ripple.progress)
+            guard alpha > 0.001 else { continue }
+            let radius = (8.0 + ripple.progress * 24.0) * uiScale
+            let cx = min(1.0, max(0.0, ripple.point.x)) * width
+            // В CoreGraphics y=0 снизу, а CursorTrack хранит y=0 сверху
+            let cy = (1.0 - min(1.0, max(0.0, ripple.point.y))) * height
+            let rect = CGRect(x: cx - radius, y: cy - radius, width: radius * 2, height: radius * 2)
+            let padded = rect.insetBy(dx: -strokeWidth, dy: -strokeWidth)
+            unionRect = unionRect.union(padded)
+            drawItems.append((rect, alpha, ripple.isRightClick))
+        }
+
+        guard !drawItems.isEmpty, !unionRect.isNull else { return image }
+        let clippedBox = unionRect.intersection(extent).integral
+        let boxW = Int(clippedBox.width)
+        let boxH = Int(clippedBox.height)
+        guard boxW > 0, boxH > 0 else { return image }
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: boxW,
+            height: boxH,
+            bitsPerComponent: 8,
+            bytesPerRow: boxW * 4,
+            space: srgbColorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            return image
+        }
+
+        ctx.translateBy(x: -clippedBox.origin.x, y: -clippedBox.origin.y)
+        for item in drawItems {
+            if item.isRightClick {
+                ctx.setFillColor(CGColor(srgbRed: 1.0, green: 0.6, blue: 0.2, alpha: 0.26 * item.alpha))
+                ctx.setStrokeColor(CGColor(srgbRed: 1.0, green: 0.65, blue: 0.25, alpha: 0.85 * item.alpha))
+            } else {
+                ctx.setFillColor(CGColor(srgbRed: 0.2, green: 0.6, blue: 1.0, alpha: 0.24 * item.alpha))
+                ctx.setStrokeColor(CGColor(srgbRed: 0.35, green: 0.72, blue: 1.0, alpha: 0.85 * item.alpha))
+            }
+            ctx.setLineWidth(strokeWidth)
+            ctx.fillEllipse(in: item.rect)
+            ctx.strokeEllipse(in: item.rect)
+        }
+
+        guard let cgOverlay = ctx.makeImage() else { return image }
+        let overlayCI = CIImage(cgImage: cgOverlay)
+            .transformed(by: CGAffineTransform(translationX: clippedBox.origin.x, y: clippedBox.origin.y))
+        return overlayCI.composited(over: image).cropped(to: extent)
     }
 }

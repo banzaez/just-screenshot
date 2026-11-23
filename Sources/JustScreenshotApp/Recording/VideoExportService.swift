@@ -95,7 +95,7 @@ public final class VideoExportService: @unchecked Sendable {
 
         let burnIn = BurnInAnnotation.from(options.annotations)
         let hasCrop = options.cropRect.map { $0.width > 0 && $0.height > 0 } ?? false
-        let needsComposition = hasCrop || !burnIn.isEmpty || options.smartZoom
+        let needsComposition = hasCrop || !burnIn.isEmpty || options.smartZoom || options.showKeystrokes || options.showClicks
 
         var videoComposition: AVMutableVideoComposition?
 

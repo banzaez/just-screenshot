@@ -4,6 +4,8 @@ import SwiftUI
 struct VideoAnnotationItemView: View {
     let item: VideoAnnotationItem
     let videoRect: CGRect
+    let blurStyle: VideoBlurStyle
+    let blurIntensity: VideoBlurIntensity
     let isSelected: Bool
     let onSelect: () -> Void
     let onUpdate: (VideoAnnotationItem) -> Void
@@ -22,10 +24,18 @@ struct VideoAnnotationItemView: View {
 
         ZStack {
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(.ultraThinMaterial)
+                .fill(blurMaterial)
                 .overlay(
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
+                        .fill(blurTintColor)
+                )
+                .overlay(
+                    Group {
+                        if blurStyle == .pixelate {
+                            PixelGridPatternView()
+                                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        }
+                    }
                 )
                 .frame(width: itemWidth, height: itemHeight)
                 .overlay(
@@ -175,5 +185,52 @@ struct VideoAnnotationItemView: View {
                         resizeInitialRect = nil
                     }
             )
+    }
+
+    private var blurMaterial: Material {
+        switch (blurStyle, blurIntensity) {
+        case (.gaussian, .light): return .ultraThinMaterial
+        case (.gaussian, .medium): return .thinMaterial
+        case (.gaussian, .heavy), (.gaussian, .ultra): return .regularMaterial
+        case (.darkGlass, .heavy), (.darkGlass, .ultra): return .regularMaterial
+        default: return .ultraThinMaterial
+        }
+    }
+
+    private var blurTintColor: Color {
+        let strength = min(1.0, max(0.3, blurIntensity.rawValue / 2.2))
+        switch blurStyle {
+        case .frostedGlass:
+            return Color.white.opacity(0.05 + 0.12 * strength)
+        case .darkGlass:
+            return Color.black.opacity(0.26 + 0.24 * strength)
+        case .gaussian:
+            return Color.white.opacity(0.02 + 0.05 * strength)
+        case .pixelate:
+            return Color.white.opacity(0.04 + 0.08 * strength)
+        }
+    }
+}
+
+private struct PixelGridPatternView: View {
+    var body: some View {
+        Canvas { context, size in
+            let step: CGFloat = 10
+            var path = Path()
+            var x: CGFloat = step
+            while x < size.width {
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                x += step
+            }
+            var y: CGFloat = step
+            while y < size.height {
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+                y += step
+            }
+            context.stroke(path, with: .color(.white.opacity(0.14)), lineWidth: 0.75)
+        }
+        .allowsHitTesting(false)
     }
 }

@@ -65,27 +65,73 @@ public struct VideoEditorToolbarView: View {
             .fixedSize()
             .help(L("video_editor.crop_help"))
 
-            // Размытие конфиденциальных данных (Blur / Redact)
-            Button {
-                model.addAnnotation(type: .blur)
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "eye.slash")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(L("video_editor.type_blur"))
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                        .fixedSize()
+            // Размытие конфиденциальных данных (Blur / Redact) с выбором стиля и плотности
+            HStack(spacing: 0) {
+                Button {
+                    model.addAnnotation(type: .blur)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "eye.slash")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(L("video_editor.type_blur"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .padding(.leading, 10)
+                    .padding(.trailing, 4)
+                    .frame(height: 30)
+                    .foregroundStyle(model.hasBlurAnnotations ? Color.white : Color.primary)
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .foregroundStyle(model.hasBlurAnnotations ? Color.white : Color.primary)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(model.hasBlurAnnotations ? Color.indigo.opacity(0.85) : Color.white.opacity(0.08))
-                )
+                .buttonStyle(.plain)
+                .fixedSize()
+
+                Menu {
+                    Section(L("video_editor.blur_style_header")) {
+                        ForEach(VideoBlurStyle.allCases) { style in
+                            Button {
+                                model.blurStyle = style
+                            } label: {
+                                HStack {
+                                    Text(blurStyleTitle(style))
+                                    if model.blurStyle == style {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Section(L("video_editor.blur_intensity_header")) {
+                        ForEach(VideoBlurIntensity.allCases) { intensity in
+                            Button {
+                                model.blurIntensity = intensity
+                            } label: {
+                                HStack {
+                                    Text(blurIntensityTitle(intensity))
+                                    if model.blurIntensity == intensity {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(model.hasBlurAnnotations ? Color.white.opacity(0.85) : Color.secondary)
+                        .padding(.horizontal, 6)
+                        .frame(height: 30)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            .buttonStyle(.plain)
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(model.hasBlurAnnotations ? Color.indigo.opacity(0.85) : Color.white.opacity(0.08))
+            )
             .fixedSize()
             .help(L("video_editor.blur_help"))
 
@@ -180,6 +226,130 @@ public struct VideoEditorToolbarView: View {
             )
             .fixedSize()
             .help(L("video_editor.smart_zoom_help"))
+
+            // Постпроцессинг нажатых клавиш (Keystrokes HUD) с настройками
+            HStack(spacing: 0) {
+                Button {
+                    model.isKeystrokesEnabled.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "keyboard")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(L("video_editor.keystrokes"))
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                    .padding(.leading, 9)
+                    .padding(.trailing, 4)
+                    .frame(height: 30)
+                    .foregroundStyle(model.isKeystrokesEnabled ? Color.white : Color.primary)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+
+                Menu {
+                    Toggle(L("video_editor.keystrokes_enable"), isOn: $model.isKeystrokesEnabled)
+
+                    Divider()
+
+                    Section(L("video_editor.keystrokes_filter_header")) {
+                        ForEach(KeystrokeDisplayFilter.allCases) { filter in
+                            Button {
+                                model.keystrokeFilter = filter
+                                if !model.isKeystrokesEnabled {
+                                    model.isKeystrokesEnabled = true
+                                }
+                            } label: {
+                                HStack {
+                                    Text(keystrokeFilterTitle(filter))
+                                    if model.keystrokeFilter == filter {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Section(L("video_editor.keystrokes_position_header")) {
+                        ForEach(KeystrokePosition.allCases) { position in
+                            Button {
+                                model.keystrokePosition = position
+                                if !model.isKeystrokesEnabled {
+                                    model.isKeystrokesEnabled = true
+                                }
+                            } label: {
+                                HStack {
+                                    Text(keystrokePositionTitle(position))
+                                    if model.keystrokePosition == position {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    Section(L("video_editor.keystrokes_size_header")) {
+                        ForEach(KeystrokeSize.allCases) { size in
+                            Button {
+                                model.keystrokeSize = size
+                                if !model.isKeystrokesEnabled {
+                                    model.isKeystrokesEnabled = true
+                                }
+                            } label: {
+                                HStack {
+                                    Text(keystrokeSizeTitle(size))
+                                    if model.keystrokeSize == size {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(model.isKeystrokesEnabled ? Color.white.opacity(0.85) : Color.secondary)
+                        .padding(.horizontal, 6)
+                        .frame(height: 30)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(model.isKeystrokesEnabled ? Color.teal.opacity(0.85) : Color.white.opacity(0.08))
+            )
+            .fixedSize()
+            .help(L("video_editor.keystrokes_help"))
+
+            // Постпроцессинг подсветки кликов мыши (Click Ripples)
+            Button {
+                model.isClickHighlightsEnabled.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "cursorarrow.rays")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(L("video_editor.clicks"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .foregroundStyle(model.isClickHighlightsEnabled ? Color.white : Color.primary)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(model.isClickHighlightsEnabled ? Color.cyan.opacity(0.8) : Color.white.opacity(0.08))
+                )
+            }
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help(L("video_editor.clicks_help"))
 
             // Скорость воспроизведения
             Menu {
@@ -332,6 +502,48 @@ public struct VideoEditorToolbarView: View {
         switch mode {
         case .onClicks: return L("video_editor.smart_zoom_mode_clicks")
         case .continuous: return L("video_editor.smart_zoom_mode_continuous")
+        }
+    }
+
+    private func blurStyleTitle(_ style: VideoBlurStyle) -> String {
+        switch style {
+        case .frostedGlass: return L("video_editor.blur_style_frosted")
+        case .darkGlass: return L("video_editor.blur_style_dark")
+        case .gaussian: return L("video_editor.blur_style_gaussian")
+        case .pixelate: return L("video_editor.blur_style_pixelate")
+        }
+    }
+
+    private func blurIntensityTitle(_ intensity: VideoBlurIntensity) -> String {
+        switch intensity {
+        case .light: return L("video_editor.blur_intensity_light")
+        case .medium: return L("video_editor.blur_intensity_medium")
+        case .heavy: return L("video_editor.blur_intensity_heavy")
+        case .ultra: return L("video_editor.blur_intensity_ultra")
+        }
+    }
+
+    private func keystrokeFilterTitle(_ filter: KeystrokeDisplayFilter) -> String {
+        switch filter {
+        case .all: return L("video_editor.keystrokes_filter_all")
+        case .shortcutsOnly: return L("video_editor.keystrokes_filter_shortcuts")
+        }
+    }
+
+    private func keystrokePositionTitle(_ position: KeystrokePosition) -> String {
+        switch position {
+        case .bottomCenter: return L("video_editor.keystrokes_pos_bottom_center")
+        case .bottomLeft: return L("video_editor.keystrokes_pos_bottom_left")
+        case .bottomRight: return L("video_editor.keystrokes_pos_bottom_right")
+        case .topCenter: return L("video_editor.keystrokes_pos_top_center")
+        }
+    }
+
+    private func keystrokeSizeTitle(_ size: KeystrokeSize) -> String {
+        switch size {
+        case .compact: return L("video_editor.keystrokes_size_compact")
+        case .standard: return L("video_editor.keystrokes_size_standard")
+        case .large: return L("video_editor.keystrokes_size_large")
         }
     }
 }

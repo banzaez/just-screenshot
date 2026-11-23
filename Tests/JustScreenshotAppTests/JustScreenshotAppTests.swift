@@ -363,6 +363,66 @@ struct SmartZoomTests {
         #expect(abs(midTransition.zoom - 1.5) < 0.001)
         #expect(abs(midTransition.focus.x - 0.5) < 0.01)
     }
+
+    @Test func testKeystrokeTrackActiveTimingAndFade() {
+        let track = KeystrokeTrack(events: [
+            KeystrokeEvent(timestamp: 1.0, text: "⌘ C"),
+            KeystrokeEvent(timestamp: 3.0, text: "⌘ V")
+        ])
+
+        #expect(track.activeKeystroke(at: 0.5) == nil)
+
+        let active = track.activeKeystroke(at: 1.5)
+        #expect(active?.text == "⌘ C")
+        #expect(active?.alpha == 1.0)
+
+        let fading = track.activeKeystroke(at: 2.2)
+        #expect(fading?.text == "⌘ C")
+        #expect((fading?.alpha ?? 0) > 0.1 && (fading?.alpha ?? 1) < 0.9)
+
+        #expect(track.activeKeystroke(at: 2.5) == nil)
+        #expect(track.activeKeystroke(at: 3.1)?.text == "⌘ V")
+    }
+
+    @Test func testKeystrokeFilterAndSmartZoomAvoidance() {
+        let track = KeystrokeTrack(events: [
+            KeystrokeEvent(timestamp: 1.0, text: "⌘ C"),
+            KeystrokeEvent(timestamp: 1.3, text: "A")
+        ])
+
+        // В режиме .all на t = 1.4 активна последняя клавиша "A"
+        #expect(track.activeKeystroke(at: 1.4, filter: .all)?.text == "A")
+        // В режиме .shortcutsOnly одиночная клавиша "A" игнорируется, остается "⌘ C"
+        #expect(track.activeKeystroke(at: 1.4, filter: .shortcutsOnly)?.text == "⌘ C")
+
+        // Когда Smart Zoom сфокусирован у нижнего края, нижняя плашка переносится наверх
+        #expect(KeystrokePosition.bottomCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.85), cameraZoom: 1.35) == .topCenter)
+        #expect(KeystrokePosition.topCenter.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.15), cameraZoom: 1.35) == .bottomCenter)
+        // Без активного зума позиция сохраняется
+        #expect(KeystrokePosition.bottomLeft.resolved(cameraFocus: CGPoint(x: 0.5, y: 0.9), cameraZoom: 1.0) == .bottomLeft)
+    }
+
+    @Test func testCursorTrackActiveClickRipples() {
+        let track = CursorTrack(keyframes: [
+            CursorKeyframe(timestamp: 1.0, point: CGPoint(x: 0.2, y: 0.3), isClick: true, isRightClick: false),
+            CursorKeyframe(timestamp: 1.2, point: CGPoint(x: 0.8, y: 0.7), isClick: true, isRightClick: true)
+        ])
+
+        #expect(track.activeClickRipples(at: 0.9).isEmpty)
+
+        let both = track.activeClickRipples(at: 1.3)
+        #expect(both.count == 2)
+        let hasLeft = both.contains(where: { !$0.isRightClick && abs($0.point.x - 0.2) < 0.001 })
+        let hasRight = both.contains(where: { $0.isRightClick && abs($0.point.x - 0.8) < 0.001 })
+        #expect(hasLeft)
+        #expect(hasRight)
+
+        let onlySecond = track.activeClickRipples(at: 1.55)
+        #expect(onlySecond.count == 1)
+        #expect(onlySecond[0].isRightClick)
+
+        #expect(track.activeClickRipples(at: 2.0).isEmpty)
+    }
 }
 
 // MARK: - Capture Geometry, Sampler, Shortcuts & Formatting Tests

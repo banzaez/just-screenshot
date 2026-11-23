@@ -20,20 +20,9 @@ struct RecordingSettingsTab: View {
                         isOn: $settings.showFloatingBarDuringRecording
                     )
 
-                    GlassDivider()
+                    if !permissions.accessibilityGranted {
+                        GlassDivider()
 
-                    GlassToggleRow(
-                        title: L("settings.recording.show_keystrokes"),
-                        subtitle: L("settings.recording.show_keystrokes_desc"),
-                        isOn: $settings.showKeystrokesDuringRecording
-                    )
-                    .onChange(of: settings.showKeystrokesDuringRecording) { _, newValue in
-                        if newValue && !permissions.accessibilityGranted {
-                            permissions.requestAccessibility()
-                        }
-                    }
-
-                    if settings.showKeystrokesDuringRecording && !permissions.accessibilityGranted {
                         HStack(spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
@@ -64,14 +53,6 @@ struct RecordingSettingsTab: View {
                                 .strokeBorder(Color.orange.opacity(0.3), lineWidth: 1)
                         )
                     }
-
-                    GlassDivider()
-
-                    GlassToggleRow(
-                        title: L("settings.recording.show_clicks"),
-                        subtitle: L("settings.recording.show_clicks_desc"),
-                        isOn: $settings.showClicksDuringRecording
-                    )
                 }
             }
 

@@ -74,7 +74,7 @@ extension AppWindowManager {
         managed.closeSilently(runOnClose: true)
     }
 
-    public func openVideoEditor(videoURL: URL, cursorTrack: CursorTrack? = nil) {
+    public func openVideoEditor(videoURL: URL, cursorTrack: CursorTrack? = nil, keystrokeTrack: KeystrokeTrack? = nil) {
         let standardizedPath = videoURL.standardizedFileURL.path
         if let existingPair = videoEditors.first(where: { $0.value.window.representedURL?.standardizedFileURL.path == standardizedPath }) {
             existingPair.value.bringToFront()
@@ -83,7 +83,8 @@ extension AppWindowManager {
 
         let editorID = UUID()
         let resolvedTrack = cursorTrack ?? CursorTrackRecorder.loadTrack(forVideoURL: videoURL)
-        let model = VideoEditorModel(videoURL: videoURL, cursorTrack: resolvedTrack)
+        let resolvedKeys = keystrokeTrack ?? KeystrokeTrackRecorder.loadTrack(forVideoURL: videoURL)
+        let model = VideoEditorModel(videoURL: videoURL, cursorTrack: resolvedTrack, keystrokeTrack: resolvedKeys)
         let view = VideoEditorWindowView(
             model: model,
             onDelete: { [weak self] in

@@ -13,10 +13,16 @@ final class AreaSelectionNSView: NSView {
     private var onNeedBackgroundSample: (() -> Void)?
 
     private var isDragging = false
+    private var isShiftPressed = false
+    private var isWindowPickClick = false
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
     private var hoveredWindow: SCWindow?
     private var trackingArea: NSTrackingArea?
+
+    private var isWindowSelectionActive: Bool {
+        mode == .windowOnly || (isShiftPressed && !isDragging)
+    }
 
     private var sampler: ScreenPixelSampler
     private var hasSampler = false
@@ -85,6 +91,8 @@ final class AreaSelectionNSView: NSView {
         self.onCancel = onCancel
         self.onNeedBackgroundSample = onNeedBackgroundSample
         isDragging = false
+        isWindowPickClick = false
+        isShiftPressed = NSEvent.modifierFlags.contains(.shift)
         startPoint = nil
         hoveredWindow = nil
 
@@ -94,7 +102,7 @@ final class AreaSelectionNSView: NSView {
                 x: mouseLoc.x - screen.frame.origin.x,
                 y: mouseLoc.y - screen.frame.origin.y
             )
-            if mode == .windowOnly, let loc = currentPoint {
+            if isWindowSelectionActive, let loc = currentPoint {
                 hoveredWindow = windowUnderCursor(at: loc)
             }
         } else {
@@ -109,13 +117,13 @@ final class AreaSelectionNSView: NSView {
     func updateSampler(_ sampler: ScreenPixelSampler) {
         self.sampler = sampler
         hasSampler = true
-        guard mode != .windowOnly, !isDragging else { return }
+        guard !isWindowSelectionActive, !isDragging else { return }
         syncLayers()
     }
 
     func updateVisibleWindows(_ windows: [SCWindow], alreadySorted: Bool = false) {
         visibleWindows = (windows.isEmpty || alreadySorted) ? windows : Self.sortedFrontToBack(windows)
-        guard mode == .windowOnly else { return }
+        guard isWindowSelectionActive else { return }
         if let loc = currentPoint {
             hoveredWindow = windowUnderCursor(at: loc)
         }
@@ -125,6 +133,8 @@ final class AreaSelectionNSView: NSView {
     func resetOverlayState() {
         isHidden = false
         isDragging = false
+        isShiftPressed = false
+        isWindowPickClick = false
         startPoint = nil
         currentPoint = nil
         hoveredWindow = nil
@@ -191,10 +201,16 @@ final class AreaSelectionNSView: NSView {
         }
     }
 
+    override func flagsChanged(with event: NSEvent) {
+        super.flagsChanged(with: event)
+        updateShiftState(event.modifierFlags.contains(.shift))
+    }
+
     override func mouseDown(with event: NSEvent) {
         let loc = clampedPoint(convert(event.locationInWindow, from: nil))
+        isShiftPressed = event.modifierFlags.contains(.shift)
 
-        if event.modifierFlags.contains(.option), mode == .areaOnly, hasSampler {
+        if event.modifierFlags.contains(.option), !isShiftPressed, mode == .areaOnly, hasSampler {
             let screenPoint = CGPoint(x: loc.x, y: bounds.height - loc.y)
             if let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
                 ImageExporter.copyText(hex)
@@ -204,6 +220,17 @@ final class AreaSelectionNSView: NSView {
             }
         }
 
+        if isWindowSelectionActive {
+            isWindowPickClick = true
+            startPoint = nil
+            currentPoint = loc
+            isDragging = false
+            hoveredWindow = windowUnderCursor(at: loc)
+            syncLayers()
+            return
+        }
+
+        isWindowPickClick = false
         startPoint = loc
         currentPoint = loc
         isDragging = false
@@ -212,7 +239,7 @@ final class AreaSelectionNSView: NSView {
 
     override func mouseDragged(with event: NSEvent) {
         let loc = clampedPoint(convert(event.locationInWindow, from: nil))
-        if mode == .windowOnly {
+        if isWindowSelectionActive || isWindowPickClick {
             moveCursor(to: loc)
             return
         }
@@ -227,8 +254,9 @@ final class AreaSelectionNSView: NSView {
     override func mouseUp(with event: NSEvent) {
         let loc = clampedPoint(convert(event.locationInWindow, from: nil))
 
-        if mode == .windowOnly {
-            if let hovered = hoveredWindow {
+        if isWindowSelectionActive || isWindowPickClick {
+            isWindowPickClick = false
+            if let hovered = hoveredWindow ?? windowUnderCursor(at: loc) {
                 startPoint = nil
                 currentPoint = nil
                 onCompleteWindow(hovered)
@@ -262,6 +290,11 @@ final class AreaSelectionNSView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
+        if window?.isKeyWindow == false {
+            window?.makeKey()
+        }
+        window?.makeFirstResponder(self)
+        isShiftPressed = event.modifierFlags.contains(.shift)
         requestSamplerIfNeeded()
         moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
     }
@@ -275,13 +308,26 @@ final class AreaSelectionNSView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        updateShiftState(event.modifierFlags.contains(.shift))
         moveCursor(to: clampedPoint(convert(event.locationInWindow, from: nil)))
+    }
+
+    private func updateShiftState(_ pressed: Bool) {
+        guard pressed != isShiftPressed else { return }
+        isShiftPressed = pressed
+        guard mode != .windowOnly, !isDragging else { return }
+        if pressed, let loc = currentPoint {
+            hoveredWindow = windowUnderCursor(at: loc)
+        } else {
+            hoveredWindow = nil
+        }
+        syncLayers()
     }
 
     private func moveCursor(to loc: CGPoint) {
         requestSamplerIfNeeded()
 
-        if mode == .windowOnly {
+        if isWindowSelectionActive {
             let next = windowUnderCursor(at: loc)
             let same = next?.windowID == hoveredWindow?.windowID
             currentPoint = loc
@@ -376,7 +422,7 @@ final class AreaSelectionNSView: NSView {
         var borderColor = CGColor(red: 0.2, green: 0.6, blue: 1.0, alpha: 1)
         var borderWidth: CGFloat = 2
 
-        if mode == .windowOnly, let hovered = hoveredWindow {
+        if isWindowSelectionActive, let hovered = hoveredWindow {
             let rect = ScreenCoordinateSpace.screenLocalRect(
                 fromQuartzFrame: hovered.frame,
                 screenFrame: screen.frame
@@ -386,8 +432,13 @@ final class AreaSelectionNSView: NSView {
             badgeNear = rect
             let title = hovered.owningApplication?.applicationName
                 ?? (hovered.title ?? L("overlay.window_fallback"))
-            badge = L("overlay.window_badge", title)
-            borderColor = CGColor(red: 0.1, green: 0.7, blue: 1.0, alpha: 1)
+            if mode == .recordingArea {
+                badge = L("overlay.record_window_badge", title)
+                borderColor = CGColor(red: 1.0, green: 0.25, blue: 0.25, alpha: 1)
+            } else {
+                badge = L("overlay.window_badge", title)
+                borderColor = CGColor(red: 0.1, green: 0.7, blue: 1.0, alpha: 1)
+            }
             borderWidth = 3
         } else if isDragging, let start = startPoint, let current = currentPoint {
             let rect = selectionRect(from: start, to: current)
@@ -400,7 +451,7 @@ final class AreaSelectionNSView: NSView {
             } else {
                 badge = L("overlay.area_badge", Int(rect.width), Int(rect.height))
             }
-        } else if mode != .windowOnly, let point = currentPoint {
+        } else if !isWindowSelectionActive, let point = currentPoint {
             crosshairPoint = point
             let screenPoint = CGPoint(x: point.x, y: bounds.height - point.y)
             if mode == .areaOnly, hasSampler, let hex = sampler.getPixelHex(at: screenPoint, viewBounds: bounds) {
@@ -419,6 +470,7 @@ final class AreaSelectionNSView: NSView {
             snapshot: AreaSelectionLayerHost.Snapshot(
                 bounds: bounds,
                 mode: mode,
+                isRoundedBorder: isWindowSelectionActive,
                 hole: hole,
                 borderRect: borderRect,
                 borderColor: borderColor,

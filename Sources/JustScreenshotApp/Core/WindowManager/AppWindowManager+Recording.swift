@@ -60,6 +60,10 @@ extension AppWindowManager {
                 let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
                 self?.enterRecordingSetup(appKitRect: self?.evenRecordingRect(appKitRect) ?? appKitRect)
             },
+            onCompleteWindow: { [weak self] scWindow in
+                let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: scWindow.frame)
+                self?.enterRecordingSetup(appKitRect: self?.evenRecordingRect(appKitRect) ?? appKitRect)
+            },
             onCancel: { [weak self] in
                 if self?.recordingPhase == .selectingArea {
                     self?.recordingPhase = .idle
@@ -167,6 +171,10 @@ extension AppWindowManager {
             needsSampler: false,
             onCompleteRect: { [weak self] quartzRect, _ in
                 let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: quartzRect)
+                self?.enterRecordingSetup(appKitRect: appKitRect)
+            },
+            onCompleteWindow: { [weak self] scWindow in
+                let appKitRect = ScreenCoordinateSpace.appKitRect(fromQuartz: scWindow.frame)
                 self?.enterRecordingSetup(appKitRect: appKitRect)
             },
             onCancel: { [weak self] in
@@ -301,12 +309,6 @@ extension AppWindowManager {
             clearRecordingDimWindows()
         }
 
-        if AppSettings.shared.showClicksDuringRecording || AppSettings.shared.showKeystrokesDuringRecording {
-            let effectsWin = RecordingEffectsOverlayWindow(screenRect: appKitRect)
-            effectsWin.orderFrontRegardless()
-            recordingEffectsWindow = effectsWin
-        }
-
         ScreenRecorderService.shared.onUnexpectedStop = { [weak self] error in
             Task { @MainActor [weak self] in
                 guard let self, self.recordingPhase == .recording || self.recordingPhase == .starting else { return }
@@ -327,6 +329,7 @@ extension AppWindowManager {
             }
 
             CursorTrackRecorder.shared.start(recordingRect: appKitRect)
+            KeystrokeTrackRecorder.shared.start()
             recordingPhase = .recording
             isRecordingPaused = false
             recordingDuration = 0
@@ -369,11 +372,13 @@ extension AppWindowManager {
             recordingPausedAt = nil
             ScreenRecorderService.shared.resumeRecording()
             CursorTrackRecorder.shared.resume()
+            KeystrokeTrackRecorder.shared.resume()
             isRecordingPaused = false
         } else {
             recordingPausedAt = Date()
             ScreenRecorderService.shared.pauseRecording()
             CursorTrackRecorder.shared.pause()
+            KeystrokeTrackRecorder.shared.pause()
             isRecordingPaused = true
         }
         tickRecordingDuration(force: true)
@@ -387,6 +392,7 @@ extension AppWindowManager {
         let recordedRect = recordingRect
         let recordedDuration = max(0.1, recordingDuration)
         let cursorTrack = CursorTrackRecorder.shared.stop()
+        let keystrokeTrack = KeystrokeTrackRecorder.shared.stop()
         cleanupRecordingSession(targetPhase: .stopping)
 
         Task { [weak self] in
@@ -396,13 +402,14 @@ extension AppWindowManager {
             do {
                 if let savedURL = try await ScreenRecorderService.shared.stopRecording() {
                     CursorTrackRecorder.saveTrack(cursorTrack, forVideoURL: savedURL)
+                    KeystrokeTrackRecorder.saveTrack(keystrokeTrack, forVideoURL: savedURL)
                     self?.history.addVideo(
                         url: savedURL,
                         width: Int(recordedRect.width),
                         height: Int(recordedRect.height),
                         duration: recordedDuration
                     )
-                    self?.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack)
+                    self?.openVideoEditor(videoURL: savedURL, cursorTrack: cursorTrack, keystrokeTrack: keystrokeTrack)
                 }
             } catch {
                 self?.presentAlert(
@@ -415,6 +422,7 @@ extension AppWindowManager {
 
     public func cancelScreenRecording() {
         _ = CursorTrackRecorder.shared.stop()
+        _ = KeystrokeTrackRecorder.shared.stop()
         cleanupRecordingSession()
 
         Task {
@@ -424,6 +432,7 @@ extension AppWindowManager {
 
     func cleanupRecordingSession(targetPhase: RecordingPhase = .idle) {
         _ = CursorTrackRecorder.shared.stop()
+        _ = KeystrokeTrackRecorder.shared.stop()
         ScreenRecorderService.shared.onUnexpectedStop = nil
         recordingState.setupEscMonitor.stop()
         recordingState.countdownEscMonitor.stop()
@@ -446,12 +455,6 @@ extension AppWindowManager {
         recordingFrameWindow?.contentView = nil
         recordingFrameWindow?.close()
         recordingFrameWindow = nil
-
-        recordingEffectsWindow?.cleanUp()
-        recordingEffectsWindow?.orderOut(nil)
-        recordingEffectsWindow?.contentView = nil
-        recordingEffectsWindow?.close()
-        recordingEffectsWindow = nil
 
         recordingBarWindow?.orderOut(nil)
         recordingBarWindow?.contentView = nil

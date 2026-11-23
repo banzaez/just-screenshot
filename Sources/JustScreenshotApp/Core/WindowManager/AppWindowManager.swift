@@ -96,7 +96,6 @@ public enum RecordingPhase: Equatable, Sendable {
 @MainActor
 final class RecordingSessionState {
     var frameWindow: RecordingFrameWindow?
-    var effectsWindow: RecordingEffectsOverlayWindow?
     var barWindow: RecordingControlBarWindow?
     var countdownWindow: CountdownOverlayWindow?
     var dimWindows: [RecordingDimOverlayWindow] = []
@@ -163,10 +162,6 @@ public final class AppWindowManager {
     var recordingFrameWindow: RecordingFrameWindow? {
         get { recordingState.frameWindow }
         set { recordingState.frameWindow = newValue }
-    }
-    var recordingEffectsWindow: RecordingEffectsOverlayWindow? {
-        get { recordingState.effectsWindow }
-        set { recordingState.effectsWindow = newValue }
     }
     var recordingBarWindow: RecordingControlBarWindow? {
         get { recordingState.barWindow }

@@ -8,12 +8,21 @@ public struct CursorKeyframe: Codable, Sendable, Equatable {
     /// Нормализованная координата (0...1 по X, 0...1 по Y, где 0,0 - верхний левый угол)
     public let point: CGPoint
     public let isClick: Bool
+    public let isRightClick: Bool
     
-    public init(timestamp: Double, point: CGPoint, isClick: Bool = false) {
+    public init(timestamp: Double, point: CGPoint, isClick: Bool = false, isRightClick: Bool = false) {
         self.timestamp = timestamp
         self.point = point
         self.isClick = isClick
+        self.isRightClick = isRightClick
     }
+}
+
+/// Активная анимация клика мыши для постпроцессинга
+public struct ActiveClickRipple: Equatable, Sendable {
+    public let point: CGPoint
+    public let progress: CGFloat
+    public let isRightClick: Bool
 }
 
 /// Масштаб приближения умного зума (Zoom Intensity)
@@ -262,6 +271,28 @@ public struct CursorTrack: Codable, Sendable {
         
         return (baseFocus, baseZoom)
     }
+
+    /// Активные анимации кликов мыши в момент времени `time` (для постпроцессинга)
+    nonisolated public func activeClickRipples(at time: Double, duration: Double = 0.45) -> [ActiveClickRipple] {
+        guard !clickKeyframes.isEmpty, duration > 0 else { return [] }
+        guard let lastIdx = Self.lastKeyframeIndex(in: clickKeyframes, atOrBefore: time) else { return [] }
+
+        var result: [ActiveClickRipple] = []
+        var idx = lastIdx
+        while idx >= 0 {
+            let kf = clickKeyframes[idx]
+            let age = time - kf.timestamp
+            if age > duration {
+                break
+            }
+            if age >= 0 {
+                let progress = CGFloat(min(1.0, max(0.0, age / duration)))
+                result.append(ActiveClickRipple(point: kf.point, progress: progress, isRightClick: kf.isRightClick))
+            }
+            idx -= 1
+        }
+        return result
+    }
 }
 
 /// Сервис непрерывной записи координат курсора и кликов во время активной видеозаписи
@@ -293,9 +324,10 @@ public final class CursorTrackRecorder {
         self.isPaused = false
         
         // Глобальный мониторинг кликов ЛКМ и ПКМ
-        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            let isRight = event.type == .rightMouseDown
             Task { @MainActor [weak self] in
-                self?.recordPoint(isClick: true)
+                self?.recordPoint(isClick: true, isRightClick: isRight)
             }
         }
         
@@ -346,7 +378,7 @@ public final class CursorTrackRecorder {
         return track
     }
     
-    private func recordPoint(isClick: Bool) {
+    private func recordPoint(isClick: Bool, isRightClick: Bool = false) {
         guard isRecording, !isPaused, let startUptime else { return }
         guard recordingRect.width > 0, recordingRect.height > 0 else { return }
         
@@ -386,7 +418,8 @@ public final class CursorTrackRecorder {
             CursorKeyframe(
                 timestamp: elapsed,
                 point: newPoint,
-                isClick: isClick
+                isClick: isClick,
+                isRightClick: isRightClick
             )
         )
     }

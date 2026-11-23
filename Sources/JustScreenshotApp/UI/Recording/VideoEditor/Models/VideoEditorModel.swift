@@ -47,9 +47,30 @@ public final class VideoEditorModel {
     public var currentCameraFocus: CGPoint = CGPoint(x: 0.5, y: 0.5)
     public var currentCameraZoom: CGFloat = 1.0
 
+    // Постпроцессинг нажатий клавиш (Keystrokes HUD)
+    public var isKeystrokesEnabled: Bool = false {
+        didSet { updateCameraState() }
+    }
+    public var keystrokeFilter: KeystrokeDisplayFilter = .all {
+        didSet { updateCameraState() }
+    }
+    public var keystrokePosition: KeystrokePosition = .bottomCenter
+    public var keystrokeSize: KeystrokeSize = .standard
+    public var keystrokeTrack: KeystrokeTrack
+    public var currentKeystrokeText: String?
+    public var currentKeystrokeAlpha: CGFloat = 0.0
+
+    // Постпроцессинг подсветки кликов мыши (Click Ripples)
+    public var isClickHighlightsEnabled: Bool = false {
+        didSet { updateCameraState() }
+    }
+    public var activeClickRipples: [ActiveClickRipple] = []
+
     // Аннотации
     public var annotations: [VideoAnnotationItem] = []
     public var selectedAnnotationID: UUID?
+    public var blurStyle: VideoBlurStyle = .frostedGlass
+    public var blurIntensity: VideoBlurIntensity = .medium
 
     // Экспорт
     public var isExporting: Bool = false
@@ -79,13 +100,16 @@ public final class VideoEditorModel {
         abs(playbackRate - 1.0) > 0.01 ||
         hasCustomCrop ||
         !annotations.isEmpty ||
-        isSmartZoomEnabled
+        isSmartZoomEnabled ||
+        isKeystrokesEnabled ||
+        isClickHighlightsEnabled
     }
 
-    public init(videoURL: URL, cursorTrack: CursorTrack? = nil) {
+    public init(videoURL: URL, cursorTrack: CursorTrack? = nil, keystrokeTrack: KeystrokeTrack? = nil) {
         self.videoURL = videoURL
         let loaded = cursorTrack ?? CursorTrackRecorder.loadTrack(forVideoURL: videoURL) ?? CursorTrack()
         self.cursorTrack = loaded
+        self.keystrokeTrack = keystrokeTrack ?? KeystrokeTrackRecorder.loadTrack(forVideoURL: videoURL) ?? KeystrokeTrack()
         let playerItem = AVPlayerItem(url: videoURL)
         self.player = AVPlayer(playerItem: playerItem)
 
@@ -107,11 +131,19 @@ public final class VideoEditorModel {
             cropRect: hasCustomCrop ? cropRect : nil,
             gifFPS: gifFPS,
             annotations: annotations,
+            blurStyle: blurStyle,
+            blurIntensity: blurIntensity,
             smartZoom: isSmartZoomEnabled,
             smartZoomScale: smartZoomScale,
             smartZoomMode: smartZoomMode,
             autoZoomOutOnIdle: autoZoomOutOnIdle,
-            cursorTrack: cursorTrack
+            cursorTrack: cursorTrack,
+            showKeystrokes: isKeystrokesEnabled,
+            keystrokeTrack: keystrokeTrack,
+            keystrokeFilter: keystrokeFilter,
+            keystrokePosition: keystrokePosition,
+            keystrokeSize: keystrokeSize,
+            showClicks: isClickHighlightsEnabled
         )
     }
 
@@ -137,6 +169,27 @@ public final class VideoEditorModel {
         }
         if abs(currentCameraZoom - newZoom) > 0.0005 {
             currentCameraZoom = newZoom
+        }
+
+        if isKeystrokesEnabled, let active = keystrokeTrack.activeKeystroke(at: currentTime, filter: keystrokeFilter) {
+            if currentKeystrokeText != active.text {
+                currentKeystrokeText = active.text
+            }
+            if abs(currentKeystrokeAlpha - active.alpha) > 0.01 {
+                currentKeystrokeAlpha = active.alpha
+            }
+        } else {
+            if currentKeystrokeText != nil {
+                currentKeystrokeText = nil
+            }
+            if currentKeystrokeAlpha != 0 {
+                currentKeystrokeAlpha = 0
+            }
+        }
+
+        let newRipples = isClickHighlightsEnabled ? cursorTrack.activeClickRipples(at: currentTime) : []
+        if activeClickRipples != newRipples {
+            activeClickRipples = newRipples
         }
     }
 

@@ -22,6 +22,7 @@ final class AreaSelectionLayerHost {
     struct Snapshot {
         var bounds: CGRect
         var mode: OverlayMode
+        var isRoundedBorder: Bool
         var hole: CGRect?
         var borderRect: CGRect?
         var borderColor: CGColor
@@ -77,7 +78,7 @@ final class AreaSelectionLayerHost {
 
         borderLayer.strokeColor = snapshot.borderColor
         borderLayer.lineWidth = snapshot.borderWidth
-        updateBorder(rect: snapshot.borderRect, rounded: snapshot.mode == .windowOnly)
+        updateBorder(rect: snapshot.borderRect, rounded: snapshot.isRoundedBorder)
         updateCrosshair(at: snapshot.crosshairPoint)
 
         if let badge = snapshot.badge, let near = snapshot.badgeNear {

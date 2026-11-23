@@ -446,7 +446,8 @@ public final class HistoryStore {
         let matching = entries.filter { fileURL(for: $0).standardizedFileURL.path == targetPath }
         if matching.isEmpty {
             let trackURL = CursorTrackRecorder.companionTrackURL(for: videoURL)
-            Self.trashURLsInBackground([videoURL, trackURL])
+            let keysURL = KeystrokeTrackRecorder.companionTrackURL(for: videoURL)
+            Self.trashURLsInBackground([videoURL, trackURL, keysURL])
         } else {
             for item in matching {
                 delete(id: item.id)
@@ -477,7 +478,11 @@ public final class HistoryStore {
     private func externalFilesForEntry(_ entry: HistoryEntry) -> [URL] {
         let url = fileURL(for: entry)
         if entry.kind == .video {
-            return [url, CursorTrackRecorder.companionTrackURL(for: url)]
+            return [
+                url,
+                CursorTrackRecorder.companionTrackURL(for: url),
+                KeystrokeTrackRecorder.companionTrackURL(for: url)
+            ]
         }
         return [url]
     }

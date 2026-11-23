@@ -188,7 +188,7 @@ enum AnimatedFrameExtractor {
         if decodedFrames == 0 {
             let generator = AVAssetImageGenerator(asset: asset)
             generator.appliesPreferredTrackTransform = true
-            if !options.smartZoom && options.cropRect == nil && plan.burnIn.isEmpty {
+            if !options.smartZoom && options.cropRect == nil && plan.burnIn.isEmpty && !options.showKeystrokes && !options.showClicks {
                 generator.maximumSize = CGSize(width: maxDimension, height: maxDimension)
             }
             let tolerance = CMTime(seconds: 0.05, preferredTimescale: 600)

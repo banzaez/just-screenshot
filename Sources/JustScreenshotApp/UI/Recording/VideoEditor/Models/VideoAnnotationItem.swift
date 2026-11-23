@@ -1,5 +1,25 @@
 import SwiftUI
 
+/// Визуальный стиль размытия для скрытия данных на видео
+public enum VideoBlurStyle: String, CaseIterable, Identifiable, Codable, Sendable {
+    case frostedGlass = "frosted_glass"
+    case darkGlass = "dark_glass"
+    case gaussian = "gaussian"
+    case pixelate = "pixelate"
+
+    public var id: String { rawValue }
+}
+
+/// Плотность (интенсивность) размытия
+public enum VideoBlurIntensity: Double, CaseIterable, Identifiable, Codable, Sendable {
+    case light = 0.6
+    case medium = 1.0
+    case heavy = 1.55
+    case ultra = 2.2
+
+    public var id: Double { rawValue }
+}
+
 /// Элемент наложения поверх видео
 public struct VideoAnnotationItem: Identifiable, Equatable, Sendable {
     public let id: UUID

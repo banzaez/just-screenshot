@@ -18,6 +18,8 @@ public struct VideoOverlayCanvasView: View {
                     VideoAnnotationItemView(
                         item: item,
                         videoRect: videoRect,
+                        blurStyle: model.blurStyle,
+                        blurIntensity: model.blurIntensity,
                         isSelected: model.selectedAnnotationID == item.id,
                         onSelect: {
                             model.selectedAnnotationID = item.id

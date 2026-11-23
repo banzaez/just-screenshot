@@ -56,8 +56,6 @@ public final class AppSettings {
         static let shortcutHistory = "settings_shortcut_history"
         static let shortcutOCR = "settings_shortcut_ocr"
         static let showFloatingBar = "settings_show_floating_bar"
-        static let showKeystrokes = "settings_show_keystrokes"
-        static let showClicks = "settings_show_clicks"
         static let lastCapturedRect = "settings_last_captured_rect"
         static let recordingCountdown = "settings_recording_countdown"
         static let dimOutsideRecordingArea = "settings_dim_outside_recording"
@@ -86,14 +84,6 @@ public final class AppSettings {
 
     public var showFloatingBarDuringRecording: Bool {
         didSet { defaults.set(showFloatingBarDuringRecording, forKey: Keys.showFloatingBar) }
-    }
-
-    public var showKeystrokesDuringRecording: Bool {
-        didSet { defaults.set(showKeystrokesDuringRecording, forKey: Keys.showKeystrokes) }
-    }
-
-    public var showClicksDuringRecording: Bool {
-        didSet { defaults.set(showClicksDuringRecording, forKey: Keys.showClicks) }
     }
 
     /// Последняя захваченная область для быстрого повтора (Repeat Last Capture)
@@ -174,8 +164,6 @@ public final class AppSettings {
         let defaultMovies = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first?.path ?? ""
         self.defaultSaveDirectoryPath = defaults.string(forKey: Keys.defaultSaveDirectory) ?? defaultMovies
         self.showFloatingBarDuringRecording = defaults.object(forKey: Keys.showFloatingBar) as? Bool ?? true
-        self.showKeystrokesDuringRecording = defaults.object(forKey: Keys.showKeystrokes) as? Bool ?? true
-        self.showClicksDuringRecording = defaults.object(forKey: Keys.showClicks) as? Bool ?? true
         self.lastCapturedRect = Self.loadRect(key: Keys.lastCapturedRect, defaults: defaults)
         self.recordingCountdownSeconds = defaults.object(forKey: Keys.recordingCountdown) as? Int ?? 0
         self.dimOutsideRecordingArea = defaults.object(forKey: Keys.dimOutsideRecordingArea) as? Bool ?? true

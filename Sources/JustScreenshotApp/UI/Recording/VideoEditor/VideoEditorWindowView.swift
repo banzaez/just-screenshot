@@ -56,6 +56,27 @@ public struct VideoEditorWindowView: View {
                             Group {
                                 VideoPlayerRepresentable(player: model.player)
                                 VideoOverlayCanvasView(model: model)
+
+                                // Постпроцессинг подсветки кликов мыши в координатах исходного видео
+                                if model.isClickHighlightsEnabled && !model.activeClickRipples.isEmpty {
+                                    ZStack {
+                                        ForEach(Array(model.activeClickRipples.enumerated()), id: \.offset) { _, ripple in
+                                            let radius = 8.0 + ripple.progress * 24.0
+                                            let alpha = Double(max(0, 1.0 - ripple.progress))
+                                            let px = videoRect.origin.x + ripple.point.x * videoRect.width
+                                            let py = videoRect.origin.y + ripple.point.y * videoRect.height
+                                            let strokeColor: Color = ripple.isRightClick ? Color(red: 1.0, green: 0.65, blue: 0.25) : Color(red: 0.35, green: 0.72, blue: 1.0)
+                                            let fillColor: Color = ripple.isRightClick ? Color(red: 1.0, green: 0.6, blue: 0.2) : Color(red: 0.2, green: 0.6, blue: 1.0)
+
+                                            Circle()
+                                                .fill(fillColor.opacity(0.24 * alpha))
+                                                .overlay(Circle().stroke(strokeColor.opacity(0.85 * alpha), lineWidth: 2.2))
+                                                .frame(width: radius * 2, height: radius * 2)
+                                                .position(x: px, y: py)
+                                        }
+                                    }
+                                    .allowsHitTesting(false)
+                                }
                             }
                             .scaleEffect(zoom, anchor: .center)
                             .offset(x: panX, y: panY)
@@ -70,6 +91,51 @@ public struct VideoEditorWindowView: View {
                                     containerSize: containerSize,
                                     contentRect: videoRect
                                 )
+                            }
+
+                            // Постпроцессинг бейджа нажатых клавиш (Keystrokes HUD) с учётом Smart Zoom
+                            if model.isKeystrokesEnabled,
+                               let text = model.currentKeystrokeText,
+                               model.currentKeystrokeAlpha > 0.001 {
+                                let resolvedPos = model.keystrokePosition.resolved(
+                                    cameraFocus: model.currentCameraFocus,
+                                    cameraZoom: zoom
+                                )
+                                let sizeScale = CGFloat(model.keystrokeSize.rawValue)
+                                let edgeInset: CGFloat = 24
+                                let alignment: Alignment = {
+                                    switch resolvedPos {
+                                    case .bottomCenter: return .bottom
+                                    case .bottomLeft: return .bottomLeading
+                                    case .bottomRight: return .bottomTrailing
+                                    case .topCenter: return .top
+                                    }
+                                }()
+
+                                ZStack(alignment: alignment) {
+                                    Color.clear
+                                    Text(text)
+                                        .font(.system(size: 16 * sizeScale, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 16 * sizeScale)
+                                        .padding(.vertical, 9 * sizeScale)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
+                                                .fill(Color(red: 0.07, green: 0.07, blue: 0.09).opacity(0.92))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 10 * sizeScale, style: .continuous)
+                                                        .strokeBorder(Color.white.opacity(0.32), lineWidth: 1.2)
+                                                )
+                                        )
+                                        .shadow(color: .black.opacity(0.55), radius: 10, y: 3)
+                                        .padding(.horizontal, edgeInset)
+                                        .padding(.vertical, edgeInset)
+                                        .opacity(Double(model.currentKeystrokeAlpha))
+                                }
+                                .frame(width: videoRect.width, height: videoRect.height)
+                                .position(x: videoRect.midX, y: videoRect.midY)
+                                .animation(.easeInOut(duration: 0.2), value: resolvedPos)
+                                .allowsHitTesting(false)
                             }
                         }
                     }

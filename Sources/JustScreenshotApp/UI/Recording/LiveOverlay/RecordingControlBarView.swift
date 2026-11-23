@@ -130,41 +130,6 @@ public struct RecordingControlBarView: View {
             
             // Настройки записи (переключатели)
             HStack(spacing: 9) {
-                // Нажатия клавиш
-                Button(action: {
-                    settings.showKeystrokesDuringRecording.toggle()
-                    if settings.showKeystrokesDuringRecording && !AccessibilityPermissionHelper.isGranted {
-                        AccessibilityPermissionHelper.requestAccess()
-                    }
-                }) {
-                    Image(systemName: "keyboard")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(settings.showKeystrokesDuringRecording ? .white : .white.opacity(0.45))
-                        .frame(width: 32, height: 32)
-                        .background(settings.showKeystrokesDuringRecording ? Color.blue.opacity(0.85) : Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .help(L("recording.bar.keystrokes_help"))
-                .accessibilityLabel(L("recording.bar.keystrokes_help"))
-                
-                // Клики мыши
-                Button(action: {
-                    settings.showClicksDuringRecording.toggle()
-                }) {
-                    Image(systemName: "cursorarrow.rays")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(settings.showClicksDuringRecording ? .white : .white.opacity(0.45))
-                        .frame(width: 32, height: 32)
-                        .background(settings.showClicksDuringRecording ? Color.blue.opacity(0.85) : Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .fixedSize()
-                .help(L("recording.bar.clicks_help"))
-                .accessibilityLabel(L("recording.bar.clicks_help"))
-                
                 // Затемнение экрана вокруг области записи
                 Button(action: {
                     settings.dimOutsideRecordingArea.toggle()

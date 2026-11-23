@@ -87,6 +87,15 @@ extension AppWindowManager {
             ensureSampler(for: primary, token: token)
         }
 
+        Task { [weak self] in
+            let rawWindows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
+            let sorted = AreaSelectionNSView.sortedFrontToBack(rawWindows)
+            guard let self, self.overlayToken == token else { return }
+            for overlay in overlays {
+                overlay.updateVisibleWindows(sorted, alreadySorted: true)
+            }
+        }
+
         return (token, overlays)
     }
 

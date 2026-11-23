@@ -17,7 +17,7 @@ extension AppWindowManager {
     }
 
     private func presentWindowOverlays() {
-        guard let session = presentSelectionOverlays(
+        presentSelectionOverlays(
             mode: .windowOnly,
             needsSampler: false,
             onCompleteRect: { _, _ in },
@@ -25,18 +25,7 @@ extension AppWindowManager {
                 Task { [weak self] in await self?.captureWindowAndShowHUD(scWindow: scWindow) }
             },
             onCancel: {}
-        ) else { return }
-
-        let token = session.token
-        let overlays = session.overlays
-        Task { [weak self] in
-            let rawWindows = (try? await ScreenCaptureService.shared.getVisibleWindows()) ?? []
-            let sorted = AreaSelectionNSView.sortedFrontToBack(rawWindows)
-            guard let self, self.overlayToken == token else { return }
-            for overlay in overlays {
-                overlay.updateVisibleWindows(sorted, alreadySorted: true)
-            }
-        }
+        )
     }
 
     public func startAreaCapture(delaySeconds: Int = 0) {
@@ -74,6 +63,11 @@ extension AppWindowManager {
                     await self?.captureRectAndRecognizeText(rect: rect, excludingWindowIDs: overlayIDs)
                 }
             },
+            onCompleteWindow: { [weak self] scWindow in
+                Task { [weak self] in
+                    await self?.captureWindowAndRecognizeText(scWindow: scWindow)
+                }
+            },
             onCancel: {}
         )
     }
@@ -81,18 +75,32 @@ extension AppWindowManager {
     private func captureRectAndRecognizeText(rect: CGRect, excludingWindowIDs: [CGWindowID]) async {
         do {
             let image = try await ScreenCaptureService.shared.captureRect(rect, excludingWindowIDs: excludingWindowIDs)
-            let text = await TextRecognizer.recognize(in: image)
-            if !text.isEmpty {
-                ImageExporter.copyText(text)
-                SoundEffects.playShutter()
-                hudStack.showToast(text: L("hud.ocr_copied", text.count), icon: "text.viewfinder")
-            } else {
-                NSSound.beep()
-                hudStack.showToast(text: L("hud.ocr_not_found"), icon: "text.viewfinder")
-            }
+            await recognizeTextAndNotify(in: image)
         } catch {
             AppLogger.capture.error("Text capture error: \(error.localizedDescription, privacy: .public)")
             hudStack.showToast(text: error.localizedDescription, icon: "exclamationmark.triangle")
+        }
+    }
+
+    private func captureWindowAndRecognizeText(scWindow: SCWindow) async {
+        do {
+            let image = try await ScreenCaptureService.shared.captureWindow(windowID: CGWindowID(scWindow.windowID))
+            await recognizeTextAndNotify(in: image)
+        } catch {
+            AppLogger.capture.error("Text capture error: \(error.localizedDescription, privacy: .public)")
+            hudStack.showToast(text: error.localizedDescription, icon: "exclamationmark.triangle")
+        }
+    }
+
+    private func recognizeTextAndNotify(in image: NSImage) async {
+        let text = await TextRecognizer.recognize(in: image)
+        if !text.isEmpty {
+            ImageExporter.copyText(text)
+            SoundEffects.playShutter()
+            hudStack.showToast(text: L("hud.ocr_copied", text.count), icon: "text.viewfinder")
+        } else {
+            NSSound.beep()
+            hudStack.showToast(text: L("hud.ocr_not_found"), icon: "text.viewfinder")
         }
     }
 
@@ -111,6 +119,20 @@ extension AppWindowManager {
                 } else {
                     Task { [weak self] in
                         await self?.captureRectAndShowHUD(rect: rect, excludingWindowIDs: overlayIDs)
+                    }
+                }
+            },
+            onCompleteWindow: { [weak self] scWindow in
+                guard let self else { return }
+                if delaySeconds > 0 {
+                    self.startTimedAreaCountdown(
+                        rect: scWindow.frame,
+                        excludingWindowIDs: [],
+                        seconds: delaySeconds
+                    )
+                } else {
+                    Task { [weak self] in
+                        await self?.captureWindowAndShowHUD(scWindow: scWindow)
                     }
                 }
             },
