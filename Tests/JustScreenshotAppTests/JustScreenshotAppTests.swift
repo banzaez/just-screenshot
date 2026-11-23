@@ -346,6 +346,23 @@ struct SmartZoomTests {
         let midRampOut = track.cameraState(at: 2.4, scale: .closeup, mode: .onClicks)
         #expect(midRampOut.zoom > 1.05 && midRampOut.zoom < 1.45)
     }
+
+    @Test func testCursorTrackRapidConsecutiveClicksNoSnapBack() {
+        let track = CursorTrack(keyframes: [
+            CursorKeyframe(timestamp: 1.0, point: CGPoint(x: 0.2, y: 0.2), isClick: true),
+            CursorKeyframe(timestamp: 1.8, point: CGPoint(x: 0.8, y: 0.8), isClick: true)
+        ])
+
+        // В момент второго клика (t = 1.8, прошло 0.8с после первого) камера уже на первом клике, не сбрасывается в 1.0x
+        let atSecondClick = track.cameraState(at: 1.8, scale: .closeup, mode: .onClicks)
+        #expect(abs(atSecondClick.zoom - 1.5) < 0.001)
+        #expect(abs(atSecondClick.focus.x - 0.2) < 0.001)
+
+        // В середине перехода между первым и вторым кликом (t = 1.925) зум остаётся 1.5x, а фокус плавно идёт от 0.2 к 0.8
+        let midTransition = track.cameraState(at: 1.925, scale: .closeup, mode: .onClicks)
+        #expect(abs(midTransition.zoom - 1.5) < 0.001)
+        #expect(abs(midTransition.focus.x - 0.5) < 0.01)
+    }
 }
 
 // MARK: - Capture Geometry, Sampler, Shortcuts & Formatting Tests

@@ -103,6 +103,19 @@ public struct VideoTimelineView: View {
                         .frame(width: max(0, endX - startX), height: height)
                         .offset(x: startX)
 
+                    // Маркеры кликов для Smart Zoom
+                    if model.isSmartZoomEnabled {
+                        ForEach(Array(model.cursorTrack.clickTimestamps.enumerated()), id: \.offset) { _, ts in
+                            let markerX = min(width - 3, max(3, CGFloat(ts / totalDuration) * width))
+                            Circle()
+                                .fill(Color.cyan)
+                                .frame(width: 5, height: 5)
+                                .shadow(color: .black.opacity(0.6), radius: 1)
+                                .offset(x: markerX - 2.5, y: height / 2 - 5)
+                                .allowsHitTesting(false)
+                        }
+                    }
+
                     // Ручка Trim Start
                     TrimHandleView(isStart: true)
                         .offset(x: max(0, startX - 8))

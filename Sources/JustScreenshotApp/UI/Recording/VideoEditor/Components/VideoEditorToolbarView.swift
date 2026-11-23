@@ -127,6 +127,9 @@ public struct VideoEditorToolbarView: View {
                         ForEach(SmartZoomScale.allCases) { scale in
                             Button {
                                 model.smartZoomScale = scale
+                                if !model.isSmartZoomEnabled {
+                                    model.isSmartZoomEnabled = true
+                                }
                             } label: {
                                 HStack {
                                     Text(scaleTitle(scale))
@@ -144,6 +147,9 @@ public struct VideoEditorToolbarView: View {
                         ForEach(SmartZoomMode.allCases) { mode in
                             Button {
                                 model.smartZoomMode = mode
+                                if !model.isSmartZoomEnabled {
+                                    model.isSmartZoomEnabled = true
+                                }
                             } label: {
                                 HStack {
                                     Text(modeTitle(mode))

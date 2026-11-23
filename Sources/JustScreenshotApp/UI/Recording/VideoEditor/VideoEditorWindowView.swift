@@ -32,6 +32,7 @@ public struct VideoEditorWindowView: View {
                     onExportWebP: { performExport(format: .webp) },
                     onDelete: onDelete
                 )
+                .zIndex(1)
 
                 // 2. Основная рабочая область (Плеер + Canvas оверлей + Crop вне зума)
                 ZStack {
@@ -59,6 +60,7 @@ public struct VideoEditorWindowView: View {
                             .scaleEffect(zoom, anchor: .center)
                             .offset(x: panX, y: panY)
                             .animation(.interpolatingSpring(stiffness: 110, damping: 16), value: model.currentCameraFocus)
+                            .animation(.interpolatingSpring(stiffness: 110, damping: 16), value: model.currentCameraZoom)
                             .animation(.easeInOut(duration: 0.28), value: model.isSmartZoomEnabled)
 
                             // Рамка кадрирования всегда находится в координатах незумированного кадра
@@ -73,7 +75,9 @@ public struct VideoEditorWindowView: View {
                     }
                     .clipped()
                 }
+                .contentShape(Rectangle())
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .zIndex(0)
 
                 // 3. Нижняя панель (Таймлайн и управление воспроизведением)
                 VStack(spacing: 0) {
@@ -123,6 +127,7 @@ public struct VideoEditorWindowView: View {
                     .padding(.vertical, 10)
                     .background(.ultraThinMaterial)
                 }
+                .zIndex(1)
             }
             .disabled(model.isExporting)
 

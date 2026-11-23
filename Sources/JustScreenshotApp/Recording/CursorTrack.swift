@@ -51,6 +51,11 @@ public struct CursorTrack: Codable, Sendable {
     
     /// Предвычисленный индекс кликов для O(log N) поиска без аллокаций на каждый кадр
     private var clickKeyframes: [CursorKeyframe]
+
+    /// Временные метки всех кликов (для отображения маркеров на таймлайне)
+    public var clickTimestamps: [Double] {
+        clickKeyframes.map(\.timestamp)
+    }
     
     private enum CodingKeys: String, CodingKey {
         case keyframes
@@ -73,8 +78,8 @@ public struct CursorTrack: Codable, Sendable {
         try container.encode(keyframes, forKey: .keyframes)
     }
     
-    /// Бинарный поиск последнего ключевого кадра с `timestamp <= targetTime` за O(log N)
-    private static func lastKeyframe(in list: [CursorKeyframe], atOrBefore targetTime: Double) -> CursorKeyframe? {
+    /// Бинарный поиск индекса последнего ключевого кадра с `timestamp <= targetTime` за O(log N)
+    private static func lastKeyframeIndex(in list: [CursorKeyframe], atOrBefore targetTime: Double) -> Int? {
         guard !list.isEmpty, list[0].timestamp <= targetTime else { return nil }
         var low = 0
         var high = list.count - 1
@@ -88,7 +93,7 @@ public struct CursorTrack: Codable, Sendable {
                 high = mid - 1
             }
         }
-        return list[best]
+        return best
     }
     
     private static func smoothstep(_ t: CGFloat) -> CGFloat {
@@ -205,23 +210,53 @@ public struct CursorTrack: Codable, Sendable {
         }
         
         // 2. Плавный вход/выход клика без резких скачков фокуса (0...1.6с)
-        if let recentClick = Self.lastKeyframe(in: clickKeyframes, atOrBefore: time),
-           (time - recentClick.timestamp) < 1.6 {
+        if let clickIdx = Self.lastKeyframeIndex(in: clickKeyframes, atOrBefore: time) {
+            let recentClick = clickKeyframes[clickIdx]
             let elapsed = time - recentClick.timestamp
-            if elapsed < 0.25 {
-                let w = Self.smoothstep(CGFloat(elapsed / 0.25))
-                let fx = baseFocus.x + (recentClick.point.x - baseFocus.x) * w
-                let fy = baseFocus.y + (recentClick.point.y - baseFocus.y) * w
-                let zoom = baseZoom + (maxZoom - baseZoom) * w
-                return (CGPoint(x: fx, y: fy), zoom)
-            } else if elapsed > 1.2 {
-                let w = Self.smoothstep(CGFloat((elapsed - 1.2) / 0.4))
-                let fx = recentClick.point.x + (baseFocus.x - recentClick.point.x) * w
-                let fy = recentClick.point.y + (baseFocus.y - recentClick.point.y) * w
-                let zoom = maxZoom + (baseZoom - maxZoom) * w
-                return (CGPoint(x: fx, y: fy), zoom)
-            } else {
-                return (recentClick.point, maxZoom)
+            if elapsed < 1.6 {
+                if elapsed < 0.25 {
+                    // Если предыдущий клик ещё не завершился, плавно переходим из его состояния вместо сброса в baseFocus
+                    var startFocus = baseFocus
+                    var startZoom = baseZoom
+                    if clickIdx > 0 {
+                        let prevClick = clickKeyframes[clickIdx - 1]
+                        let gap = recentClick.timestamp - prevClick.timestamp
+                        if gap < 1.6 {
+                            if gap < 0.25 {
+                                let pw = Self.smoothstep(CGFloat(gap / 0.25))
+                                startFocus = CGPoint(
+                                    x: baseFocus.x + (prevClick.point.x - baseFocus.x) * pw,
+                                    y: baseFocus.y + (prevClick.point.y - baseFocus.y) * pw
+                                )
+                                startZoom = baseZoom + (maxZoom - baseZoom) * pw
+                            } else if gap > 1.2 {
+                                let pw = Self.smoothstep(CGFloat((gap - 1.2) / 0.4))
+                                startFocus = CGPoint(
+                                    x: prevClick.point.x + (baseFocus.x - prevClick.point.x) * pw,
+                                    y: prevClick.point.y + (baseFocus.y - prevClick.point.y) * pw
+                                )
+                                startZoom = maxZoom + (baseZoom - maxZoom) * pw
+                            } else {
+                                startFocus = prevClick.point
+                                startZoom = maxZoom
+                            }
+                        }
+                    }
+
+                    let w = Self.smoothstep(CGFloat(elapsed / 0.25))
+                    let fx = startFocus.x + (recentClick.point.x - startFocus.x) * w
+                    let fy = startFocus.y + (recentClick.point.y - startFocus.y) * w
+                    let zoom = startZoom + (maxZoom - startZoom) * w
+                    return (CGPoint(x: fx, y: fy), zoom)
+                } else if elapsed > 1.2 {
+                    let w = Self.smoothstep(CGFloat((elapsed - 1.2) / 0.4))
+                    let fx = recentClick.point.x + (baseFocus.x - recentClick.point.x) * w
+                    let fy = recentClick.point.y + (baseFocus.y - recentClick.point.y) * w
+                    let zoom = maxZoom + (baseZoom - maxZoom) * w
+                    return (CGPoint(x: fx, y: fy), zoom)
+                } else {
+                    return (recentClick.point, maxZoom)
+                }
             }
         }
         

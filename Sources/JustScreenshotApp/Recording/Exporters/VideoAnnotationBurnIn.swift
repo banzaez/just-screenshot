@@ -152,7 +152,7 @@ enum VideoAnnotationBurnIn {
             ctx.rotate(by: CGFloat(item.rotationAngle * .pi / 180.0))
             ctx.translateBy(x: -center.x, y: -center.y)
 
-            let radius = min(6.0, min(pixelRect.width, pixelRect.height) / 2.0)
+            let radius = min(12.0, min(pixelRect.width, pixelRect.height) * 0.22)
             let path = CGPath(roundedRect: pixelRect, cornerWidth: radius, cornerHeight: radius, transform: nil)
             ctx.addPath(path)
             ctx.fillPath()
@@ -160,7 +160,14 @@ enum VideoAnnotationBurnIn {
         }
 
         guard let cgMask = ctx.makeImage() else { return nil }
-        return CIImage(cgImage: cgMask)
+        let rawMask = CIImage(cgImage: cgMask)
+        // Мягкое сглаживание краёв маски (вычисляется один раз за экспорт), чтобы блюр не выглядел резкой заплаткой
+        let featherSigma = max(1.5, min(4.5, min(frameSize.width, frameSize.height) * 0.004))
+        let maskExtent = CGRect(x: 0, y: 0, width: width, height: height)
+        return rawMask
+            .clampedToExtent()
+            .applyingGaussianBlur(sigma: featherSigma)
+            .cropped(to: maskExtent)
     }
 
     /// Единый конвейер обработки кадра для MP4, GIF и WebP:
@@ -244,14 +251,23 @@ enum VideoAnnotationBurnIn {
         maskImage: CIImage,
         frameExtent: CGRect
     ) -> CIImage {
-        let sigma = max(12.0, min(28.0, max(frameExtent.width, frameExtent.height) * 0.015))
-        let blurred = image
+        let sigma = max(14.0, min(32.0, max(frameExtent.width, frameExtent.height) * 0.017))
+        var frosted = image
             .clampedToExtent()
             .applyingGaussianBlur(sigma: sigma)
             .cropped(to: frameExtent)
 
+        // Лёгкий эффект матового стекла (frosted glass) поверх размытия
+        let colorControls = CIFilter.colorControls()
+        colorControls.inputImage = frosted
+        colorControls.saturation = 0.85
+        colorControls.brightness = 0.03
+        if let adjusted = colorControls.outputImage?.cropped(to: frameExtent) {
+            frosted = adjusted
+        }
+
         let blend = CIFilter.blendWithMask()
-        blend.inputImage = blurred
+        blend.inputImage = frosted
         blend.backgroundImage = image
         blend.maskImage = maskImage
         return blend.outputImage?.cropped(to: frameExtent) ?? image

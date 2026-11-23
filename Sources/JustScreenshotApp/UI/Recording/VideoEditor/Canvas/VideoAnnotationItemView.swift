@@ -11,30 +11,56 @@ struct VideoAnnotationItemView: View {
 
     @State private var dragInitialOrigin: CGPoint?
     @State private var resizeInitialRect: CGRect?
+    @State private var isHovered = false
 
     var body: some View {
         let itemWidth = max(24, item.rect.width * videoRect.width)
         let itemHeight = max(24, item.rect.height * videoRect.height)
         let itemCenterX = videoRect.origin.x + (item.rect.origin.x + item.rect.width / 2) * videoRect.width
         let itemCenterY = videoRect.origin.y + (item.rect.origin.y + item.rect.height / 2) * videoRect.height
+        let cornerRadius = min(12, min(itemWidth, itemHeight) * 0.22)
 
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
                 .frame(width: itemWidth, height: itemHeight)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.4), lineWidth: isSelected ? 1.5 : 1)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isSelected ? 0.65 : (isHovered ? 0.50 : 0.35)),
+                                    Color.white.opacity(isSelected ? 0.20 : 0.10)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: isSelected ? 1.5 : 1
+                        )
                 )
-                .contentShape(Rectangle())
+                .shadow(
+                    color: .black.opacity(isSelected ? 0.35 : (isHovered ? 0.22 : 0.12)),
+                    radius: isSelected ? 10 : (isHovered ? 6 : 3),
+                    y: 2
+                )
+                .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
 
             if isSelected {
-                selectionControls(width: itemWidth, height: itemHeight)
+                selectionControls(width: itemWidth, height: itemHeight, cornerRadius: cornerRadius)
             }
         }
         .frame(width: itemWidth, height: itemHeight)
         .rotationEffect(.degrees(item.rotationAngle))
         .position(x: itemCenterX, y: itemCenterY)
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
         .gesture(
             DragGesture(coordinateSpace: .named("videoOverlay"))
                 .onChanged { val in
@@ -62,23 +88,30 @@ struct VideoAnnotationItemView: View {
     }
 
     @ViewBuilder
-    private func selectionControls(width: CGFloat, height: CGFloat) -> some View {
+    private func selectionControls(width: CGFloat, height: CGFloat, cornerRadius: CGFloat) -> some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 6)
-                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
-                .frame(width: width + 8, height: height + 8)
+            RoundedRectangle(cornerRadius: cornerRadius + 3, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.9), lineWidth: 1.5)
+                .shadow(color: Color.accentColor.opacity(0.35), radius: 4)
+                .frame(width: width + 6, height: height + 6)
 
             // Кнопка удаления вынесена над рамкой, чтобы не пересекаться с угловыми ручками
             Button {
                 onDelete()
             } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.white, Color.red)
-                    .shadow(radius: 2)
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        Circle()
+                            .fill(Color.red.opacity(0.92))
+                            .overlay(Circle().strokeBorder(Color.white.opacity(0.35), lineWidth: 1))
+                    )
+                    .shadow(color: .black.opacity(0.35), radius: 4, y: 2)
             }
             .buttonStyle(.plain)
-            .offset(x: 0, y: -(height / 2 + 16))
+            .offset(x: 0, y: -(height / 2 + 18))
             .zIndex(2)
 
             resizeHandle(width: width, height: height, isLeft: true, isTop: true)
@@ -91,14 +124,16 @@ struct VideoAnnotationItemView: View {
 
     @ViewBuilder
     private func resizeHandle(width: CGFloat, height: CGFloat, isLeft: Bool, isTop: Bool) -> some View {
-        let xOffset = (isLeft ? -width / 2 : width / 2) + (isLeft ? -5 : 5)
-        let yOffset = (isTop ? -height / 2 : height / 2) + (isTop ? -5 : 5)
+        let xOffset = (isLeft ? -width / 2 : width / 2) + (isLeft ? -3 : 3)
+        let yOffset = (isTop ? -height / 2 : height / 2) + (isTop ? -3 : 3)
 
         Circle()
             .fill(Color.white)
-            .overlay(Circle().stroke(Color.accentColor, lineWidth: 2))
-            .frame(width: 10, height: 10)
-            .shadow(radius: 2)
+            .overlay(Circle().stroke(Color.accentColor, lineWidth: 1.8))
+            .frame(width: 9, height: 9)
+            .shadow(color: .black.opacity(0.35), radius: 2, y: 1)
+            .frame(width: 18, height: 18)
+            .contentShape(Rectangle())
             .offset(x: xOffset, y: yOffset)
             .gesture(
                 DragGesture(coordinateSpace: .named("videoOverlay"))
